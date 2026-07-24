@@ -16,6 +16,8 @@ Frontend/.env.*
 
 # Upload packages and generated artifacts
 Deployment/*.zip
+Deployment/*Upload*/
+Deployment/LIVE FIX*/
 
 # Logs
 *.log
