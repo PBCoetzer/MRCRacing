@@ -1,0 +1,142 @@
+"use client";
+
+import Link from "next/link";
+import { useEffect, useState } from "react";
+import { AlertCircle, Loader2, ShieldCheck } from "lucide-react";
+import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
+import { Button } from "@/components/ui/button";
+import { createClient } from "@/lib/supabase/client";
+import { supabaseConfigMessage } from "@/lib/supabase/config";
+
+type RoleGateState = "loading" | "configured" | "signed-out" | "forbidden" | "ready" | "error";
+
+type RoleGateProps = {
+  allowedRoles: string[];
+  children: React.ReactNode;
+  description: string;
+  title: string;
+};
+
+type RoleRow = {
+  role: string;
+};
+
+function isMissingAuthSession(error: unknown) {
+  return error instanceof Error && error.message.toLowerCase().includes("auth session missing");
+}
+
+export function RoleGate({ allowedRoles, children, description, title }: RoleGateProps) {
+  const [gateState, setGateState] = useState<RoleGateState>("loading");
+  const [message, setMessage] = useState("Checking your Supabase session.");
+
+  useEffect(() => {
+    let isMounted = true;
+
+    async function checkAccess() {
+      const supabase = createClient();
+
+      if (!supabase) {
+        setGateState("configured");
+        setMessage(supabaseConfigMessage);
+        return;
+      }
+
+      try {
+        const {
+          data: { user },
+          error: userError,
+        } = await supabase.auth.getUser();
+
+        if (userError) {
+          if (isMissingAuthSession(userError)) {
+            setGateState("signed-out");
+            setMessage("Please log in before opening this private workspace.");
+            return;
+          }
+
+          throw userError;
+        }
+
+        if (!user) {
+          setGateState("signed-out");
+          setMessage("Please log in before opening this private workspace.");
+          return;
+        }
+
+        const { data: roles, error: roleError } = await supabase
+          .from("user_roles")
+          .select("role")
+          .eq("user_id", user.id);
+
+        if (roleError) {
+          throw roleError;
+        }
+
+        if (!isMounted) {
+          return;
+        }
+
+        const roleRows = (roles ?? []) as RoleRow[];
+        const hasAccess = roleRows.some((row) => allowedRoles.includes(row.role));
+
+        if (!hasAccess) {
+          setGateState("forbidden");
+          setMessage(`This account does not have access to ${description}.`);
+          return;
+        }
+
+        setGateState("ready");
+        setMessage(`Access confirmed for ${description}.`);
+      } catch (error) {
+        if (!isMounted) {
+          return;
+        }
+
+        setGateState("error");
+        setMessage(error instanceof Error ? error.message : "Could not confirm access.");
+      }
+    }
+
+    checkAccess();
+
+    return () => {
+      isMounted = false;
+    };
+  }, [allowedRoles, description]);
+
+  if (gateState === "ready") {
+    return children;
+  }
+
+  return (
+    <div className="grid gap-4">
+      <Alert variant={gateState === "error" || gateState === "forbidden" ? "destructive" : "default"}>
+        {gateState === "loading" ? (
+          <Loader2 className="size-4 animate-spin" />
+        ) : gateState === "signed-out" ? (
+          <ShieldCheck className="size-4" />
+        ) : (
+          <AlertCircle className="size-4" />
+        )}
+        <AlertTitle>
+          {gateState === "loading"
+            ? "Checking access"
+            : gateState === "signed-out"
+              ? "Login required"
+              : title}
+        </AlertTitle>
+        <AlertDescription>{message}</AlertDescription>
+      </Alert>
+      {gateState === "signed-out" ? (
+        <div className="flex flex-wrap gap-3">
+          <Button asChild>
+            <Link href="/login/">Login</Link>
+          </Button>
+          <Button asChild variant="outline">
+            <Link href="/register/">Create account</Link>
+          </Button>
+        </div>
+      ) : null}
+    </div>
+  );
+}

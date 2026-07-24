@@ -57,7 +57,7 @@ This TODO is the operating checklist for the MRC Website build. Every completed 
 - [x] Add role-aware RLS policies.
 - [ ] Add Supabase Auth flows for registration, login, email verification, password reset, and protected dashboards.
   - [x] Connect login, registration, password reset, and admin access checks to Supabase.
-  - [ ] Protect client and tipster dashboards with live session checks.
+  - [x] Protect client and tipster dashboards with live session checks.
 - [ ] Add Supabase Storage strategy for tipster images and media.
 
 ## 7. Credit And Payment System
