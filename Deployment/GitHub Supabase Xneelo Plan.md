@@ -100,6 +100,7 @@ In the Supabase dashboard, configure allowed URLs for:
 - `http://localhost:3000`
 - `http://localhost:3000/login`
 - `http://localhost:3000/register`
+- `http://localhost:3000/reset-password`
 - `https://<your-live-domain>`
 - `https://<your-live-domain>/login`
 - `https://<your-live-domain>/register`
