@@ -1,6 +1,12 @@
 # Database Schema Documentation
 
-Status: baseline design, not yet applied to a Supabase project
+Status: baseline design applied to Supabase project `MRCRacing`
+
+Applied migration:
+
+- Project ref: `cjgfvqgiqrphmakruqnk`
+- Migration: `20260724043604_initial_mrc_racing_schema`
+- Applied date: 2026-07-24
 
 ## Core Entities
 

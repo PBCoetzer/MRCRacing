@@ -50,6 +50,7 @@ This TODO is the operating checklist for the MRC Website build. Every completed 
 - [x] Add Supabase project integration configuration.
 - [x] Create database schema documentation.
 - [x] Create a schema baseline for roles, profiles, tipsters, sports, fixtures, tips, results, wallets, credits, transactions, payments, subscriptions, announcements, notifications, audit logs, and media.
+- [x] Apply the baseline schema to the Supabase project `MRCRacing`.
 - [ ] Convert schema baseline into Supabase CLI migrations.
 - [x] Enable Row Level Security on exposed tables.
 - [x] Add role-aware RLS policies.

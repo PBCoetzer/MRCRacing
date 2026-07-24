@@ -1,6 +1,6 @@
 # GitHub, Supabase, and Xneelo Plan
 
-Status: confirmed resources, pending production wiring
+Status: confirmed resources, GitHub pushed, Supabase baseline applied
 
 ## Confirmed Resources
 
@@ -40,21 +40,31 @@ Supabase can handle the dynamic parts that the static Xneelo site should not han
 
 ## GitHub Setup
 
-The local workspace is not yet a Git repository. When ready to push, use:
+The local workspace has been pushed to GitHub.
+
+- Branch: `main`
+- Remote: `https://github.com/PBCoetzer/MRCRacing.git`
+- Initial commit: `457c4c1`
+
+Future pushes can use:
 
 ```powershell
 cd "C:\Users\coetz\OneDrive\MRC Website"
-git init
-git branch -M main
-git remote add origin https://github.com/PBCoetzer/MRCRacing.git
 git add .
-git commit -m "Initial MRC Racing website workspace"
-git push -u origin main
+git commit -m "<short description>"
+git push
 ```
 
 Do not commit `.env.local`, Supabase service-role keys, payment provider secrets, or generated ZIP packages.
 
 ## Supabase Setup
+
+The baseline database schema has been applied to Supabase.
+
+- Migration: `20260724043604_initial_mrc_racing_schema`
+- Public tables: 15
+- RLS policies: 41
+- Seeded sports: Horse Racing, Soccer, Rugby, Cricket, Tennis, UFC, Boxing, Greyhound Racing
 
 Create a local frontend environment file:
 
@@ -111,5 +121,7 @@ public_html/images
 ## Next Decisions
 
 - Confirm the live domain name.
-- Decide whether I should initialise the local Git repository and push to `PBCoetzer/MRCRacing`.
-- Decide whether I should apply the baseline schema to Supabase now or first convert it into reviewed migrations.
+- Add the Supabase public key to `Frontend/.env.local`.
+- Create the first administrator user and assign the `administrator` role.
+- Connect frontend auth pages to Supabase Auth.
+- Add Supabase Edge Functions for payment webhooks and secure credit updates.
