@@ -99,7 +99,7 @@ Prepared upload package:
 C:\Users\coetz\OneDrive\MRC Website\Deployment\mrc-racing-tips-xneelo-static.zip
 ```
 
-This ZIP contains the contents of the static `out` directory. In Xneelo, upload/extract the ZIP so the files inside it land directly in the website root. The home page must resolve as:
+This ZIP contains the contents of the static `out` directory and includes the current Supabase-enabled login, registration, password reset, and admin access screens. In Xneelo, upload/extract the ZIP so the files inside it land directly in the website root. The home page must resolve as:
 
 ```text
 public_html/index.html
@@ -117,6 +117,8 @@ If it becomes `public_html/out/index.html`, move the files up one level.
 6. Extract it into `public_html`.
 7. Confirm `_next`, `images`, and `index.html` are directly inside `public_html`.
 8. Visit the live domain and test the main routes.
+
+Before testing auth on the live domain, add the domain and `/reset-password` route to Supabase Auth URL settings.
 
 ## Rebuild After Changes
 

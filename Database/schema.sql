@@ -87,6 +87,49 @@ as $$
   );
 $$;
 
+create or replace function app_private.handle_new_user()
+returns trigger
+language plpgsql
+security definer
+set search_path = ''
+as $$
+begin
+  insert into public.profiles (
+    id,
+    display_name,
+    phone,
+    accepted_terms_at,
+    confirmed_over_18_at
+  )
+  values (
+    new.id,
+    nullif(new.raw_user_meta_data ->> 'display_name', ''),
+    nullif(new.raw_user_meta_data ->> 'phone', ''),
+    case
+      when lower(coalesce(new.raw_user_meta_data ->> 'accepted_terms', 'false')) = 'true'
+      then now()
+      else null
+    end,
+    case
+      when lower(coalesce(new.raw_user_meta_data ->> 'confirmed_over_18', 'false')) = 'true'
+      then now()
+      else null
+    end
+  )
+  on conflict (id) do nothing;
+
+  insert into public.wallets (user_id)
+  values (new.id)
+  on conflict (user_id) do nothing;
+
+  insert into public.user_roles (user_id, role)
+  values (new.id, 'client')
+  on conflict (user_id, role) do nothing;
+
+  return new;
+end;
+$$;
+
 create table if not exists public.tipsters (
   id uuid primary key default gen_random_uuid(),
   user_id uuid not null unique references auth.users(id) on delete cascade,
@@ -281,13 +324,27 @@ create trigger set_subscriptions_updated_at
 before update on public.subscriptions
 for each row execute function public.set_updated_at();
 
+drop trigger if exists on_auth_user_created on auth.users;
+create trigger on_auth_user_created
+after insert on auth.users
+for each row execute function app_private.handle_new_user();
+
 create index if not exists fixtures_sport_starts_at_idx on public.fixtures (sport_id, starts_at);
 create index if not exists tips_tipster_status_idx on public.tips (tipster_id, status);
 create index if not exists tips_fixture_idx on public.tips (fixture_id);
+create index if not exists tips_sport_idx on public.tips (sport_id);
+create index if not exists announcements_created_by_idx on public.announcements (created_by);
+create index if not exists audit_logs_actor_idx on public.audit_logs (actor_id);
 create index if not exists credit_transactions_user_created_idx on public.credit_transactions (user_id, created_at desc);
+create index if not exists credit_transactions_created_by_idx on public.credit_transactions (created_by);
+create index if not exists credit_transactions_payment_idx on public.credit_transactions (payment_id);
+create index if not exists credit_transactions_tip_idx on public.credit_transactions (tip_id);
 create index if not exists payments_user_created_idx on public.payments (user_id, created_at desc);
 create index if not exists notifications_user_created_idx on public.notifications (user_id, created_at desc);
 create index if not exists audit_logs_created_idx on public.audit_logs (created_at desc);
+create index if not exists media_assets_owner_idx on public.media_assets (owner_id);
+create index if not exists subscriptions_user_idx on public.subscriptions (user_id);
+create index if not exists tip_unlocks_tip_idx on public.tip_unlocks (tip_id);
 
 alter table public.profiles enable row level security;
 alter table public.user_roles enable row level security;
@@ -308,6 +365,7 @@ alter table public.media_assets enable row level security;
 revoke all on schema app_private from public;
 grant usage on schema app_private to authenticated;
 revoke all on function app_private.current_user_has_role(public.app_role) from public;
+revoke all on function app_private.handle_new_user() from public;
 grant execute on function app_private.current_user_has_role(public.app_role) to authenticated;
 
 grant usage on schema public to anon, authenticated;

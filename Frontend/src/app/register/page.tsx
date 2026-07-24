@@ -1,12 +1,9 @@
-import Link from "next/link";
 import { ShieldCheck } from "lucide-react";
+import { RegisterForm } from "@/components/auth/register-form";
 import { SiteFooter } from "@/components/site-footer";
 import { SiteHeader } from "@/components/site-header";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
-import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
-import { Input } from "@/components/ui/input";
-import { Label } from "@/components/ui/label";
 
 export default function RegisterPage() {
   return (
@@ -37,29 +34,7 @@ export default function RegisterPage() {
             <CardDescription>Client registration fields for Supabase Auth.</CardDescription>
           </CardHeader>
           <CardContent>
-            <form className="grid gap-4">
-              <div className="grid gap-2">
-                <Label htmlFor="name">Display name</Label>
-                <Input id="name" placeholder="Your name" />
-              </div>
-              <div className="grid gap-2">
-                <Label htmlFor="phone">Cell number</Label>
-                <Input id="phone" placeholder="+27" />
-              </div>
-              <div className="grid gap-2">
-                <Label htmlFor="email">Email</Label>
-                <Input id="email" type="email" placeholder="you@example.com" />
-              </div>
-              <div className="grid gap-2">
-                <Label htmlFor="password">Password</Label>
-                <Input id="password" type="password" placeholder="Create a password" />
-              </div>
-              <Button type="button" className="w-full">Create account</Button>
-              <p className="text-sm text-muted-foreground">
-                Already registered?{" "}
-                <Link href="/login" className="text-primary hover:underline">Login</Link>
-              </p>
-            </form>
+            <RegisterForm />
           </CardContent>
         </Card>
       </main>

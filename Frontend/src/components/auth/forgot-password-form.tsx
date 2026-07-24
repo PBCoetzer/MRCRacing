@@ -1,0 +1,100 @@
+"use client";
+
+import Link from "next/link";
+import { FormEvent, useState } from "react";
+import { AlertCircle, CheckCircle2, Loader2 } from "lucide-react";
+import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
+import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
+import { createClient } from "@/lib/supabase/client";
+import { supabaseConfigMessage } from "@/lib/supabase/config";
+import { getSiteUrl } from "@/lib/site-url";
+
+type FormState = {
+  kind: "idle" | "success" | "error";
+  message: string;
+};
+
+export function ForgotPasswordForm() {
+  const [formState, setFormState] = useState<FormState>({
+    kind: "idle",
+    message: "",
+  });
+  const [isSubmitting, setIsSubmitting] = useState(false);
+
+  async function handleSubmit(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+
+    const supabase = createClient();
+
+    if (!supabase) {
+      setFormState({ kind: "error", message: supabaseConfigMessage });
+      return;
+    }
+
+    const formData = new FormData(event.currentTarget);
+    const email = String(formData.get("email") ?? "").trim();
+
+    setIsSubmitting(true);
+    setFormState({ kind: "idle", message: "" });
+
+    try {
+      const { error } = await supabase.auth.resetPasswordForEmail(email, {
+        redirectTo: `${getSiteUrl()}/reset-password/`,
+      });
+
+      if (error) {
+        throw error;
+      }
+
+      setFormState({
+        kind: "success",
+        message: "Reset link sent. Check your inbox and follow the secure link.",
+      });
+    } catch (error) {
+      setFormState({
+        kind: "error",
+        message:
+          error instanceof Error
+            ? error.message
+            : "Could not send the reset link. Please try again.",
+      });
+    } finally {
+      setIsSubmitting(false);
+    }
+  }
+
+  return (
+    <form className="grid gap-4" onSubmit={handleSubmit}>
+      {formState.kind !== "idle" ? (
+        <Alert variant={formState.kind === "error" ? "destructive" : "default"}>
+          {formState.kind === "error" ? (
+            <AlertCircle className="size-4" />
+          ) : (
+            <CheckCircle2 className="size-4" />
+          )}
+          <AlertTitle>{formState.kind === "error" ? "Reset issue" : "Email sent"}</AlertTitle>
+          <AlertDescription>{formState.message}</AlertDescription>
+        </Alert>
+      ) : null}
+      <div className="grid gap-2">
+        <Label htmlFor="email">Email</Label>
+        <Input id="email" name="email" type="email" placeholder="you@example.com" required />
+      </div>
+      <Button type="submit" disabled={isSubmitting}>
+        {isSubmitting ? (
+          <>
+            <Loader2 className="size-4 animate-spin" />
+            Sending link
+          </>
+        ) : (
+          "Send reset link"
+        )}
+      </Button>
+      <Button asChild type="button" variant="ghost">
+        <Link href="/login">Back to login</Link>
+      </Button>
+    </form>
+  );
+}

@@ -1,6 +1,6 @@
 # GitHub, Supabase, and Xneelo Plan
 
-Status: confirmed resources, GitHub pushed, Supabase baseline applied
+Status: confirmed resources, GitHub pushed, Supabase auth wired, Xneelo package rebuilt
 
 ## Confirmed Resources
 
@@ -11,6 +11,7 @@ Status: confirmed resources, GitHub pushed, Supabase baseline applied
 - Supabase API URL: `https://cjgfvqgiqrphmakruqnk.supabase.co`
 - Supabase region: `eu-west-1`
 - Xneelo hosting: Volume Plan
+- Current Xneelo package: `Deployment/mrc-racing-tips-xneelo-static.zip`
 
 ## Recommended Architecture
 
@@ -62,9 +63,12 @@ Do not commit `.env.local`, Supabase service-role keys, payment provider secrets
 The baseline database schema has been applied to Supabase.
 
 - Migration: `20260724043604_initial_mrc_racing_schema`
+- Migration: `20260724044231_auth_user_profile_bootstrap`
+- Migration: `20260724044840_add_missing_foreign_key_indexes`
 - Public tables: 15
 - RLS policies: 41
 - Seeded sports: Horse Racing, Soccer, Rugby, Cricket, Tennis, UFC, Boxing, Greyhound Racing
+- Auth bootstrap: new users automatically receive a profile, wallet, and `client` role.
 
 Create a local frontend environment file:
 
@@ -87,6 +91,8 @@ Keep server-only secrets out of frontend builds:
 SUPABASE_SERVICE_ROLE_KEY=<server-only-never-commit>
 ```
 
+Local `.env.local` has been created for development and is intentionally ignored by Git.
+
 ## Supabase Auth URLs
 
 In the Supabase dashboard, configure allowed URLs for:
@@ -97,8 +103,11 @@ In the Supabase dashboard, configure allowed URLs for:
 - `https://<your-live-domain>`
 - `https://<your-live-domain>/login`
 - `https://<your-live-domain>/register`
+- `https://<your-live-domain>/reset-password`
 
 Replace `<your-live-domain>` with the real domain connected to the Xneelo hosting package.
+
+The static site uses the browser origin for auth redirect links, so login and password reset can work on both localhost and the Xneelo domain after the live domain is added to Supabase Auth URL settings.
 
 ## Xneelo Upload Flow
 
@@ -121,7 +130,6 @@ public_html/images
 ## Next Decisions
 
 - Confirm the live domain name.
-- Add the Supabase public key to `Frontend/.env.local`.
 - Create the first administrator user and assign the `administrator` role.
-- Connect frontend auth pages to Supabase Auth.
+- Test live registration, login, logout, and password reset on the Xneelo domain.
 - Add Supabase Edge Functions for payment webhooks and secure credit updates.

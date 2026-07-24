@@ -6,7 +6,21 @@ Applied migration:
 
 - Project ref: `cjgfvqgiqrphmakruqnk`
 - Migration: `20260724043604_initial_mrc_racing_schema`
+- Migration: `20260724044231_auth_user_profile_bootstrap`
+- Migration: `20260724044840_add_missing_foreign_key_indexes`
 - Applied date: 2026-07-24
+
+## Auth Bootstrap
+
+Supabase Auth user creation now triggers `app_private.handle_new_user()`.
+
+The trigger creates:
+
+- A matching `public.profiles` row.
+- A matching `public.wallets` row with a zero balance.
+- A default `client` role in `public.user_roles`.
+
+The trigger does not trust metadata for authorization. It only stores profile fields and responsible-use timestamps.
 
 ## Core Entities
 
