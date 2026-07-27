@@ -35,3 +35,13 @@ The message avoids exposing whether an arbitrary email address definitely exists
 
 - Use the existing account's login credentials, or request a password reset.
 - To test a genuinely new confirmation email, register with an email address that has never been used in the project.
+
+## Production Verification
+
+- GitHub commit: `2b1c923`
+- Xneelo backup: `mrc_public_html_backup_20260727_105016`
+- Static export files uploaded: `196`
+- Missing or size-mismatched files: `0`
+- Unexpected non-build files: `0`
+- Live `/register/` route renders without a Next.js error overlay.
+- The live registration JavaScript contains the corrected repeated-signup guidance.
