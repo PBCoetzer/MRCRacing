@@ -22,7 +22,7 @@ import { supabaseConfigMessage } from "@/lib/supabase/config";
 import { getSiteUrl } from "@/lib/site-url";
 
 type FormState = {
-  kind: "idle" | "success" | "error";
+  kind: "idle" | "success" | "existing" | "error";
   message: string;
 };
 
@@ -129,6 +129,15 @@ export function RegisterForm() {
         return;
       }
 
+      if (data.user?.identities?.length === 0) {
+        setRedirectAfterConfirmation(false);
+        showResult(
+          "existing",
+          "No new account or confirmation email was created. If you registered before, log in with your existing password or reset it.",
+        );
+        return;
+      }
+
       setRedirectAfterConfirmation(false);
       showResult("success", "Account created. Please check your email to confirm your login.");
     } catch (error) {
@@ -210,6 +219,8 @@ export function RegisterForm() {
               className={`flex size-10 items-center justify-center rounded-full ${
                 formState.kind === "error"
                   ? "bg-brand-red/15 text-brand-red"
+                  : formState.kind === "existing"
+                    ? "bg-brand-gold/15 text-brand-gold"
                   : "bg-brand-cyan/15 text-brand-cyan"
               }`}
             >
@@ -220,14 +231,29 @@ export function RegisterForm() {
               )}
             </div>
             <DialogTitle>
-              {formState.kind === "error" ? "Registration failed" : "Registration successful"}
+              {formState.kind === "error"
+                ? "Registration failed"
+                : formState.kind === "existing"
+                  ? "Check your existing account"
+                  : "Registration successful"}
             </DialogTitle>
             <DialogDescription>{formState.message}</DialogDescription>
           </DialogHeader>
           <DialogFooter>
-            <Button type="button" onClick={handleDialogConfirmation}>
-              {formState.kind === "error" ? "Try again" : "Continue"}
-            </Button>
+            {formState.kind === "existing" ? (
+              <>
+                <Button asChild variant="outline">
+                  <Link href="/forgot-password/">Reset password</Link>
+                </Button>
+                <Button asChild>
+                  <Link href="/login/">Go to login</Link>
+                </Button>
+              </>
+            ) : (
+              <Button type="button" onClick={handleDialogConfirmation}>
+                {formState.kind === "error" ? "Try again" : "Continue"}
+              </Button>
+            )}
           </DialogFooter>
         </DialogContent>
       </Dialog>
