@@ -300,7 +300,7 @@ export function AdminDashboardClient() {
               <Card>
                 <CardHeader>
                   <CardTitle>System configuration</CardTitle>
-                  <CardDescription>Payment gateways, sports data keys, roles, and API settings.</CardDescription>
+                  <CardDescription>Payment gateways, horse-racing data keys, roles, and API settings.</CardDescription>
                 </CardHeader>
                 <CardContent className="grid gap-3 md:grid-cols-2">
                   {["PayFast", "Ozow", "PayGate", "Peach Payments"].map((gateway) => (

@@ -9,7 +9,7 @@ export default function TermsPage() {
       sections={[
         {
           title: "Service scope",
-          body: "MRC Racing Tips provides sports analysis, tipster content, ratings, selections, opinions, and result history for informational purposes.",
+          body: "MRC Racing Tips provides horse-racing analysis, tipster content, ratings, selections, opinions, and result history for informational purposes.",
         },
         {
           title: "Credits",

@@ -1,51 +1,3 @@
-export const fixtures = [
-  {
-    sport: "Horse Racing",
-    league: "Vaal Work Riders",
-    fixture: "Race 4 - 1600m Handicap",
-    startsAt: "Today 14:35",
-    market: "Win / Place",
-    status: "Open",
-  },
-  {
-    sport: "Soccer",
-    league: "Premier Soccer League",
-    fixture: "Cape Town City vs Pirates",
-    startsAt: "Today 19:30",
-    market: "Match Result",
-    status: "Open",
-  },
-  {
-    sport: "Rugby",
-    league: "United Rugby Championship",
-    fixture: "Stormers vs Bulls",
-    startsAt: "Sat 17:05",
-    market: "Handicap",
-    status: "Preview",
-  },
-];
-
-export const latestResults = [
-  {
-    event: "Hollywoodbets Scottsville",
-    result: "6 winners from 9 races",
-    strikeRate: "66.67%",
-    highlight: "Value selection landed in the closing race",
-  },
-  {
-    event: "Turffontein Standside",
-    result: "6 winners from 10 races",
-    strikeRate: "60%",
-    highlight: "Two blackbook runners converted",
-  },
-  {
-    event: "Greyville Polytrack",
-    result: "Pick 6 caught",
-    strikeRate: "Major exotic",
-    highlight: "Exotic structure carried the card",
-  },
-];
-
 export const tipsters = [
   {
     name: "Marco Rail",
@@ -58,7 +10,7 @@ export const tipsters = [
   },
   {
     name: "Nandi Edge",
-    sport: "Soccer",
+    sport: "Horse Racing",
     roi: "+13.2%",
     winRate: "57%",
     profit: "+84.1u",
@@ -67,7 +19,7 @@ export const tipsters = [
   },
   {
     name: "Kobus Card",
-    sport: "Rugby",
+    sport: "Horse Racing",
     roi: "+10.8%",
     winRate: "54%",
     profit: "+63.7u",
@@ -88,8 +40,8 @@ export const premiumTips = [
   },
   {
     tipster: "Nandi Edge",
-    fixture: "Cape Town City vs Pirates",
-    prediction: "Under 2.5 goals",
+    fixture: "Turffontein Race 6",
+    prediction: "Royal Horizon to place",
     confidence: 7,
     odds: "1.92",
     credits: 1,
@@ -97,8 +49,8 @@ export const premiumTips = [
   },
   {
     tipster: "Kobus Card",
-    fixture: "Stormers vs Bulls",
-    prediction: "Bulls +6.5",
+    fixture: "Greyville Race 8",
+    prediction: "Purple Comet each-way",
     confidence: 6,
     odds: "1.86",
     credits: 1,
@@ -123,4 +75,27 @@ export const transactions = [
   { user: "client-142", type: "purchase", amount: "+40", status: "Paid" },
   { user: "client-918", type: "unlock", amount: "-2", status: "Settled" },
   { user: "client-311", type: "refund", amount: "+10", status: "Admin" },
+];
+
+export const affiliatePartners = [
+  {
+    name: "Playabets",
+    image: "/images/affiliates/playabets.jpg",
+    href: "https://playabets.ravn.click/o/amHwYe?lpage=lTbzxn",
+  },
+  {
+    name: "10Bet",
+    image: "/images/affiliates/10bet.jpg",
+    href: "https://partners.10betaffiliates.co.za/visit/?bta=36777&brand=10betza",
+  },
+  {
+    name: "World Sports Betting",
+    image: "/images/affiliates/world-sports-betting.jpg",
+    href: "https://trk.worldsportsbetting.co.za/click?o=1&a=1201&c=7&link_id=8",
+  },
+  {
+    name: "Hollywoodbets",
+    image: "/images/affiliates/hollywoodbets.jpg",
+    href: "https://hollywoodbetsaffs.click/o/43wGic?site_id=101050",
+  },
 ];

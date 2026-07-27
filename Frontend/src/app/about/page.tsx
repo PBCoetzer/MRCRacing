@@ -4,8 +4,8 @@ export default function AboutPage() {
   return (
     <InfoPage
       badge="About"
-      title="Built for transparent sports analysis"
-      description="MRC Racing Tips is designed as a commercial-quality sports tipping platform for clients, tipsters, and administrators."
+      title="Built for transparent horse-racing analysis"
+      description="MRC Racing Tips is a dedicated horse-racing tipping platform for clients, tipsters, and administrators."
       sections={[
         {
           title: "Positioning",
@@ -13,7 +13,7 @@ export default function AboutPage() {
         },
         {
           title: "Product focus",
-          body: "The core product combines tipster profiles, premium tips, credits, upcoming fixtures, historical results, and responsible gambling controls.",
+          body: "The core product combines horse-racing tipster profiles, premium selections, credits, upcoming race cards, historical results, and responsible gambling controls.",
         },
       ]}
     />

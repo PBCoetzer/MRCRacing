@@ -23,8 +23,9 @@ export function SiteFooter() {
           <div>
           <p className="font-heading text-sm text-white">MRC Racing Tips</p>
           <p className="mt-2 max-w-2xl">
-            Sports analysis and digital tipping content only. MRC Racing Tips does not accept bets,
-            process gambling deposits, or pay out winnings. 18+ only. Gamble responsibly.
+            Horse-racing analysis and digital tipping content only. MRC Racing Tips does not
+            accept bets, process gambling deposits, or pay out winnings. 18+ only. Gamble
+            responsibly.
           </p>
           </div>
         </div>

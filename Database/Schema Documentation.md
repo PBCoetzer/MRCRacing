@@ -27,8 +27,8 @@ The trigger does not trust metadata for authorization. It only stores profile fi
 - `profiles`: application profile linked to `auth.users`.
 - `user_roles`: role assignments for client, tipster, and administrator access.
 - `tipsters`: public tipster profiles and verification status.
-- `sports`: supported sports such as horse racing, soccer, rugby, cricket, tennis, UFC, boxing, and greyhound racing.
-- `fixtures`: upcoming events, races, matches, or fights.
+- `sports`: the horse-racing category used throughout MRC Racing Tips. Legacy categories are inactive.
+- `fixtures`: upcoming races and completed race-result history, including provider attribution.
 - `tips`: tipster predictions with analysis, confidence, odds, cost, and publication status.
 - `tip_unlocks`: records that a client has unlocked a premium tip.
 - `wallets`: current credit balance per user.

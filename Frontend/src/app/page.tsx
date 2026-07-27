@@ -6,6 +6,7 @@ import {
   CalendarDays,
   ChevronRight,
   CircleDollarSign,
+  ExternalLink,
   LockKeyhole,
   Sparkles,
   Trophy,
@@ -14,6 +15,7 @@ import {
 } from "lucide-react";
 import { SiteFooter } from "@/components/site-footer";
 import { SiteHeader } from "@/components/site-header";
+import { RaceResultsHistory, UpcomingRaceBoard } from "@/components/racing/race-data-board";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import {
@@ -32,9 +34,8 @@ import {
   TableRow,
 } from "@/components/ui/table";
 import {
+  affiliatePartners,
   creditPackages,
-  fixtures,
-  latestResults,
   premiumTips,
   tipsters,
 } from "@/lib/mock-data";
@@ -50,15 +51,15 @@ export default function Home() {
             <div className="max-w-3xl">
               <Badge className="mb-5 border border-brand-gold/40 bg-brand-gold text-brand-purple-deep">
                 <Sparkles className="size-3" />
-                MRC brand system applied
+                Horse racing only
               </Badge>
               <h1 className="font-heading text-5xl font-normal leading-tight tracking-normal text-white sm:text-6xl">
                 MRC Racing Tips
               </h1>
               <p className="mt-5 max-w-2xl text-lg leading-8 text-white/82">
-                A premium South African sports tipping platform with transparent tipster
-                stats, credit-based unlocks, race cards, result history, and admin-grade
-                controls from day one.
+                A dedicated South African horse-racing tipping platform with transparent
+                tipster stats, credit-based unlocks, verified race cards, result history,
+                and admin-grade controls.
               </p>
               <div className="mt-8 flex flex-col gap-3 sm:flex-row">
                 <Button asChild size="lg" className="bg-brand-gold text-brand-purple-deep hover:bg-brand-gold/90">
@@ -73,9 +74,9 @@ export default function Home() {
               </div>
               <div className="mt-10 grid max-w-2xl grid-cols-3 gap-3 text-sm">
                 {[
-                  ["42k+", "credits traced"],
+                  ["1", "racing category"],
                   ["18+", "age gated"],
-                  ["RLS", "security model"],
+                  ["Source", "audit trail"],
                 ].map(([value, label]) => (
                   <div key={label} className="rounded-lg border border-brand-gold/20 bg-white/8 p-4 backdrop-blur">
                     <p className="font-mono text-2xl font-bold">{value}</p>
@@ -97,41 +98,24 @@ export default function Home() {
               </div>
               <div className="mt-4 mb-4 flex items-center justify-between">
                 <div>
-                  <p className="font-mono text-sm text-brand-cyan">Live race control</p>
-                  <h2 className="font-heading text-xl font-normal tracking-normal text-white">Upcoming board</h2>
+                  <p className="font-mono text-sm text-brand-cyan">Database-backed race feed</p>
+                  <h2 className="font-heading text-xl font-normal tracking-normal text-white">
+                    Upcoming races
+                  </h2>
                 </div>
-                <Badge className="bg-brand-red text-white">Preview</Badge>
+                <Badge className="bg-brand-red text-white">Live data</Badge>
               </div>
-              <div className="grid gap-3">
-                {fixtures.map((fixture) => (
-                  <div key={fixture.fixture} className="rounded-lg border border-brand-gold/16 bg-white/8 p-4">
-                    <div className="flex items-start justify-between gap-4">
-                      <div>
-                        <p className="font-mono text-xs uppercase text-brand-cyan">{fixture.sport}</p>
-                        <p className="mt-1 font-semibold">{fixture.fixture}</p>
-                        <p className="text-sm text-white/68">{fixture.league}</p>
-                      </div>
-                      <Badge variant="outline" className="border-brand-gold/30 text-brand-gold">
-                        {fixture.status}
-                      </Badge>
-                    </div>
-                    <div className="mt-4 flex items-center justify-between text-sm text-white/76">
-                      <span>{fixture.startsAt}</span>
-                      <span>{fixture.market}</span>
-                    </div>
-                  </div>
-                ))}
-              </div>
+              <UpcomingRaceBoard />
             </div>
           </div>
         </section>
 
         <section className="mx-auto grid w-full max-w-7xl gap-4 px-4 py-10 sm:px-6 md:grid-cols-4 lg:px-8">
           {[
-            { label: "Wallet credits", value: "1,240", icon: Wallet },
-            { label: "Unlocked tips", value: "318", icon: LockKeyhole },
-            { label: "Active tipsters", value: "24", icon: Users },
-            { label: "Result strike rate", value: "58%", icon: Trophy },
+            { label: "Racing coverage", value: "Horse only", icon: Trophy },
+            { label: "Premium access", value: "Credits", icon: LockKeyhole },
+            { label: "Tipster records", value: "Audited", icon: Users },
+            { label: "Race data", value: "Source-linked", icon: Wallet },
           ].map((stat) => (
             <Card key={stat.label}>
               <CardHeader className="flex flex-row items-center justify-between space-y-0">
@@ -210,19 +194,51 @@ export default function Home() {
 
         <section className="border-y bg-card/45">
           <div className="mx-auto grid w-full max-w-7xl gap-6 px-4 py-10 sm:px-6 lg:grid-cols-3 lg:px-8">
-            {latestResults.map((result) => (
-              <Card key={result.event}>
-                <CardHeader>
-                  <CardTitle className="text-lg">{result.event}</CardTitle>
-                  <CardDescription>{result.highlight}</CardDescription>
-                </CardHeader>
-                <CardContent className="flex items-end justify-between">
-                  <p className="font-semibold">{result.result}</p>
-                  <Badge variant="outline">{result.strikeRate}</Badge>
-                </CardContent>
-              </Card>
+            <RaceResultsHistory />
+          </div>
+        </section>
+
+        <section className="mx-auto w-full max-w-7xl px-4 py-12 sm:px-6 lg:px-8">
+          <div className="mb-6 max-w-3xl">
+            <Badge variant="outline">Affiliate partners</Badge>
+            <h2 className="mt-3 font-heading text-3xl font-normal tracking-normal text-white">
+              Open a bookmaker account with an MRC partner.
+            </h2>
+            <p className="mt-3 text-muted-foreground">
+              These are affiliate links. MRC Racing Tips may earn a commission when you
+              register or transact through a partner link, at no additional cost to you.
+            </p>
+          </div>
+          <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
+            {affiliatePartners.map((partner) => (
+              <a
+                key={partner.name}
+                href={partner.href}
+                target="_blank"
+                rel="sponsored noopener noreferrer"
+                aria-label={`Visit ${partner.name}`}
+                className="group rounded-xl border border-brand-gold/20 bg-card p-3 transition hover:-translate-y-1 hover:border-brand-gold/55 hover:shadow-[0_18px_45px_rgba(0,0,0,0.22)]"
+              >
+                <div className="relative aspect-[16/9] overflow-hidden rounded-lg bg-white">
+                  <Image
+                    src={partner.image}
+                    alt={`${partner.name} logo`}
+                    fill
+                    sizes="(max-width: 640px) 100vw, (max-width: 1024px) 50vw, 25vw"
+                    className="object-contain"
+                  />
+                </div>
+                <div className="mt-3 flex items-center justify-between gap-3">
+                  <span className="font-semibold">{partner.name}</span>
+                  <ExternalLink className="size-4 text-brand-cyan transition group-hover:translate-x-0.5" />
+                </div>
+              </a>
             ))}
           </div>
+          <p className="mt-4 text-xs leading-5 text-muted-foreground">
+            18+ only. Betting involves risk. Affiliate placement does not change MRC&apos;s
+            independent tipster reporting or results history.
+          </p>
         </section>
 
         <section className="mx-auto w-full max-w-7xl px-4 py-12 sm:px-6 lg:px-8">

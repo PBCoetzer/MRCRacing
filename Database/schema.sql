@@ -160,6 +160,10 @@ create table if not exists public.fixtures (
   starts_at timestamptz not null,
   status text not null default 'scheduled',
   result_summary text,
+  source_name text not null default 'manual',
+  source_url text,
+  source_updated_at timestamptz,
+  source_payload jsonb not null default '{}'::jsonb,
   created_at timestamptz not null default now(),
   updated_at timestamptz not null default now()
 );
@@ -330,6 +334,9 @@ after insert on auth.users
 for each row execute function app_private.handle_new_user();
 
 create index if not exists fixtures_sport_starts_at_idx on public.fixtures (sport_id, starts_at);
+create unique index if not exists fixtures_source_external_id_uidx on public.fixtures (source_name, external_id);
+create index if not exists fixtures_upcoming_idx on public.fixtures (starts_at) where result_summary is null;
+create index if not exists fixtures_results_history_idx on public.fixtures (starts_at desc) where result_summary is not null;
 create index if not exists tips_tipster_status_idx on public.tips (tipster_id, status);
 create index if not exists tips_fixture_idx on public.tips (fixture_id);
 create index if not exists tips_sport_idx on public.tips (sport_id);
@@ -678,12 +685,8 @@ with check (app_private.current_user_has_role('administrator'));
 
 insert into public.sports (name, slug)
 values
-  ('Horse Racing', 'horse-racing'),
-  ('Soccer', 'soccer'),
-  ('Rugby', 'rugby'),
-  ('Cricket', 'cricket'),
-  ('Tennis', 'tennis'),
-  ('UFC', 'ufc'),
-  ('Boxing', 'boxing'),
-  ('Greyhound Racing', 'greyhound-racing')
+  ('Horse Racing', 'horse-racing')
 on conflict (slug) do nothing;
+
+update public.sports
+set is_active = (slug = 'horse-racing');

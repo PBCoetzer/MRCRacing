@@ -8,7 +8,7 @@ Reasoning:
 
 - Next.js supports public SEO pages and authenticated dashboards in one app.
 - Supabase provides managed PostgreSQL, auth, storage, and RLS.
-- PostgreSQL is a strong fit for financial-style credit ledgers, audit logs, and relational sports data.
+- PostgreSQL is a strong fit for financial-style credit ledgers, audit logs, and relational horse-racing data.
 - shadcn/ui gives accessible, owned UI components without locking the project into a black-box component library.
 
 ## 2026-07-24 - Use Credits As Ledger Transactions
@@ -23,7 +23,7 @@ Reasoning:
 
 ## 2026-07-24 - Use Provider Adapters
 
-Decision: Payment gateways and sports data APIs must use adapter interfaces.
+Decision: Payment gateways and horse-racing data APIs must use adapter interfaces.
 
 Reasoning:
 

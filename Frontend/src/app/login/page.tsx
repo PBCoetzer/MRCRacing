@@ -16,14 +16,15 @@ export default function LoginPage() {
             Log in to unlock tips, track credits, and manage your dashboard.
           </h1>
           <p className="mt-4 max-w-2xl text-lg leading-8 text-muted-foreground">
-            Supabase Auth now powers email login, password resets, and role-aware routing for
-            clients, tipsters, and administrators.
+            Secure online authentication powers email login, password resets, and role-aware
+            routing for clients, horse-racing tipsters, and administrators.
           </p>
           <Alert className="mt-6 max-w-2xl">
             <LockKeyhole className="size-4" />
-            <AlertTitle>Local auth screen</AlertTitle>
+            <AlertTitle>Live secure account</AlertTitle>
             <AlertDescription>
-              This form is connected to the live MRCRacing Supabase project for local and Xneelo testing.
+              This form connects directly to the live MRC Racing account service used by the
+              website.
             </AlertDescription>
           </Alert>
         </section>

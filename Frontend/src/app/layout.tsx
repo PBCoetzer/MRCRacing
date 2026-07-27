@@ -20,9 +20,9 @@ const jetBrainsMono = JetBrains_Mono({
 });
 
 export const metadata: Metadata = {
-  title: "MRC Racing Tips | Premium Sports Tips",
+  title: "MRC Racing Tips | South African Horse Racing Tips",
   description:
-    "A South African sports tipping platform for tipsters, racing tips, credits, race cards, and transparent betting analysis.",
+    "A South African horse-racing tipping platform for tipsters, credits, verified race cards, results history, and transparent betting analysis.",
 };
 
 export default function RootLayout({

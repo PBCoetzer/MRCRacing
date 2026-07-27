@@ -31,7 +31,7 @@ export default function RegisterPage() {
         <Card>
           <CardHeader>
             <CardTitle>Register</CardTitle>
-            <CardDescription>Client registration fields for Supabase Auth.</CardDescription>
+            <CardDescription>Create your secure online MRC Racing account.</CardDescription>
           </CardHeader>
           <CardContent>
             <RegisterForm />
