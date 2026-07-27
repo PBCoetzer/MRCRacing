@@ -56,3 +56,27 @@ Browser checks passed:
 ## Retest Note
 
 Previously issued email links retain their original destination. A fresh registration or a newly issued confirmation email is required to test the corrected production URL.
+
+## Production Deployment
+
+- GitHub commit: `0218d37`
+- Xneelo backup: `mrc_public_html_backup_20260727_084202`
+- Local static export files: `196`
+- Uploaded files: `196`
+- Missing or size-mismatched files: `0`
+- Unexpected non-build files after sync: `0`
+
+Live HTTP checks returned `200` for:
+
+- `/`
+- `/auth/callback/`
+- `/client/`
+- `/tipster/`
+- `/admin/`
+
+Live headless-browser checks confirmed:
+
+- Signed-out navigation contains no Client, Tipster, or Admin links.
+- Admin and Tipster routes show `Login required`.
+- Protected workspace labels and dashboard headings are not rendered while signed out.
+- The authentication callback page renders without a framework error overlay.
