@@ -3,9 +3,8 @@
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { FormEvent, useRef, useState } from "react";
-import { Turnstile, type TurnstileInstance } from "@marsidev/react-turnstile";
-import { AlertCircle, CheckCircle2, Loader2, ShieldCheck } from "lucide-react";
-import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
+import type { TurnstileInstance } from "@marsidev/react-turnstile";
+import { AlertCircle, CheckCircle2, Loader2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import {
   Dialog,
@@ -17,6 +16,7 @@ import {
 } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import { CaptchaField, turnstileSiteKey } from "@/components/auth/captcha-field";
 import { createClient } from "@/lib/supabase/client";
 import { supabaseConfigMessage } from "@/lib/supabase/config";
 import { getSiteUrl } from "@/lib/site-url";
@@ -30,7 +30,6 @@ export function RegisterForm() {
   const router = useRouter();
   const formRef = useRef<HTMLFormElement>(null);
   const turnstileRef = useRef<TurnstileInstance>(null);
-  const turnstileSiteKey = process.env.NEXT_PUBLIC_TURNSTILE_SITE_KEY ?? "";
   const [formState, setFormState] = useState<FormState>({
     kind: "idle",
     message: "",
@@ -177,30 +176,11 @@ export function RegisterForm() {
           <input name="acceptedTerms" type="checkbox" required className="mt-1 accent-primary" />
           I accept the MRC Racing Tips terms, privacy policy, and responsible gambling guidance.
         </label>
-        {turnstileSiteKey ? (
-          <div className="rounded-lg border border-brand-cyan/25 bg-background/60 p-3">
-            <div className="mb-2 flex items-center gap-2 text-sm font-semibold">
-              <ShieldCheck className="size-4 text-brand-cyan" />
-              Human verification
-            </div>
-            <Turnstile
-              ref={turnstileRef}
-              siteKey={turnstileSiteKey}
-              options={{ action: "register", size: "flexible", theme: "dark" }}
-              onSuccess={setCaptchaToken}
-              onExpire={() => setCaptchaToken("")}
-              onError={() => setCaptchaToken("")}
-            />
-          </div>
-        ) : (
-          <Alert variant="destructive">
-            <AlertCircle className="size-4" />
-            <AlertTitle>Registration temporarily unavailable</AlertTitle>
-            <AlertDescription>
-              Human verification must be configured before new accounts can be created.
-            </AlertDescription>
-          </Alert>
-        )}
+        <CaptchaField
+          ref={turnstileRef}
+          action="register"
+          onTokenChange={setCaptchaToken}
+        />
         <Button
           type="submit"
           className="w-full"

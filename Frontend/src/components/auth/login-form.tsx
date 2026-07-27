@@ -2,12 +2,14 @@
 
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { FormEvent, useState } from "react";
+import { FormEvent, useRef, useState } from "react";
+import type { TurnstileInstance } from "@marsidev/react-turnstile";
 import { AlertCircle, CheckCircle2, Loader2 } from "lucide-react";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import { CaptchaField, turnstileSiteKey } from "@/components/auth/captcha-field";
 import { supabaseConfigMessage } from "@/lib/supabase/config";
 import { createClient } from "@/lib/supabase/client";
 
@@ -34,11 +36,18 @@ function dashboardForRoles(roles: string[]) {
 
 export function LoginForm() {
   const router = useRouter();
+  const turnstileRef = useRef<TurnstileInstance>(null);
   const [formState, setFormState] = useState<FormState>({
     kind: "idle",
     message: "",
   });
   const [isSubmitting, setIsSubmitting] = useState(false);
+  const [captchaToken, setCaptchaToken] = useState("");
+
+  function resetCaptcha() {
+    setCaptchaToken("");
+    turnstileRef.current?.reset();
+  }
 
   async function handleSubmit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
@@ -47,6 +56,22 @@ export function LoginForm() {
 
     if (!supabase) {
       setFormState({ kind: "error", message: supabaseConfigMessage });
+      return;
+    }
+
+    if (!turnstileSiteKey) {
+      setFormState({
+        kind: "error",
+        message: "Human verification is not configured yet. Please contact MRC Racing support.",
+      });
+      return;
+    }
+
+    if (!captchaToken) {
+      setFormState({
+        kind: "error",
+        message: "Please complete the human verification before logging in.",
+      });
       return;
     }
 
@@ -61,6 +86,9 @@ export function LoginForm() {
       const { data, error } = await supabase.auth.signInWithPassword({
         email,
         password,
+        options: {
+          captchaToken,
+        },
       });
 
       if (error) {
@@ -86,6 +114,7 @@ export function LoginForm() {
       router.push(dashboardForRoles(roleRows.map((row) => row.role)));
       router.refresh();
     } catch (error) {
+      resetCaptcha();
       setFormState({
         kind: "error",
         message:
@@ -119,7 +148,12 @@ export function LoginForm() {
         <Label htmlFor="password">Password</Label>
         <Input id="password" name="password" type="password" placeholder="Your password" required />
       </div>
-      <Button type="submit" className="w-full" disabled={isSubmitting}>
+      <CaptchaField ref={turnstileRef} action="login" onTokenChange={setCaptchaToken} />
+      <Button
+        type="submit"
+        className="w-full"
+        disabled={isSubmitting || !turnstileSiteKey || !captchaToken}
+      >
         {isSubmitting ? (
           <>
             <Loader2 className="size-4 animate-spin" />
