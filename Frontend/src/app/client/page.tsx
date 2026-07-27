@@ -13,6 +13,9 @@ const clientNav = [
 export default function ClientPage() {
   return (
     <DashboardShell
+      allowedRoles={["client", "administrator"]}
+      accessDescription="the client dashboard"
+      accessTitle="Client access required"
       title="Client dashboard"
       description="A client workspace for credit balance, purchased tips, upcoming tips, history, payments, profile, notifications, and settings."
       nav={clientNav}

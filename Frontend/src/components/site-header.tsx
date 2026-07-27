@@ -2,7 +2,10 @@
 
 import Link from "next/link";
 import Image from "next/image";
-import { Menu } from "lucide-react";
+import { useRouter } from "next/navigation";
+import { useEffect, useState } from "react";
+import type { AuthChangeEvent, Session } from "@supabase/supabase-js";
+import { LogOut, Menu } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import {
   Sheet,
@@ -11,16 +14,114 @@ import {
   SheetTitle,
   SheetTrigger,
 } from "@/components/ui/sheet";
+import { dashboardForRoles, dashboardLinksForRoles } from "@/lib/auth/roles";
+import { createClient } from "@/lib/supabase/client";
 
-const navItems = [
+const publicNavItems = [
   { label: "Home", href: "/" },
   { label: "Pricing", href: "/pricing" },
-  { label: "Client", href: "/client" },
-  { label: "Tipster", href: "/tipster" },
-  { label: "Admin", href: "/admin" },
 ];
 
+type AuthState = "signed-out" | "signed-in";
+
+type RoleRow = {
+  role: string;
+};
+
 export function SiteHeader() {
+  const router = useRouter();
+  const [authState, setAuthState] = useState<AuthState>("signed-out");
+  const [roles, setRoles] = useState<string[]>([]);
+  const dashboardLinks = dashboardLinksForRoles(roles);
+  const navItems = [...publicNavItems, ...dashboardLinks];
+  const dashboardHref = authState === "signed-in" ? dashboardForRoles(roles) : null;
+
+  useEffect(() => {
+    const supabase = createClient();
+
+    if (!supabase) {
+      return;
+    }
+
+    let isMounted = true;
+
+    async function loadNavigation(userId?: string) {
+      try {
+        let resolvedUserId = userId;
+
+        if (!resolvedUserId) {
+          const {
+            data: { user },
+          } = await supabase.auth.getUser();
+
+          resolvedUserId = user?.id;
+        }
+
+        if (!resolvedUserId) {
+          if (isMounted) {
+            setRoles([]);
+            setAuthState("signed-out");
+          }
+          return;
+        }
+
+        const { data: roleData, error: roleError } = await supabase
+          .from("user_roles")
+          .select("role")
+          .eq("user_id", resolvedUserId);
+
+        if (roleError) {
+          throw roleError;
+        }
+
+        if (isMounted) {
+          const roleRows = (roleData ?? []) as RoleRow[];
+          setRoles(roleRows.map((row) => row.role));
+          setAuthState("signed-in");
+        }
+      } catch {
+        if (isMounted) {
+          setRoles([]);
+          setAuthState("signed-out");
+        }
+      }
+    }
+
+    loadNavigation();
+
+    const {
+      data: { subscription },
+    } = supabase.auth.onAuthStateChange((_event: AuthChangeEvent, session: Session | null) => {
+      if (!session) {
+        setRoles([]);
+        setAuthState("signed-out");
+        return;
+      }
+
+      window.setTimeout(() => {
+        loadNavigation(session.user.id);
+      }, 0);
+    });
+
+    return () => {
+      isMounted = false;
+      subscription.unsubscribe();
+    };
+  }, []);
+
+  async function handleLogout() {
+    const supabase = createClient();
+
+    if (supabase) {
+      await supabase.auth.signOut();
+    }
+
+    setRoles([]);
+    setAuthState("signed-out");
+    router.push("/login/");
+    router.refresh();
+  }
+
   return (
     <header className="sticky top-0 z-50 border-b border-brand-gold/30 bg-brand-purple-deep/90 text-foreground shadow-[0_12px_40px_rgba(0,0,0,0.22)] backdrop-blur">
       <div className="mx-auto flex h-16 w-full max-w-7xl items-center justify-between px-4 sm:px-6 lg:px-8">
@@ -52,12 +153,28 @@ export function SiteHeader() {
           ))}
         </nav>
         <div className="hidden items-center gap-2 md:flex">
-          <Button asChild variant="outline" size="sm" className="border-brand-cyan/60 text-brand-cyan hover:bg-brand-cyan/12 hover:text-brand-cyan">
-            <Link href="/login">Login</Link>
-          </Button>
-          <Button asChild size="sm" className="bg-brand-gold text-brand-purple-deep hover:bg-brand-gold/90">
-            <Link href="/register">Buy Credits</Link>
-          </Button>
+          {authState === "signed-in" ? (
+            <>
+              {dashboardHref ? (
+                <Button asChild size="sm" className="bg-brand-gold text-brand-purple-deep hover:bg-brand-gold/90">
+                  <Link href={dashboardHref}>Dashboard</Link>
+                </Button>
+              ) : null}
+              <Button type="button" variant="outline" size="sm" onClick={handleLogout}>
+                <LogOut className="size-4" />
+                Logout
+              </Button>
+            </>
+          ) : (
+            <>
+              <Button asChild variant="outline" size="sm" className="border-brand-cyan/60 text-brand-cyan hover:bg-brand-cyan/12 hover:text-brand-cyan">
+                <Link href="/login">Login</Link>
+              </Button>
+              <Button asChild size="sm" className="bg-brand-gold text-brand-purple-deep hover:bg-brand-gold/90">
+                <Link href="/register">Buy Credits</Link>
+              </Button>
+            </>
+          )}
         </div>
         <Sheet>
           <SheetTrigger asChild>
@@ -75,12 +192,28 @@ export function SiteHeader() {
                   <Link href={item.href}>{item.label}</Link>
                 </Button>
               ))}
-              <Button asChild variant="outline" className="mt-4 justify-start">
-                <Link href="/login">Login</Link>
-              </Button>
-              <Button asChild className="justify-start bg-brand-gold text-brand-purple-deep hover:bg-brand-gold/90">
-                <Link href="/register">Buy Credits</Link>
-              </Button>
+              {authState === "signed-in" ? (
+                <>
+                  {dashboardHref ? (
+                    <Button asChild className="mt-4 justify-start bg-brand-gold text-brand-purple-deep hover:bg-brand-gold/90">
+                      <Link href={dashboardHref}>Dashboard</Link>
+                    </Button>
+                  ) : null}
+                  <Button type="button" variant="outline" className="justify-start" onClick={handleLogout}>
+                    <LogOut className="size-4" />
+                    Logout
+                  </Button>
+                </>
+              ) : (
+                <>
+                  <Button asChild variant="outline" className="mt-4 justify-start">
+                    <Link href="/login">Login</Link>
+                  </Button>
+                  <Button asChild className="justify-start bg-brand-gold text-brand-purple-deep hover:bg-brand-gold/90">
+                    <Link href="/register">Buy Credits</Link>
+                  </Button>
+                </>
+              )}
             </div>
           </SheetContent>
         </Sheet>

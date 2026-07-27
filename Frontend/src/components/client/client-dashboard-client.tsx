@@ -1,7 +1,6 @@
 "use client";
 
 import { Bell, CreditCard, History, Wallet } from "lucide-react";
-import { RoleGate } from "@/components/auth/role-gate";
 import { Badge } from "@/components/ui/badge";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
@@ -9,11 +8,7 @@ import { premiumTips } from "@/lib/mock-data";
 
 export function ClientDashboardClient() {
   return (
-    <RoleGate
-      allowedRoles={["client", "administrator"]}
-      description="the client dashboard"
-      title="Client access check"
-    >
+    <>
       <div className="grid gap-4 md:grid-cols-3">
         {[
           { label: "Credit balance", value: "42", icon: Wallet },
@@ -64,6 +59,6 @@ export function ClientDashboardClient() {
           </Table>
         </CardContent>
       </Card>
-    </RoleGate>
+    </>
   );
 }

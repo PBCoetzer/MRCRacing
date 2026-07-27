@@ -108,7 +108,7 @@ export function RegisterForm() {
         email,
         password,
         options: {
-          emailRedirectTo: `${getSiteUrl()}/login/`,
+          emailRedirectTo: `${getSiteUrl()}/auth/callback/`,
           captchaToken,
           data: {
             accepted_terms: acceptedTerms,

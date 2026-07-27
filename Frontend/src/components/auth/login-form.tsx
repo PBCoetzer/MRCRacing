@@ -10,6 +10,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { CaptchaField, turnstileSiteKey } from "@/components/auth/captcha-field";
+import { dashboardForRoles } from "@/lib/auth/roles";
 import { supabaseConfigMessage } from "@/lib/supabase/config";
 import { createClient } from "@/lib/supabase/client";
 
@@ -21,18 +22,6 @@ type FormState = {
 type RoleRow = {
   role: string;
 };
-
-function dashboardForRoles(roles: string[]) {
-  if (roles.includes("administrator")) {
-    return "/admin/";
-  }
-
-  if (roles.includes("tipster")) {
-    return "/tipster/";
-  }
-
-  return "/client/";
-}
 
 export function LoginForm() {
   const router = useRouter();

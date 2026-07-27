@@ -13,6 +13,9 @@ const tipsterNav = [
 export default function TipsterPage() {
   return (
     <DashboardShell
+      allowedRoles={["tipster", "administrator"]}
+      accessDescription="the tipster dashboard"
+      accessTitle="Tipster access required"
       title="Tipster dashboard"
       description="A publishing and performance workspace for verified tipsters."
       nav={tipsterNav}

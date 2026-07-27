@@ -1,7 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import { FormEvent, useState } from "react";
+import { FormEvent, useEffect, useState } from "react";
 import { AlertCircle, CheckCircle2, Loader2 } from "lucide-react";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { Button } from "@/components/ui/button";
@@ -15,15 +15,79 @@ type FormState = {
   message: string;
 };
 
+type RecoveryState = "checking" | "ready" | "error";
+
 export function ResetPasswordForm() {
   const [formState, setFormState] = useState<FormState>({
     kind: "idle",
     message: "",
   });
+  const [recoveryState, setRecoveryState] = useState<RecoveryState>("checking");
+  const [recoveryMessage, setRecoveryMessage] = useState(
+    "Verifying your secure password reset link.",
+  );
   const [isSubmitting, setIsSubmitting] = useState(false);
+
+  useEffect(() => {
+    let isMounted = true;
+
+    async function verifyRecoverySession() {
+      const supabase = createClient();
+
+      if (!supabase) {
+        setRecoveryState("error");
+        setRecoveryMessage(supabaseConfigMessage);
+        return;
+      }
+
+      try {
+        const {
+          data: { user },
+          error,
+        } = await supabase.auth.getUser();
+
+        if (error) {
+          throw error;
+        }
+
+        if (!user) {
+          throw new Error("This password reset link is invalid or has expired.");
+        }
+
+        if (isMounted) {
+          window.history.replaceState({}, document.title, window.location.pathname);
+          setRecoveryState("ready");
+          setRecoveryMessage("Reset link verified. Choose your new password.");
+        }
+      } catch (error) {
+        if (isMounted) {
+          setRecoveryState("error");
+          setRecoveryMessage(
+            error instanceof Error
+              ? error.message
+              : "This password reset link is invalid or has expired.",
+          );
+        }
+      }
+    }
+
+    verifyRecoverySession();
+
+    return () => {
+      isMounted = false;
+    };
+  }, []);
 
   async function handleSubmit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
+
+    if (recoveryState !== "ready") {
+      setFormState({
+        kind: "error",
+        message: "Please open a valid password reset link before choosing a new password.",
+      });
+      return;
+    }
 
     const supabase = createClient();
 
@@ -71,6 +135,23 @@ export function ResetPasswordForm() {
 
   return (
     <form className="grid gap-4" onSubmit={handleSubmit}>
+      <Alert variant={recoveryState === "error" ? "destructive" : "default"}>
+        {recoveryState === "checking" ? (
+          <Loader2 className="size-4 animate-spin" />
+        ) : recoveryState === "ready" ? (
+          <CheckCircle2 className="size-4" />
+        ) : (
+          <AlertCircle className="size-4" />
+        )}
+        <AlertTitle>
+          {recoveryState === "checking"
+            ? "Checking reset link"
+            : recoveryState === "ready"
+              ? "Reset link verified"
+              : "Reset link issue"}
+        </AlertTitle>
+        <AlertDescription>{recoveryMessage}</AlertDescription>
+      </Alert>
       {formState.kind !== "idle" ? (
         <Alert variant={formState.kind === "error" ? "destructive" : "default"}>
           {formState.kind === "error" ? (
@@ -84,13 +165,27 @@ export function ResetPasswordForm() {
       ) : null}
       <div className="grid gap-2">
         <Label htmlFor="password">New password</Label>
-        <Input id="password" name="password" type="password" minLength={8} required />
+        <Input
+          id="password"
+          name="password"
+          type="password"
+          minLength={8}
+          required
+          disabled={recoveryState !== "ready"}
+        />
       </div>
       <div className="grid gap-2">
         <Label htmlFor="confirmPassword">Confirm password</Label>
-        <Input id="confirmPassword" name="confirmPassword" type="password" minLength={8} required />
+        <Input
+          id="confirmPassword"
+          name="confirmPassword"
+          type="password"
+          minLength={8}
+          required
+          disabled={recoveryState !== "ready"}
+        />
       </div>
-      <Button type="submit" disabled={isSubmitting}>
+      <Button type="submit" disabled={isSubmitting || recoveryState !== "ready"}>
         {isSubmitting ? (
           <>
             <Loader2 className="size-4 animate-spin" />

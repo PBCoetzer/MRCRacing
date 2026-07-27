@@ -1,7 +1,6 @@
 "use client";
 
 import { BadgeCheck, LineChart, Trophy, Users } from "lucide-react";
-import { RoleGate } from "@/components/auth/role-gate";
 import { Badge } from "@/components/ui/badge";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { premiumTips, tipsters } from "@/lib/mock-data";
@@ -10,11 +9,7 @@ export function TipsterDashboardClient() {
   const primaryTipster = tipsters[0];
 
   return (
-    <RoleGate
-      allowedRoles={["tipster", "administrator"]}
-      description="the tipster dashboard"
-      title="Tipster access check"
-    >
+    <>
       <div className="grid gap-4 md:grid-cols-4">
         {[
           { label: "ROI", value: primaryTipster.roi, icon: LineChart },
@@ -47,6 +42,6 @@ export function TipsterDashboardClient() {
           </Card>
         ))}
       </div>
-    </RoleGate>
+    </>
   );
 }

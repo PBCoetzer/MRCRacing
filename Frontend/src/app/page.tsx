@@ -69,7 +69,7 @@ export default function Home() {
                   </Link>
                 </Button>
                 <Button asChild size="lg" variant="outline" className="border-brand-cyan/45 bg-brand-cyan/10 text-brand-cyan hover:bg-brand-cyan/16 hover:text-brand-cyan">
-                  <Link href="/admin">View admin board</Link>
+                  <Link href="/pricing">View credit packages</Link>
                 </Button>
               </div>
               <div className="mt-10 grid max-w-2xl grid-cols-3 gap-3 text-sm">

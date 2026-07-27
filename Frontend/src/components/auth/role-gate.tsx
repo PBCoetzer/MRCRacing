@@ -3,6 +3,8 @@
 import Link from "next/link";
 import { useEffect, useState } from "react";
 import { AlertCircle, Loader2, ShieldCheck } from "lucide-react";
+import { SiteFooter } from "@/components/site-footer";
+import { SiteHeader } from "@/components/site-header";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { Button } from "@/components/ui/button";
 import { createClient } from "@/lib/supabase/client";
@@ -109,34 +111,40 @@ export function RoleGate({ allowedRoles, children, description, title }: RoleGat
   }
 
   return (
-    <div className="grid gap-4">
-      <Alert variant={gateState === "error" || gateState === "forbidden" ? "destructive" : "default"}>
-        {gateState === "loading" ? (
-          <Loader2 className="size-4 animate-spin" />
-        ) : gateState === "signed-out" ? (
-          <ShieldCheck className="size-4" />
-        ) : (
-          <AlertCircle className="size-4" />
-        )}
-        <AlertTitle>
-          {gateState === "loading"
-            ? "Checking access"
-            : gateState === "signed-out"
-              ? "Login required"
-              : title}
-        </AlertTitle>
-        <AlertDescription>{message}</AlertDescription>
-      </Alert>
-      {gateState === "signed-out" ? (
-        <div className="flex flex-wrap gap-3">
-          <Button asChild>
-            <Link href="/login/">Login</Link>
-          </Button>
-          <Button asChild variant="outline">
-            <Link href="/register/">Create account</Link>
-          </Button>
+    <div className="min-h-screen bg-background text-foreground">
+      <SiteHeader />
+      <main className="mx-auto flex min-h-[calc(100svh-8rem)] w-full max-w-2xl items-center px-4 py-10 sm:px-6">
+        <div className="grid w-full gap-4">
+          <Alert variant={gateState === "error" || gateState === "forbidden" ? "destructive" : "default"}>
+            {gateState === "loading" ? (
+              <Loader2 className="size-4 animate-spin" />
+            ) : gateState === "signed-out" ? (
+              <ShieldCheck className="size-4" />
+            ) : (
+              <AlertCircle className="size-4" />
+            )}
+            <AlertTitle>
+              {gateState === "loading"
+                ? "Checking access"
+                : gateState === "signed-out"
+                  ? "Login required"
+                  : title}
+            </AlertTitle>
+            <AlertDescription>{message}</AlertDescription>
+          </Alert>
+          {gateState === "signed-out" ? (
+            <div className="flex flex-wrap gap-3">
+              <Button asChild>
+                <Link href="/login/">Login</Link>
+              </Button>
+              <Button asChild variant="outline">
+                <Link href="/register/">Create account</Link>
+              </Button>
+            </div>
+          ) : null}
         </div>
-      ) : null}
+      </main>
+      <SiteFooter />
     </div>
   );
 }
