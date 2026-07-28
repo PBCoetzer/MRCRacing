@@ -1,6 +1,6 @@
 # MRC Website
 
-MRC Website is a South African sports tipping platform project. The product will run locally first and is planned for production hosting on a Node.js-compatible provider with Supabase, PostgreSQL, Supabase Auth, and Supabase Storage.
+MRC Website is a South African horse-racing tipping platform. The static frontend is hosted on Xneelo and uses Supabase for PostgreSQL, Auth, row-level security, queues, cron, and Edge Functions.
 
 ## Current Status
 
@@ -12,12 +12,14 @@ MRC Website is a South African sports tipping platform project. The product will
 - GitHub repository confirmed as `PBCoetzer/MRCRacing`.
 - Supabase project confirmed as `MRCRacing`.
 - Xneelo Volume Plan live-testing deployment is documented in `Deployment/GitHub Supabase Xneelo Plan.md`.
+- Production meeting-card tables, commerce RPCs, private test data, and the notification outbox are live.
+- Verified tipsters can publish race selections and PA, Pick 6, Bipot, Jackpot, and custom meeting bets.
 
 ## Project Principles
 
 - Document decisions before implementation.
 - Keep local development safe, reproducible, and free from hard-coded secrets.
-- Use a modular architecture for multiple sports, tipsters, payment gateways, and future subscription models.
+- Use a provider-neutral architecture for horse-racing feeds, tipsters, payment gateways, and future delivery channels.
 - Treat credits as a wallet ledger, not as editable numbers without history.
 - Keep premium betting tips behind role, credit, and audit controls.
 

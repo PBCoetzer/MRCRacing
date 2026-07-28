@@ -1,22 +1,22 @@
 import { DashboardShell } from "@/components/dashboard-shell";
-import { TipsterDashboardClient } from "@/components/tipster/tipster-dashboard-client";
+import { ManageTipsClient } from "@/components/tipster/manage-tips-client";
 
 const tipsterNav = [
   { label: "Dashboard", href: "/tipster/" },
   { label: "Manage Tips", href: "/tipster/manage-tips/" },
 ];
 
-export default function TipsterPage() {
+export default function ManageTipsPage() {
   return (
     <DashboardShell
       allowedRoles={["tipster", "administrator"]}
-      accessDescription="the tipster dashboard"
+      accessDescription="the meeting-card editor"
       accessTitle="Tipster access required"
-      title="Tipster dashboard"
-      description="A publishing and performance workspace for verified tipsters."
+      title="Manage meeting tips"
+      description="Create structured horse-racing selections, meeting bets, pre-sale cards, publications, and audited revisions."
       nav={tipsterNav}
     >
-      <TipsterDashboardClient />
+      <ManageTipsClient />
     </DashboardShell>
   );
 }

@@ -1,0 +1,134 @@
+export type TipCardStatus = "draft" | "coming_soon" | "published" | "voided";
+
+export type RaceMeeting = {
+  id: string;
+  venue: string;
+  country_code: string;
+  meeting_date: string;
+  first_race_at: string;
+  last_race_at: string | null;
+  status: "scheduled" | "in_progress" | "completed" | "cancelled";
+  is_test: boolean;
+  source_name: string;
+  source_url: string | null;
+};
+
+export type RaceFixture = {
+  id: string;
+  meeting_id: string;
+  race_number: number;
+  title: string;
+  venue: string | null;
+  starts_at: string;
+  distance_m: number | null;
+  race_class: string | null;
+  status: string;
+  result_summary: string | null;
+};
+
+export type RaceEntry = {
+  id: string;
+  fixture_id: string;
+  saddle_number: number;
+  horse_name: string;
+  jockey_name: string | null;
+  trainer_name: string | null;
+  draw: number | null;
+  odds: string | null;
+  status: "active" | "scratched";
+  result_position: number | null;
+};
+
+export type MeetingBetOption = {
+  id: string;
+  meeting_id: string;
+  bet_type: "pa" | "pick6" | "bipot" | "jackpot" | "other";
+  display_name: string;
+  cutoff_at: string;
+  leg_count: number;
+  sort_order: number;
+};
+
+export type MeetingBetLeg = {
+  bet_option_id: string;
+  leg_number: number;
+  fixture_id: string;
+};
+
+export type TipCard = {
+  id: string;
+  tipster_id: string;
+  meeting_id: string;
+  title: string;
+  summary: string | null;
+  coin_price: number;
+  status: TipCardStatus;
+  revision: number;
+  listed_at: string | null;
+  published_at: string | null;
+  voided_at: string | null;
+  updated_at: string;
+};
+
+export type RaceTipSelection = {
+  id: string;
+  tip_card_id: string;
+  fixture_id: string;
+  winner_entry_id: string | null;
+  place_entry_id: string | null;
+  comments: string | null;
+};
+
+export type TipCardMultiple = {
+  id: string;
+  tip_card_id: string;
+  bet_option_id: string;
+  custom_name: string | null;
+  comments: string | null;
+};
+
+export type TipCardMultipleSelection = {
+  multiple_id: string;
+  leg_number: number;
+  fixture_id: string;
+  entry_id: string;
+};
+
+export type TipsterProfile = {
+  id: string;
+  user_id: string;
+  display_name: string;
+  biography: string | null;
+  is_verified: boolean;
+  commission_rate_override: number | null;
+};
+
+export type TipsterPackage = {
+  id: string;
+  tipster_id: string;
+  name: string;
+  duration_months: 1 | 3 | 6 | 12;
+  coin_price: number;
+  is_active: boolean;
+  created_at: string;
+};
+
+export type RaceSelectionDraft = {
+  fixtureId: string;
+  winnerEntryId: string;
+  placeEntryId: string;
+  comments: string;
+};
+
+export type MultipleLegDraft = {
+  legNumber: number;
+  fixtureId: string;
+  entryIds: string[];
+};
+
+export type MultipleDraft = {
+  betOptionId: string;
+  customName: string;
+  comments: string;
+  legs: MultipleLegDraft[];
+};
