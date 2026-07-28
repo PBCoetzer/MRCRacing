@@ -2,12 +2,10 @@ import { AdminDashboardClient } from "@/components/admin/admin-dashboard-client"
 import { DashboardShell } from "@/components/dashboard-shell";
 
 const adminNav = [
-  { label: "Dashboard", href: "/admin" },
-  { label: "Users", href: "/admin" },
-  { label: "Tipsters", href: "/admin" },
-  { label: "Fixtures", href: "/admin" },
-  { label: "Payments", href: "/admin" },
-  { label: "Audit Logs", href: "/admin" },
+  { label: "Operations", href: "/admin/" },
+  { label: "Users & Tipsters", href: "/admin/#users" },
+  { label: "Disputes", href: "/admin/#disputes" },
+  { label: "Notifications", href: "/admin/#notifications" },
 ];
 
 export default function AdminPage() {

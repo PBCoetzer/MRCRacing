@@ -111,3 +111,17 @@ This TODO is the operating checklist for the MRC Website build. Every completed 
 - [x] Production Deployment Guide.
 - [ ] Future Roadmap.
 - [ ] Complete local source code.
+
+## 12. Tipster Meeting Cards
+
+- [x] Add normalized meetings, runners, betting legs, cards, selections, packages, purchases, subscriptions, entitlements, earnings, disputes, and notification outbox tables.
+- [x] Add authenticated publication, revision, purchase, subscription, refund, and dispute RPCs.
+- [x] Add optimistic card revisions, race and meeting-bet locks, automatic one-off refunds, commission snapshots, and immutable earnings reversals.
+- [x] Add private Greyville test meeting data with future synthetic times and source attribution.
+- [x] Add live tipster card editor for winners, places, comments, PA, Pick 6, Bipot, Jackpots, and Other bets.
+- [x] Add client meeting marketplace, subscriptions, premium entitlement view, purchases, and disputes.
+- [x] Add admin user roles, tipster verification, test access, wallet adjustment, commission, disputes, refunds, and notification operations.
+- [x] Deploy the Supabase notification Edge Function with Resend-ready branded templates.
+- [x] Verify static build, critical RLS personas, idempotent purchases, subscriptions, refunds, dispute reversals, revisions, and notification queue insertion.
+- [ ] Configure the production `RESEND_API_KEY` Edge Function secret and complete a real delivery test.
+- [ ] Replace the private Raceform clone with the licensed authoritative racing API feed.

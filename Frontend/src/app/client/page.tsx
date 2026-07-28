@@ -2,12 +2,9 @@ import { ClientDashboardClient } from "@/components/client/client-dashboard-clie
 import { DashboardShell } from "@/components/dashboard-shell";
 
 const clientNav = [
-  { label: "Credits", href: "/client" },
-  { label: "Purchased Tips", href: "/client" },
-  { label: "Upcoming Tips", href: "/client" },
-  { label: "History", href: "/client" },
-  { label: "Payments", href: "/client" },
-  { label: "Settings", href: "/client" },
+  { label: "Marketplace", href: "/client/" },
+  { label: "Purchased Tips", href: "/client/#unlocked-tips" },
+  { label: "Purchases", href: "/client/#purchases" },
 ];
 
 export default function ClientPage() {
