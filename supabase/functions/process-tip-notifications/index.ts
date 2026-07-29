@@ -13,6 +13,9 @@ type NotificationPayload = {
   coins?: number;
   reason?: string;
   clientUrl?: string;
+  status?: "active" | "flagged" | "suspended" | "banned";
+  suspensionUntil?: string;
+  publicMessage?: string;
 };
 
 type NotificationJob = {
@@ -130,6 +133,63 @@ function renderLayout(title: string, body: string, actionUrl: string, actionLabe
 function renderEmail(job: NotificationJob): EmailContent {
   const payload = job.payload ?? {};
   const clientUrl = payload.clientUrl ?? "https://www.mrcracing.co.za/client/";
+
+  if (
+    ["account_suspended", "account_banned", "account_restored"].includes(
+      job.event_type,
+    )
+  ) {
+    const publicMessage = String(
+      payload.publicMessage ??
+        "Please contact MRC Racing support if you need assistance.",
+    );
+
+    if (job.event_type === "account_suspended") {
+      const suspensionUntil = payload.suspensionUntil
+        ? new Date(payload.suspensionUntil).toLocaleString("en-ZA", {
+          timeZone: "Africa/Johannesburg",
+          dateStyle: "long",
+          timeStyle: "short",
+        })
+        : "the stated review date";
+      const subject = "Your MRC Racing account is temporarily suspended";
+      const text =
+        `Your MRC Racing account is suspended until ${suspensionUntil}. ${publicMessage}`;
+      const html = renderLayout(
+        "Your account is temporarily suspended",
+        `<p style="margin:0 0 14px">Access to your MRC Racing account is suspended until <strong>${escapeHtml(suspensionUntil)}</strong>.</p><p style="margin:0">${escapeHtml(publicMessage)}</p>`,
+        "https://www.mrcracing.co.za/login/",
+        "Open MRC Racing",
+      );
+
+      return { subject, text, html };
+    }
+
+    if (job.event_type === "account_banned") {
+      const subject = "Your MRC Racing account has been restricted";
+      const text =
+        `Your MRC Racing account has been permanently restricted. ${publicMessage}`;
+      const html = renderLayout(
+        "Your account has been restricted",
+        `<p style="margin:0 0 14px">Access to your MRC Racing account has been permanently restricted.</p><p style="margin:0">${escapeHtml(publicMessage)}</p>`,
+        "https://www.mrcracing.co.za/",
+        "Visit MRC Racing",
+      );
+
+      return { subject, text, html };
+    }
+
+    const subject = "Your MRC Racing account access has been restored";
+    const text = `Your MRC Racing account access has been restored. ${publicMessage}`;
+    const html = renderLayout(
+      "Your account access is restored",
+      `<p style="margin:0 0 14px">Your MRC Racing account is active again and you can sign in normally.</p><p style="margin:0">${escapeHtml(publicMessage)}</p>`,
+      "https://www.mrcracing.co.za/login/",
+      "Log in to MRC Racing",
+    );
+
+    return { subject, text, html };
+  }
 
   if (job.event_type === "purchase_refunded") {
     const credits = Number(payload.coins ?? 0);

@@ -10,7 +10,14 @@ import { Button } from "@/components/ui/button";
 import { createClient } from "@/lib/supabase/client";
 import { supabaseConfigMessage } from "@/lib/supabase/config";
 
-type RoleGateState = "loading" | "configured" | "signed-out" | "forbidden" | "ready" | "error";
+type RoleGateState =
+  | "loading"
+  | "configured"
+  | "signed-out"
+  | "restricted"
+  | "forbidden"
+  | "ready"
+  | "error";
 
 type RoleGateProps = {
   allowedRoles: string[];
@@ -21,6 +28,12 @@ type RoleGateProps = {
 
 type RoleRow = {
   role: string;
+};
+
+type AccountControl = {
+  status: "active" | "flagged" | "suspended" | "banned";
+  suspension_until: string | null;
+  public_message: string | null;
 };
 
 function isMissingAuthSession(error: unknown) {
@@ -65,20 +78,49 @@ export function RoleGate({ allowedRoles, children, description, title }: RoleGat
           return;
         }
 
-        const { data: roles, error: roleError } = await supabase
-          .from("user_roles")
-          .select("role")
-          .eq("user_id", user.id);
+        const [controlResult, roleResult] = await Promise.all([
+          supabase
+            .from("user_account_controls")
+            .select("status,suspension_until,public_message")
+            .eq("user_id", user.id)
+            .maybeSingle(),
+          supabase
+            .from("user_roles")
+            .select("role")
+            .eq("user_id", user.id),
+        ]);
 
-        if (roleError) {
-          throw roleError;
+        if (controlResult.error) {
+          throw controlResult.error;
+        }
+
+        const control = controlResult.data as AccountControl | null;
+        const activeSuspension =
+          control?.status === "suspended" &&
+          (!control.suspension_until ||
+            new Date(control.suspension_until).getTime() > Date.now());
+
+        if (control?.status === "banned" || activeSuspension) {
+          const expiry = control.suspension_until
+            ? ` until ${new Date(control.suspension_until).toLocaleString("en-ZA")}`
+            : "";
+          setGateState("restricted");
+          setMessage(
+            control.public_message ||
+              `This account is currently restricted${expiry}. Please contact MRC Racing support if you need assistance.`,
+          );
+          return;
+        }
+
+        if (roleResult.error) {
+          throw roleResult.error;
         }
 
         if (!isMounted) {
           return;
         }
 
-        const roleRows = (roles ?? []) as RoleRow[];
+        const roleRows = (roleResult.data ?? []) as RoleRow[];
         const hasAccess = roleRows.some((row) => allowedRoles.includes(row.role));
 
         if (!hasAccess) {
@@ -115,7 +157,15 @@ export function RoleGate({ allowedRoles, children, description, title }: RoleGat
       <SiteHeader />
       <main className="mx-auto flex min-h-[calc(100svh-8rem)] w-full max-w-2xl items-center px-4 py-10 sm:px-6">
         <div className="grid w-full gap-4">
-          <Alert variant={gateState === "error" || gateState === "forbidden" ? "destructive" : "default"}>
+          <Alert
+            variant={
+              gateState === "error" ||
+              gateState === "forbidden" ||
+              gateState === "restricted"
+                ? "destructive"
+                : "default"
+            }
+          >
             {gateState === "loading" ? (
               <Loader2 className="size-4 animate-spin" />
             ) : gateState === "signed-out" ? (
@@ -128,6 +178,8 @@ export function RoleGate({ allowedRoles, children, description, title }: RoleGat
                 ? "Checking access"
                 : gateState === "signed-out"
                   ? "Login required"
+                  : gateState === "restricted"
+                    ? "Account restricted"
                   : title}
             </AlertTitle>
             <AlertDescription>{message}</AlertDescription>

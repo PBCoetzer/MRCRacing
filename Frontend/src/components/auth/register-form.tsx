@@ -88,6 +88,8 @@ export function RegisterForm() {
     }
 
     const formData = new FormData(event.currentTarget);
+    const firstName = String(formData.get("firstName") ?? "").trim();
+    const lastName = String(formData.get("lastName") ?? "").trim();
     const displayName = String(formData.get("displayName") ?? "").trim();
     const phone = String(formData.get("phone") ?? "").trim();
     const email = String(formData.get("email") ?? "").trim();
@@ -113,7 +115,9 @@ export function RegisterForm() {
           data: {
             accepted_terms: acceptedTerms,
             confirmed_over_18: confirmedOver18,
-            display_name: displayName,
+            first_name: firstName,
+            last_name: lastName,
+            display_name: displayName || `${firstName} ${lastName}`,
             phone,
           },
         },
@@ -154,9 +158,24 @@ export function RegisterForm() {
   return (
     <>
       <form ref={formRef} className="grid gap-4" onSubmit={handleSubmit}>
+        <div className="grid gap-4 sm:grid-cols-2">
+          <div className="grid gap-2">
+            <Label htmlFor="first-name">First name</Label>
+            <Input id="first-name" name="firstName" autoComplete="given-name" required />
+          </div>
+          <div className="grid gap-2">
+            <Label htmlFor="last-name">Surname</Label>
+            <Input id="last-name" name="lastName" autoComplete="family-name" required />
+          </div>
+        </div>
         <div className="grid gap-2">
-          <Label htmlFor="name">Display name</Label>
-          <Input id="name" name="displayName" placeholder="Your name" required />
+          <Label htmlFor="name">Public display name (optional)</Label>
+          <Input
+            id="name"
+            name="displayName"
+            placeholder="Defaults to your full name"
+            autoComplete="nickname"
+          />
         </div>
         <div className="grid gap-2">
           <Label htmlFor="phone">Cell number</Label>
