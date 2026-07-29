@@ -1,4 +1,4 @@
-export type TipCardStatus = "draft" | "coming_soon" | "published" | "voided";
+export type TipCardStatus = "draft" | "coming_soon" | "published" | "settled" | "voided";
 
 export type RaceMeeting = {
   id: string;
@@ -84,6 +84,7 @@ export type TipCardMultiple = {
   tip_card_id: string;
   bet_option_id: string;
   custom_name: string | null;
+  tip_text: string | null;
   comments: string | null;
 };
 
@@ -99,8 +100,35 @@ export type TipsterProfile = {
   user_id: string;
   display_name: string;
   biography: string | null;
+  photo_path?: string | null;
   is_verified: boolean;
+  ranking?: number | null;
   commission_rate_override: number | null;
+};
+
+export type TipsterPerformanceStats = {
+  tipster_id: string;
+  published_winner_tips: number;
+  settled_winner_tips: number;
+  winner_hits: number;
+  winner_strike_rate: number | null;
+  roi_percent: number | null;
+  updated_at: string;
+};
+
+export type ClientTipsterFavourite = {
+  user_id: string;
+  tipster_id: string;
+  created_at: string;
+};
+
+export type CreditPackage = {
+  id: string;
+  name: string;
+  credits: number;
+  price_cents: number;
+  is_active: boolean;
+  sort_order: number;
 };
 
 export type TipsterPackage = {
@@ -129,6 +157,7 @@ export type MultipleLegDraft = {
 export type MultipleDraft = {
   betOptionId: string;
   customName: string;
+  tipText: string;
   comments: string;
   legs: MultipleLegDraft[];
 };

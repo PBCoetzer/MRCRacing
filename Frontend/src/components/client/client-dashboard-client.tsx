@@ -1,5 +1,6 @@
 "use client";
 
+import Link from "next/link";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import {
   AlertTriangle,
@@ -8,6 +9,7 @@ import {
   Coins,
   CreditCard,
   Eye,
+  Heart,
   History,
   Loader2,
   RefreshCw,
@@ -21,8 +23,9 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/com
 import { Input } from "@/components/ui/input";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { createClient } from "@/lib/supabase/client";
-import { formatCoins, formatRaceDateTime } from "@/lib/racing/format";
+import { formatCredits, formatRaceDateTime } from "@/lib/racing/format";
 import type {
+  ClientTipsterFavourite,
   MeetingBetOption,
   RaceEntry,
   RaceFixture,
@@ -32,6 +35,7 @@ import type {
   TipCardMultiple,
   TipCardMultipleSelection,
   TipsterPackage,
+  TipsterPerformanceStats,
   TipsterProfile,
 } from "@/lib/racing/types";
 
@@ -106,6 +110,9 @@ export function ClientDashboardClient() {
   const [multiples, setMultiples] = useState<TipCardMultiple[]>([]);
   const [multipleSelections, setMultipleSelections] = useState<TipCardMultipleSelection[]>([]);
   const [betOptions, setBetOptions] = useState<MeetingBetOption[]>([]);
+  const [performanceStats, setPerformanceStats] = useState<TipsterPerformanceStats[]>([]);
+  const [favourites, setFavourites] = useState<ClientTipsterFavourite[]>([]);
+  const [userId, setUserId] = useState("");
   const [disputeReasons, setDisputeReasons] = useState<Record<string, string>>({});
 
   const loadDashboard = useCallback(async () => {
@@ -140,6 +147,8 @@ export function ClientDashboardClient() {
         subscriptionResult,
         entitlementResult,
         disputeResult,
+        performanceResult,
+        favouriteResult,
       ] = await Promise.all([
         supabase.from("wallets").select("balance").eq("user_id", user.id).maybeSingle(),
         supabase
@@ -176,6 +185,15 @@ export function ClientDashboardClient() {
           .from("purchase_disputes")
           .select("id,purchase_id,status,reason,created_at")
           .order("created_at", { ascending: false }),
+        supabase
+          .from("tipster_performance_stats")
+          .select(
+            "tipster_id,published_winner_tips,settled_winner_tips,winner_hits,winner_strike_rate,roi_percent,updated_at",
+          ),
+        supabase
+          .from("client_tipster_favourites")
+          .select("user_id,tipster_id,created_at")
+          .eq("user_id", user.id),
       ]);
 
       const firstError =
@@ -187,7 +205,9 @@ export function ClientDashboardClient() {
         purchaseResult.error ??
         subscriptionResult.error ??
         entitlementResult.error ??
-        disputeResult.error;
+        disputeResult.error ??
+        performanceResult.error ??
+        favouriteResult.error;
 
       if (firstError) {
         throw firstError;
@@ -232,7 +252,7 @@ export function ClientDashboardClient() {
             .in("tip_card_id", cardIds),
           supabase
             .from("tip_card_multiples")
-            .select("id,tip_card_id,bet_option_id,custom_name,comments")
+            .select("id,tip_card_id,bet_option_id,custom_name,tip_text,comments")
             .in("tip_card_id", cardIds),
           supabase
             .from("meeting_bet_options")
@@ -291,6 +311,9 @@ export function ClientDashboardClient() {
       setMultiples(loadedMultiples);
       setMultipleSelections(loadedMultipleSelections);
       setBetOptions(loadedOptions);
+      setPerformanceStats((performanceResult.data ?? []) as TipsterPerformanceStats[]);
+      setFavourites((favouriteResult.data ?? []) as ClientTipsterFavourite[]);
+      setUserId(user.id);
     } catch (loadError) {
       setError(messageFrom(loadError, "Could not load the client marketplace."));
     } finally {
@@ -322,6 +345,18 @@ export function ClientDashboardClient() {
   const optionById = useMemo(
     () => new Map(betOptions.map((option) => [option.id, option])),
     [betOptions],
+  );
+  const packageById = useMemo(
+    () => new Map(packages.map((tipsterPackage) => [tipsterPackage.id, tipsterPackage])),
+    [packages],
+  );
+  const statsByTipster = useMemo(
+    () => new Map(performanceStats.map((stats) => [stats.tipster_id, stats])),
+    [performanceStats],
+  );
+  const favouriteIds = useMemo(
+    () => new Set(favourites.map((favourite) => favourite.tipster_id)),
+    [favourites],
   );
   const entitlementIds = useMemo(
     () => new Set(entitlements.map((item) => item.tip_card_id)),
@@ -369,31 +404,36 @@ export function ClientDashboardClient() {
     }
   }
 
-  async function purchaseSubscription(tipsterPackage: TipsterPackage) {
+  async function toggleFavourite(tipsterId: string) {
     const supabase = createClient();
 
-    if (!supabase) {
+    if (!supabase || !userId) {
       return;
     }
 
-    setProcessingId(tipsterPackage.id);
+    setProcessingId(`favourite:${tipsterId}`);
     setError("");
     setMessage("");
+    const isFavourite = favouriteIds.has(tipsterId);
 
     try {
-      const { error: purchaseError } = await supabase.rpc("purchase_tipster_subscription", {
-        p_package_id: tipsterPackage.id,
-        p_idempotency_key: crypto.randomUUID(),
-      });
+      const response = isFavourite
+        ? await supabase
+            .from("client_tipster_favourites")
+            .delete()
+            .eq("user_id", userId)
+            .eq("tipster_id", tipsterId)
+        : await supabase
+            .from("client_tipster_favourites")
+            .insert({ user_id: userId, tipster_id: tipsterId });
 
-      if (purchaseError) {
-        throw purchaseError;
+      if (response.error) {
+        throw response.error;
       }
 
-      setMessage("Subscription access starts immediately and will not auto-renew.");
       await loadDashboard();
-    } catch (purchaseError) {
-      setError(messageFrom(purchaseError, "The subscription could not be purchased."));
+    } catch (favouriteError) {
+      setError(messageFrom(favouriteError, "The favourite could not be updated."));
     } finally {
       setProcessingId("");
     }
@@ -470,7 +510,7 @@ export function ClientDashboardClient() {
 
       <div className="grid gap-4 md:grid-cols-4">
         {[
-          { label: "Coin balance", value: walletBalance, icon: Coins },
+          { label: "Credit balance", value: walletBalance, icon: Coins },
           { label: "Meeting access", value: entitlements.length, icon: TicketCheck },
           { label: "Active subscriptions", value: activeSubscriptionTipsters.size, icon: ShieldCheck },
           { label: "Open disputes", value: disputes.filter((item) => item.status === "open").length, icon: Bell },
@@ -487,108 +527,69 @@ export function ClientDashboardClient() {
         ))}
       </div>
 
-      <Card>
-        <CardHeader className="flex-row items-start justify-between gap-4">
-          <div>
-            <CardTitle>Meeting card marketplace</CardTitle>
-            <CardDescription>
-              A one-off purchase unlocks the entire venue/date card. Coming Soon cards support pre-purchase.
-            </CardDescription>
-          </div>
-          <Button type="button" variant="outline" onClick={() => void loadDashboard()}>
-            <RefreshCw className="size-4" />
-            Refresh
-          </Button>
-        </CardHeader>
-        <CardContent className="grid gap-4 lg:grid-cols-2">
-          {cards.map((tipCard) => {
-            const meeting = meetingById.get(tipCard.meeting_id);
-            const tipster = tipsterById.get(tipCard.tipster_id);
-            const entitled = entitlementIds.has(tipCard.id);
-
-            return (
-              <div key={tipCard.id} className="rounded-lg border bg-background/40 p-4">
-                <div className="flex flex-wrap items-center gap-2">
-                  <Badge variant={tipCard.status === "published" ? "default" : "secondary"}>
-                    {tipCard.status.replace("_", " ")}
-                  </Badge>
-                  {meeting?.is_test ? <Badge variant="outline">Private test</Badge> : null}
-                  {entitled ? <Badge variant="outline">Purchased</Badge> : null}
-                </div>
-                <h3 className="mt-3 font-heading text-xl text-white">{tipCard.title}</h3>
-                <p className="mt-1 text-sm text-brand-cyan">{tipster?.display_name ?? "Verified tipster"}</p>
-                <p className="mt-3 text-sm text-muted-foreground">{tipCard.summary || "Premium meeting analysis."}</p>
-                <p className="mt-3 text-sm">
-                  {meeting ? `${meeting.venue} · ${formatRaceDateTime(meeting.first_race_at)}` : "Meeting details unavailable"}
-                </p>
-                <div className="mt-4 flex flex-wrap items-center justify-between gap-3">
-                  <span className="font-mono font-semibold">{formatCoins(tipCard.coin_price)}</span>
-                  {entitled ? (
-                    <Badge>
-                      <Eye className="size-3" />
-                      Access below
-                    </Badge>
-                  ) : (
-                    <Button
-                      disabled={processingId === tipCard.id}
-                      type="button"
-                      onClick={() => void purchaseMeeting(tipCard)}
-                    >
-                      {processingId === tipCard.id ? <Loader2 className="size-4 animate-spin" /> : <CreditCard className="size-4" />}
-                      Unlock meeting
-                    </Button>
-                  )}
-                </div>
-              </div>
-            );
-          })}
-          {!cards.length ? (
-            <p className="text-sm text-muted-foreground">No cards are listed for sale yet.</p>
-          ) : null}
-        </CardContent>
-      </Card>
-
-      <Card>
+      <Card id="subscriptions" className="scroll-mt-24">
         <CardHeader>
-          <CardTitle>Tipster subscriptions</CardTitle>
+          <CardTitle>My Subscribed Tipsters</CardTitle>
           <CardDescription>
-            Subscriptions belong to one tipster, begin immediately, and expire after the selected calendar period.
+            Your active tipster relationships, package dates, and direct profile access.
           </CardDescription>
         </CardHeader>
-        <CardContent className="grid gap-4 md:grid-cols-2 xl:grid-cols-4">
-          {packages.map((tipsterPackage) => {
-            const tipster = tipsterById.get(tipsterPackage.tipster_id);
-            const active = activeSubscriptionTipsters.has(tipsterPackage.tipster_id);
+        <CardContent className="grid gap-4 md:grid-cols-2">
+          {subscriptions
+            .filter(
+              (subscription) =>
+                subscription.status === "active" &&
+                new Date(subscription.ends_at).getTime() > loadedAt,
+            )
+            .map((subscription) => {
+              const tipster = tipsterById.get(subscription.tipster_id);
+              const tipsterPackage = packageById.get(subscription.package_id);
 
-            return (
-              <div key={tipsterPackage.id} className="rounded-lg border p-4">
-                <Badge variant={active ? "default" : "secondary"}>
-                  {tipsterPackage.duration_months} month{tipsterPackage.duration_months > 1 ? "s" : ""}
-                </Badge>
-                <h3 className="mt-3 font-semibold">{tipster?.display_name ?? "Verified tipster"}</h3>
-                <p className="mt-2 font-mono text-xl">{formatCoins(tipsterPackage.coin_price)}</p>
-                <Button
-                  className="mt-4 w-full"
-                  disabled={active || processingId === tipsterPackage.id}
-                  type="button"
-                  variant={active ? "outline" : "default"}
-                  onClick={() => void purchaseSubscription(tipsterPackage)}
-                >
-                  {processingId === tipsterPackage.id ? <Loader2 className="size-4 animate-spin" /> : <ShieldCheck className="size-4" />}
-                  {active ? "Subscription active" : "Subscribe"}
-                </Button>
-              </div>
-            );
-          })}
-          {!packages.length ? (
-            <p className="text-sm text-muted-foreground">No subscription packages are active.</p>
+              return (
+                <div key={subscription.id} className="rounded-lg border bg-background/40 p-4">
+                  <div className="flex items-start justify-between gap-3">
+                    <div>
+                      <Badge>Active</Badge>
+                      <h3 className="mt-3 font-heading text-xl text-white">
+                        {tipster?.display_name ?? "Verified tipster"}
+                      </h3>
+                      <p className="mt-1 text-sm text-brand-cyan">
+                        {tipsterPackage?.name ??
+                          `${tipsterPackage?.duration_months ?? ""}-month package`}
+                      </p>
+                    </div>
+                    <ShieldCheck className="size-5 text-brand-cyan" />
+                  </div>
+                  <dl className="mt-4 grid grid-cols-2 gap-3 text-sm">
+                    <div>
+                      <dt className="text-muted-foreground">Started</dt>
+                      <dd>{formatRaceDateTime(subscription.starts_at)}</dd>
+                    </div>
+                    <div>
+                      <dt className="text-muted-foreground">Expires</dt>
+                      <dd>{formatRaceDateTime(subscription.ends_at)}</dd>
+                    </div>
+                  </dl>
+                  <Button asChild className="mt-4" variant="outline">
+                    <Link href={`/tipsters/profile/?tipster=${subscription.tipster_id}`}>
+                      View tipster profile
+                    </Link>
+                  </Button>
+                </div>
+              );
+            })}
+          {!activeSubscriptionTipsters.size ? (
+            <p className="text-sm text-muted-foreground">
+              You do not have an active tipster subscription. Browse profiles to compare
+              each tipster&apos;s own packages.
+            </p>
           ) : null}
         </CardContent>
       </Card>
 
       <div id="unlocked-tips" className="scroll-mt-24 space-y-4">
         <div>
-          <h2 className="font-heading text-2xl text-white">Your unlocked meeting tips</h2>
+          <h2 className="font-heading text-2xl text-white">My Meeting Cards</h2>
           <p className="text-sm text-muted-foreground">
             Premium selections are returned by Supabase only when your entitlement is active.
           </p>
@@ -632,7 +633,7 @@ export function ClientDashboardClient() {
                   })}
                 </div>
                 <div>
-                  <h3 className="font-heading text-xl text-white">PA, Pick 6, Bipot, Jackpots and Other</h3>
+                  <h3 className="font-heading text-xl text-white">Exotic&apos;s and Multiples</h3>
                   <div className="mt-3 grid gap-3 lg:grid-cols-2">
                     {cardMultiples.map((multiple) => {
                       const option = optionById.get(multiple.bet_option_id);
@@ -649,21 +650,25 @@ export function ClientDashboardClient() {
                       return (
                         <div key={multiple.id} className="rounded-lg border p-4">
                           <p className="font-semibold">{multiple.custom_name || option?.display_name || "Meeting bet"}</p>
-                          <div className="mt-3 space-y-2 text-sm">
-                            {[...grouped.entries()].sort(([left], [right]) => left - right).map(([legNumber, legSelections]) => {
-                              const fixture = fixtureById.get(legSelections[0]?.fixture_id ?? "");
-                              return (
-                                <p key={legNumber}>
-                                  <span className="text-muted-foreground">Leg {legNumber}{fixture ? ` / Race ${fixture.race_number}` : ""}: </span>
-                                  {legSelections
-                                    .map((item) => entryById.get(item.entry_id))
-                                    .filter(Boolean)
-                                    .map((entry) => `${entry?.saddle_number}. ${entry?.horse_name}`)
-                                    .join(", ")}
-                                </p>
-                              );
-                            })}
-                          </div>
+                          {multiple.tip_text ? (
+                            <p className="mt-3 whitespace-pre-wrap text-sm">{multiple.tip_text}</p>
+                          ) : (
+                            <div className="mt-3 space-y-2 text-sm">
+                              {[...grouped.entries()].sort(([left], [right]) => left - right).map(([legNumber, legSelections]) => {
+                                const fixture = fixtureById.get(legSelections[0]?.fixture_id ?? "");
+                                return (
+                                  <p key={legNumber}>
+                                    <span className="text-muted-foreground">Leg {legNumber}{fixture ? ` / Race ${fixture.race_number}` : ""}: </span>
+                                    {legSelections
+                                      .map((item) => entryById.get(item.entry_id))
+                                      .filter(Boolean)
+                                      .map((entry) => `${entry?.saddle_number}. ${entry?.horse_name}`)
+                                      .join(", ")}
+                                  </p>
+                                );
+                              })}
+                            </div>
+                          )}
                           {multiple.comments ? <p className="mt-3 text-sm text-muted-foreground">{multiple.comments}</p> : null}
                         </div>
                       );
@@ -685,6 +690,167 @@ export function ClientDashboardClient() {
         ) : null}
       </div>
 
+      <Card id="discover-tipsters" className="scroll-mt-24">
+        <CardHeader>
+          <CardTitle>Discover Tipsters</CardTitle>
+          <CardDescription>
+            Favourites appear first, followed by verified winner strike rate. Visit a
+            profile to see only that tipster&apos;s subscriptions and meeting cards.
+          </CardDescription>
+        </CardHeader>
+        <CardContent className="grid gap-4 md:grid-cols-2 xl:grid-cols-3">
+          {[...tipsters]
+            .sort((left, right) => {
+              const favouriteDifference =
+                Number(favouriteIds.has(right.id)) -
+                Number(favouriteIds.has(left.id));
+
+              if (favouriteDifference) {
+                return favouriteDifference;
+              }
+
+              return (
+                Number(statsByTipster.get(right.id)?.winner_strike_rate ?? 0) -
+                Number(statsByTipster.get(left.id)?.winner_strike_rate ?? 0)
+              );
+            })
+            .map((tipster) => {
+              const stats = statsByTipster.get(tipster.id);
+              const isFavourite = favouriteIds.has(tipster.id);
+
+              return (
+                <div key={tipster.id} className="rounded-lg border bg-background/40 p-4">
+                  <div className="flex items-start justify-between gap-3">
+                    <div>
+                      <Badge variant={isFavourite ? "default" : "outline"}>
+                        {isFavourite ? "Favourite" : "Verified"}
+                      </Badge>
+                      <h3 className="mt-3 font-heading text-xl text-white">
+                        {tipster.display_name}
+                      </h3>
+                    </div>
+                    <Button
+                      type="button"
+                      size="icon-sm"
+                      variant={isFavourite ? "default" : "outline"}
+                      disabled={processingId === `favourite:${tipster.id}`}
+                      onClick={() => void toggleFavourite(tipster.id)}
+                      aria-label={isFavourite ? "Remove favourite" : "Add favourite"}
+                    >
+                      {processingId === `favourite:${tipster.id}` ? (
+                        <Loader2 className="size-4 animate-spin" />
+                      ) : (
+                        <Heart className={isFavourite ? "size-4 fill-current" : "size-4"} />
+                      )}
+                    </Button>
+                  </div>
+                  <div className="mt-4 grid grid-cols-2 gap-3 text-sm">
+                    <div>
+                      <p className="text-muted-foreground">Winner strike rate</p>
+                      <p className="font-mono text-lg font-semibold">
+                        {stats?.winner_strike_rate === null ||
+                        stats?.winner_strike_rate === undefined
+                          ? "—"
+                          : `${Number(stats.winner_strike_rate).toFixed(1)}%`}
+                      </p>
+                    </div>
+                    <div>
+                      <p className="text-muted-foreground">Settled sample</p>
+                      <p className="font-mono text-lg font-semibold">
+                        {stats?.settled_winner_tips ?? 0}
+                      </p>
+                    </div>
+                  </div>
+                  <Button asChild className="mt-4 w-full" variant="outline">
+                    <Link href={`/tipsters/profile/?tipster=${tipster.id}`}>
+                      View profile and packages
+                    </Link>
+                  </Button>
+                </div>
+              );
+            })}
+        </CardContent>
+      </Card>
+
+      <Card id="marketplace" className="scroll-mt-24">
+        <CardHeader className="flex-row items-start justify-between gap-4">
+          <div>
+            <CardTitle>Meeting Card Marketplace</CardTitle>
+            <CardDescription>
+              A one-off purchase unlocks the complete venue/date card. Coming Soon cards
+              support pre-purchase.
+            </CardDescription>
+          </div>
+          <Button type="button" variant="outline" onClick={() => void loadDashboard()}>
+            <RefreshCw className="size-4" />
+            Refresh
+          </Button>
+        </CardHeader>
+        <CardContent className="grid gap-4 lg:grid-cols-2">
+          {cards.map((tipCard) => {
+            const meeting = meetingById.get(tipCard.meeting_id);
+            const tipster = tipsterById.get(tipCard.tipster_id);
+            const entitled = entitlementIds.has(tipCard.id);
+
+            return (
+              <div key={tipCard.id} className="rounded-lg border bg-background/40 p-4">
+                <div className="flex flex-wrap items-center gap-2">
+                  <Badge variant={tipCard.status === "published" ? "default" : "secondary"}>
+                    {tipCard.status.replace("_", " ")}
+                  </Badge>
+                  {meeting?.is_test ? <Badge variant="outline">Private test</Badge> : null}
+                  {entitled ? <Badge variant="outline">Purchased</Badge> : null}
+                </div>
+                <h3 className="mt-3 font-heading text-xl text-white">{tipCard.title}</h3>
+                <Link
+                  href={`/tipsters/profile/?tipster=${tipCard.tipster_id}`}
+                  className="mt-1 inline-block text-sm text-brand-cyan hover:underline"
+                >
+                  {tipster?.display_name ?? "Verified tipster"}
+                </Link>
+                <p className="mt-3 text-sm text-muted-foreground">
+                  {tipCard.summary || "Premium meeting analysis."}
+                </p>
+                <p className="mt-3 text-sm">
+                  {meeting
+                    ? `${meeting.venue} · ${formatRaceDateTime(meeting.first_race_at)}`
+                    : "Meeting details unavailable"}
+                </p>
+                <div className="mt-4 flex flex-wrap items-center justify-between gap-3">
+                  <span className="font-mono font-semibold">
+                    {formatCredits(tipCard.coin_price)}
+                  </span>
+                  {entitled ? (
+                    <Badge>
+                      <Eye className="size-3" />
+                      Access above
+                    </Badge>
+                  ) : (
+                    <Button
+                      disabled={processingId === tipCard.id}
+                      type="button"
+                      onClick={() => void purchaseMeeting(tipCard)}
+                    >
+                      {processingId === tipCard.id ? (
+                        <Loader2 className="size-4 animate-spin" />
+                      ) : (
+                        <CreditCard className="size-4" />
+                      )}
+                      Unlock meeting
+                    </Button>
+                  )}
+                </div>
+              </div>
+            );
+          })}
+          {!cards.length ? (
+            <p className="text-sm text-muted-foreground">
+              No cards are listed for sale yet.
+            </p>
+          ) : null}
+        </CardContent>
+      </Card>
+
       <Card id="purchases" className="scroll-mt-24">
         <CardHeader>
           <CardTitle>Purchases and disputes</CardTitle>
@@ -698,7 +864,7 @@ export function ClientDashboardClient() {
               <TableRow>
                 <TableHead>Date</TableHead>
                 <TableHead>Type</TableHead>
-                <TableHead>Coins</TableHead>
+                <TableHead>Credits</TableHead>
                 <TableHead>Status</TableHead>
                 <TableHead>Dispute</TableHead>
               </TableRow>
@@ -711,7 +877,7 @@ export function ClientDashboardClient() {
                   <TableRow key={purchase.id}>
                     <TableCell>{formatRaceDateTime(purchase.created_at)}</TableCell>
                     <TableCell>{purchase.purchase_type}</TableCell>
-                    <TableCell>{formatCoins(purchase.gross_coins)}</TableCell>
+                    <TableCell>{formatCredits(purchase.gross_coins)}</TableCell>
                     <TableCell><Badge variant="outline">{purchase.status}</Badge></TableCell>
                     <TableCell>
                       {existingDispute ? (

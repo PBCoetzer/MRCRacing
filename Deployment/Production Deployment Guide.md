@@ -59,6 +59,9 @@ C:\Users\coetz\OneDrive\MRC Website\Frontend\out
 
 - `/`
 - `/pricing/`
+- `/tipsters/`
+- `/tipsters/profile/?tipster=<id>`
+- `/payment-status/`
 - `/login/`
 - `/register/`
 - `/client/`
@@ -67,12 +70,12 @@ C:\Users\coetz\OneDrive\MRC Website\Frontend\out
 
 ## Xneelo Limitations For Later Phases
 
-The static deployment is enough for visual testing and public page review. The following features still need a backend runtime:
+The static deployment is enough for public UI delivery. The following features run in Supabase Edge Functions rather than Xneelo:
 
-- Supabase Auth callback handling if server-side cookies are required.
-- Payment webhooks from PayFast, Ozow, PayGate, Peach Payments, Yoco, or other providers.
-- Admin-only server actions.
-- Secure credit unlock processing.
+- PayFast checkout signing and ITN verification.
+- Ozow checkout signing, notification hash verification, and transaction confirmation.
+- Atomic Credit issuance after verified provider callbacks.
+- Tip publication and correction email processing.
 - Sports data sync jobs.
 
 Recommended future backend options:
@@ -86,6 +89,7 @@ Recommended future backend options:
 - Configure all secrets in hosting environment variables.
 - Configure Supabase Auth redirect URLs.
 - Configure payment gateway webhook URLs.
+- Set `PAYMENTS_ENABLED=true` only after provider credentials and callback verification tests pass.
 - Enable HTTPS before payment webhooks.
 - Run database migrations against the production Supabase project.
 - Review RLS policies before launch.
@@ -119,6 +123,8 @@ If it becomes `public_html/out/index.html`, move the files up one level.
 8. Visit the live domain and test the main routes.
 
 Before testing auth on the live domain, add the domain and `/reset-password` route to Supabase Auth URL settings.
+
+Payment return URLs must point to the deployed Supabase `payment-return` Edge Function. Browser return URLs never issue Credits; only verified PayFast ITN or Ozow notification processing can finalize a payment.
 
 ## Rebuild After Changes
 
