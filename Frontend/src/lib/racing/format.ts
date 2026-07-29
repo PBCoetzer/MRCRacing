@@ -17,8 +17,10 @@ export function formatRaceDate(value: string) {
   return johannesburgDate.format(new Date(value));
 }
 
-export function formatCoins(value: number | string) {
+export function formatCredits(value: number | string) {
   return `${Number(value).toLocaleString("en-ZA", {
     maximumFractionDigits: 2,
-  })} coins`;
+  })} Credits`;
 }
+
+export const formatCoins = formatCredits;

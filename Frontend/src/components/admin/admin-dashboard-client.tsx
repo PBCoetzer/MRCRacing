@@ -27,7 +27,7 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@
 import { Textarea } from "@/components/ui/textarea";
 import { supabaseConfigMessage } from "@/lib/supabase/config";
 import { createClient } from "@/lib/supabase/client";
-import { formatCoins, formatRaceDateTime } from "@/lib/racing/format";
+import { formatCredits, formatRaceDateTime } from "@/lib/racing/format";
 
 type DashboardState = "loading" | "configured" | "signed-out" | "forbidden" | "ready" | "error";
 type AppRole = "client" | "tipster" | "administrator";
@@ -117,7 +117,6 @@ export function AdminDashboardClient() {
   const [users, setUsers] = useState<AdminUser[]>([]);
   const [userDrafts, setUserDrafts] = useState<Record<string, UserDraft>>({});
   const [settings, setSettings] = useState<PlatformSettings | null>(null);
-  const [zarPerCoin, setZarPerCoin] = useState("1");
   const [commissionRate, setCommissionRate] = useState("10");
   const [disputes, setDisputes] = useState<AdminDispute[]>([]);
   const [disputeNotes, setDisputeNotes] = useState<Record<string, string>>({});
@@ -211,7 +210,6 @@ export function AdminDashboardClient() {
       setUsers(loadedUsers);
       setUserDrafts(nextDrafts);
       setSettings(loadedSettings);
-      setZarPerCoin(String(loadedSettings?.zar_per_coin ?? 1));
       setCommissionRate(String(loadedSettings?.commission_rate ?? 10));
       setDisputes(loadedDisputes);
       setOutbox(loadedOutbox);
@@ -324,7 +322,7 @@ export function AdminDashboardClient() {
     }
 
     if (!Number.isInteger(amount) || amount === 0) {
-      setError("Enter a non-zero whole-coin wallet adjustment.");
+      setError("Enter a non-zero whole-Credit wallet adjustment.");
       return;
     }
 
@@ -353,15 +351,14 @@ export function AdminDashboardClient() {
 
   async function savePlatformSettings() {
     const supabase = createClient();
-    const coinRate = Number(zarPerCoin);
     const commission = Number(commissionRate);
 
     if (!supabase) {
       return;
     }
 
-    if (!(coinRate > 0) || commission < 0 || commission > 100) {
-      setError("Enter a positive ZAR-to-coin rate and commission between 0% and 100%.");
+    if (commission < 0 || commission > 100) {
+      setError("Enter a commission between 0% and 100%.");
       return;
     }
 
@@ -372,7 +369,7 @@ export function AdminDashboardClient() {
       const { error: settingsError } = await supabase
         .from("platform_settings")
         .update({
-          zar_per_coin: coinRate,
+          zar_per_coin: 1,
           commission_rate: commission,
         })
         .eq("singleton", true);
@@ -381,7 +378,7 @@ export function AdminDashboardClient() {
         throw settingsError;
       }
 
-      setMessage("Platform pricing and commission settings were saved.");
+      setMessage("The fixed R1 = 1 Credit rate and commission setting were saved.");
       await loadAdminDashboard();
     } catch (settingsError) {
       setError(errorMessage(settingsError, "Could not save platform settings."));
@@ -552,7 +549,7 @@ export function AdminDashboardClient() {
                             <p className="font-semibold">{adminUser.display_name || adminUser.email}</p>
                             <p className="text-sm text-muted-foreground">{adminUser.email}</p>
                           </div>
-                          <Badge variant="outline">{formatCoins(adminUser.wallet_balance)}</Badge>
+                          <Badge variant="outline">{formatCredits(adminUser.wallet_balance)}</Badge>
                         </div>
                         <div className="mt-4 grid gap-4 lg:grid-cols-[1fr_1fr]">
                           <div className="space-y-3">
@@ -609,7 +606,7 @@ export function AdminDashboardClient() {
                             <Label>Audited wallet adjustment</Label>
                             <div className="grid gap-2 sm:grid-cols-[120px_1fr_auto]">
                               <Input
-                                placeholder="+/- coins"
+                                placeholder="+/- Credits"
                                 type="number"
                                 value={draft.walletAmount}
                                 onChange={(event) => updateUserDraft(adminUser.user_id, { walletAmount: event.target.value })}
@@ -728,15 +725,16 @@ export function AdminDashboardClient() {
             <TabsContent value="system">
               <Card>
                 <CardHeader>
-                  <CardTitle>Coins and commission</CardTitle>
+                  <CardTitle>Credits and commission</CardTitle>
                   <CardDescription>
-                    Tipster sales snapshot this commission at purchase time. Monetary coin values round to two decimals.
+                    The customer rate is permanently fixed at R1 = 1 Credit. Tipster sales
+                    snapshot the commission at purchase time.
                   </CardDescription>
                 </CardHeader>
                 <CardContent className="grid gap-4 sm:grid-cols-2">
-                  <div className="space-y-2">
-                    <Label htmlFor="zar-per-coin">ZAR per coin</Label>
-                    <Input id="zar-per-coin" min="0.01" step="0.01" type="number" value={zarPerCoin} onChange={(event) => setZarPerCoin(event.target.value)} />
+                  <div className="rounded-lg border bg-background/45 p-4">
+                    <p className="text-sm text-muted-foreground">Fixed public conversion</p>
+                    <p className="mt-1 font-mono text-2xl font-bold">R1 = 1 Credit</p>
                   </div>
                   <div className="space-y-2">
                     <Label htmlFor="commission-rate">Platform commission %</Label>

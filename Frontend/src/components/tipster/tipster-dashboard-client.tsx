@@ -19,7 +19,7 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { createClient } from "@/lib/supabase/client";
-import { formatCoins, formatRaceDateTime } from "@/lib/racing/format";
+import { formatCredits, formatRaceDateTime } from "@/lib/racing/format";
 import type {
   RaceMeeting,
   TipCard,
@@ -38,6 +38,14 @@ type EarningRow = {
 
 type PackageDraft = Record<1 | 3 | 6 | 12, string>;
 
+type CardFixture = {
+  id: string;
+  meeting_id: string;
+  starts_at: string;
+  status: string;
+  result_summary: string | null;
+};
+
 const packageDurations = [1, 3, 6, 12] as const;
 const emptyPackageDraft: PackageDraft = { 1: "", 3: "", 6: "", 12: "" };
 
@@ -50,6 +58,7 @@ function meetingLabel(meeting: RaceMeeting | undefined) {
 }
 
 export function TipsterDashboardClient() {
+  const [loadedAt] = useState(() => Date.now());
   const [loading, setLoading] = useState(true);
   const [savingPackages, setSavingPackages] = useState(false);
   const [message, setMessage] = useState("");
@@ -59,6 +68,7 @@ export function TipsterDashboardClient() {
   const [cards, setCards] = useState<TipCard[]>([]);
   const [packages, setPackages] = useState<TipsterPackage[]>([]);
   const [earnings, setEarnings] = useState<EarningRow[]>([]);
+  const [cardFixtures, setCardFixtures] = useState<CardFixture[]>([]);
   const [packageDraft, setPackageDraft] = useState<PackageDraft>(emptyPackageDraft);
 
   const loadDashboard = useCallback(async () => {
@@ -102,8 +112,7 @@ export function TipsterDashboardClient() {
         supabase
           .from("race_meetings")
           .select("id,venue,country_code,meeting_date,first_race_at,last_race_at,status,is_test,source_name,source_url")
-          .eq("status", "scheduled")
-          .order("first_race_at"),
+          .order("first_race_at", { ascending: false }),
         supabase
           .from("tip_cards")
           .select("id,tipster_id,meeting_id,title,summary,coin_price,status,revision,listed_at,published_at,voided_at,updated_at")
@@ -130,7 +139,23 @@ export function TipsterDashboardClient() {
       }
 
       const loadedPackages = (packageResult.data ?? []) as TipsterPackage[];
+      const loadedCards = (cardResult.data ?? []) as TipCard[];
       const nextDraft = { ...emptyPackageDraft };
+      let loadedCardFixtures: CardFixture[] = [];
+
+      if (loadedCards.length) {
+        const fixtureResult = await supabase
+          .from("fixtures")
+          .select("id,meeting_id,starts_at,status,result_summary")
+          .in("meeting_id", [...new Set(loadedCards.map((card) => card.meeting_id))])
+          .order("starts_at");
+
+        if (fixtureResult.error) {
+          throw fixtureResult.error;
+        }
+
+        loadedCardFixtures = (fixtureResult.data ?? []) as CardFixture[];
+      }
 
       for (const tipsterPackage of loadedPackages) {
         nextDraft[tipsterPackage.duration_months] = String(tipsterPackage.coin_price);
@@ -138,9 +163,10 @@ export function TipsterDashboardClient() {
 
       setTipster(verifiedTipster);
       setMeetings((meetingResult.data ?? []) as RaceMeeting[]);
-      setCards((cardResult.data ?? []) as TipCard[]);
+      setCards(loadedCards);
       setPackages(loadedPackages);
       setEarnings((earningResult.data ?? []) as EarningRow[]);
+      setCardFixtures(loadedCardFixtures);
       setPackageDraft(nextDraft);
     } catch (loadError) {
       setError(loadError instanceof Error ? loadError.message : "Could not load tipster data.");
@@ -162,7 +188,10 @@ export function TipsterDashboardClient() {
     [meetings],
   );
   const cardMeetingIds = useMemo(() => new Set(cards.map((card) => card.meeting_id)), [cards]);
-  const availableMeetings = meetings.filter((meeting) => !cardMeetingIds.has(meeting.id));
+  const availableMeetings = meetings.filter(
+    (meeting) =>
+      meeting.status === "scheduled" && !cardMeetingIds.has(meeting.id),
+  );
   const netEarnings = earnings.reduce((total, entry) => total + Number(entry.net_coins), 0);
 
   async function savePackages() {
@@ -194,7 +223,7 @@ export function TipsterDashboardClient() {
       });
 
       if (upserts.length === 0) {
-        throw new Error("Enter at least one positive whole-coin package price.");
+        throw new Error("Enter at least one positive whole-Credit package price.");
       }
 
       const { error: upsertError } = await supabase
@@ -247,7 +276,7 @@ export function TipsterDashboardClient() {
           { label: "Upcoming meetings", value: meetings.length, icon: CalendarDays },
           { label: "Meeting cards", value: cards.length, icon: FilePenLine },
           { label: "Active packages", value: packages.filter((item) => item.is_active).length, icon: PackageCheck },
-          { label: "Recorded earnings", value: formatCoins(netEarnings), icon: Coins },
+          { label: "Recorded earnings", value: formatCredits(netEarnings), icon: Coins },
         ].map((stat) => (
           <Card key={stat.label}>
             <CardHeader className="space-y-1">
@@ -315,30 +344,55 @@ export function TipsterDashboardClient() {
               </TableRow>
             </TableHeader>
             <TableBody>
-              {cards.map((card) => (
-                <TableRow key={card.id}>
-                  <TableCell>
-                    <p className="font-semibold">{card.title}</p>
-                    <p className="text-xs text-muted-foreground">
-                      {meetingLabel(meetingById.get(card.meeting_id))}
-                    </p>
-                  </TableCell>
-                  <TableCell>
-                    <Badge variant={card.status === "published" ? "default" : "secondary"}>
-                      {card.status.replace("_", " ")}
-                    </Badge>
-                  </TableCell>
-                  <TableCell className="font-mono">{card.revision}</TableCell>
-                  <TableCell className="font-mono">{formatCoins(card.coin_price)}</TableCell>
-                  <TableCell className="text-right">
-                    <Button asChild variant="outline">
-                      <Link href={`/tipster/manage-tips/?card=${encodeURIComponent(card.id)}`}>
-                        {card.status === "published" ? "Review / correct" : "Continue editing"}
-                      </Link>
-                    </Button>
-                  </TableCell>
-                </TableRow>
-              ))}
+              {cards.map((card) => {
+                const fixtures = cardFixtures.filter(
+                  (fixture) => fixture.meeting_id === card.meeting_id,
+                );
+                const resultCount = fixtures.filter(
+                  (fixture) => fixture.result_summary || fixture.status === "resulted",
+                ).length;
+                const openCount = fixtures.filter(
+                  (fixture) => new Date(fixture.starts_at).getTime() > loadedAt,
+                ).length;
+                const actionLabel =
+                  openCount === 0 || (fixtures.length > 0 && resultCount === fixtures.length)
+                    ? "View results"
+                    : card.status === "published"
+                      ? "Review / correct"
+                      : "Edit tips";
+
+                return (
+                  <TableRow key={card.id}>
+                    <TableCell>
+                      <p className="font-semibold">{card.title}</p>
+                      <p className="text-xs text-muted-foreground">
+                        {meetingLabel(meetingById.get(card.meeting_id))}
+                      </p>
+                      <p className="mt-1 text-xs text-brand-cyan">
+                        {resultCount
+                          ? `${resultCount}/${fixtures.length} results available`
+                          : openCount
+                            ? `${openCount}/${fixtures.length} races still open`
+                            : "Meeting locked"}
+                      </p>
+                    </TableCell>
+                    <TableCell>
+                      <Badge variant={card.status === "published" ? "default" : "secondary"}>
+                        {card.status.replace("_", " ")}
+                      </Badge>
+                    </TableCell>
+                    <TableCell className="font-mono">{card.revision}</TableCell>
+                    <TableCell className="font-mono">{formatCredits(card.coin_price)}</TableCell>
+                    <TableCell className="text-right">
+                      <Button asChild variant="outline">
+                        <Link href={`/tipster/manage-tips/?card=${encodeURIComponent(card.id)}`}>
+                          {actionLabel}
+                        </Link>
+                      </Button>
+                    </TableCell>
+                  </TableRow>
+                );
+              })}
               {!cards.length ? (
                 <TableRow>
                   <TableCell colSpan={5} className="text-center text-muted-foreground">
@@ -367,7 +421,7 @@ export function TipsterDashboardClient() {
                   id={`package-${duration}`}
                   inputMode="numeric"
                   min={1}
-                  placeholder="Coin price"
+                  placeholder="Credit price"
                   type="number"
                   value={packageDraft[duration]}
                   onChange={(event) => {
@@ -412,9 +466,9 @@ export function TipsterDashboardClient() {
                       {entry.entry_type}
                     </Badge>
                   </TableCell>
-                  <TableCell>{formatCoins(entry.gross_coins)}</TableCell>
-                  <TableCell>{formatCoins(entry.platform_fee_coins)}</TableCell>
-                  <TableCell>{formatCoins(entry.net_coins)}</TableCell>
+                  <TableCell>{formatCredits(entry.gross_coins)}</TableCell>
+                  <TableCell>{formatCredits(entry.platform_fee_coins)}</TableCell>
+                  <TableCell>{formatCredits(entry.net_coins)}</TableCell>
                 </TableRow>
               ))}
               {!earnings.length ? (

@@ -13,7 +13,10 @@ MRC Website is a South African horse-racing tipping platform. The static fronten
 - Supabase project confirmed as `MRCRacing`.
 - Xneelo Volume Plan live-testing deployment is documented in `Deployment/GitHub Supabase Xneelo Plan.md`.
 - Production meeting-card tables, commerce RPCs, private test data, and the notification outbox are live.
-- Verified tipsters can publish race selections and PA, Pick 6, Bipot, Jackpot, and custom meeting bets.
+- Verified tipsters can publish race selections and free-text Exotic's and Multiples with audited revisions and verified result displays.
+- Clients can favourite tipsters, compare settled winner strike rates, open tipster-specific profiles, and buy whole meeting cards or non-renewing subscriptions.
+- Credit packages are database-backed at the fixed public rate of R1 = 1 Credit.
+- PayFast and Ozow checkout, webhook verification, and atomic Credit issuance are deployed but remain disabled until merchant credentials are configured.
 
 ## Project Principles
 

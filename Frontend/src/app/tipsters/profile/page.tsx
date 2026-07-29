@@ -1,12 +1,12 @@
-import { PricingClient } from "@/components/pricing/pricing-client";
 import { SiteFooter } from "@/components/site-footer";
 import { SiteHeader } from "@/components/site-header";
+import { TipsterProfileClient } from "@/components/tipsters/tipster-profile-client";
 
-export default function PricingPage() {
+export default function TipsterProfilePage() {
   return (
     <div className="min-h-screen bg-background">
       <SiteHeader />
-      <PricingClient />
+      <TipsterProfileClient />
       <SiteFooter />
     </div>
   );

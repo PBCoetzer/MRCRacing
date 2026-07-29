@@ -132,13 +132,13 @@ function renderEmail(job: NotificationJob): EmailContent {
   const clientUrl = payload.clientUrl ?? "https://www.mrcracing.co.za/client/";
 
   if (job.event_type === "purchase_refunded") {
-    const coins = Number(payload.coins ?? 0);
+    const credits = Number(payload.coins ?? 0);
     const reason = String(payload.reason ?? "The purchase was refunded.");
-    const subject = `${coins} MRC coins returned to your wallet`;
-    const text = `${coins} MRC coins were returned to your wallet. ${reason}`;
+    const subject = `${credits} MRC Credits returned to your wallet`;
+    const text = `${credits} MRC Credits were returned to your wallet. ${reason}`;
     const html = renderLayout(
-      "Your coins were refunded",
-      `<p style="margin:0 0 14px"><strong>${escapeHtml(coins)} MRC coins</strong> were returned to your wallet.</p><p style="margin:0">${escapeHtml(reason)}</p>`,
+      "Your Credits were refunded",
+      `<p style="margin:0 0 14px"><strong>${escapeHtml(credits)} MRC Credits</strong> were returned to your wallet.</p><p style="margin:0">${escapeHtml(reason)}</p>`,
       clientUrl,
       "Open your dashboard",
     );

@@ -21,8 +21,27 @@ type RaceRecord = {
   source_updated_at: string | null;
 };
 
+type MeetingRecord = {
+  id: string;
+  venue: string;
+  meeting_date: string;
+  first_race_at: string;
+  last_race_at: string | null;
+  status: string;
+  source_name: string;
+  source_url: string | null;
+  source_updated_at: string | null;
+};
+
 type RaceState = {
   data: RaceRecord[];
+  error: string;
+  loading: boolean;
+};
+
+type MeetingState = {
+  data: MeetingRecord[];
+  fixtures: RaceRecord[];
   error: string;
   loading: boolean;
 };
@@ -53,6 +72,23 @@ function formatRaceTime(value: string) {
   }).format(new Date(value));
 }
 
+function formatRaceClock(value: string) {
+  return new Intl.DateTimeFormat("en-ZA", {
+    hour: "2-digit",
+    minute: "2-digit",
+    timeZone: "Africa/Johannesburg",
+  }).format(new Date(value));
+}
+
+function formatMeetingDay(value: string) {
+  return new Intl.DateTimeFormat("en-ZA", {
+    weekday: "long",
+    day: "numeric",
+    month: "short",
+    timeZone: "Africa/Johannesburg",
+  }).format(new Date(value));
+}
+
 function formatSyncTime(value: string | null) {
   if (!value) {
     return "Awaiting first sync";
@@ -65,33 +101,15 @@ function formatSyncTime(value: string | null) {
   }).format(new Date(value));
 }
 
-function SourceLine({ race }: { race: RaceRecord }) {
-  const label = race.source_name || "MRC manual entry";
-  const safeSourceUrl = race.source_url?.startsWith("https://") ? race.source_url : null;
-
-  return (
-    <div className="mt-3 flex flex-wrap items-center gap-x-3 gap-y-1 text-xs text-white/62">
-      <span>Source: {label}</span>
-      <span>Updated: {formatSyncTime(race.source_updated_at)}</span>
-      {safeSourceUrl ? (
-        <a
-          href={safeSourceUrl}
-          target="_blank"
-          rel="noopener noreferrer"
-          className="inline-flex items-center gap-1 text-brand-cyan hover:underline"
-        >
-          Verify
-          <ExternalLink className="size-3" />
-        </a>
-      ) : null}
-    </div>
-  );
-}
-
-export function UpcomingRaceBoard() {
-  const [state, setState] = useState<RaceState>(() =>
-    createInitialState("The live race database is not configured for this build."),
-  );
+export function UpcomingMeetingBoard() {
+  const [state, setState] = useState<MeetingState>(() => ({
+    data: [],
+    fixtures: [],
+    error: isSupabaseConfigured
+      ? ""
+      : "The live race database is not configured for this build.",
+    loading: isSupabaseConfigured,
+  }));
 
   useEffect(() => {
     let isActive = true;
@@ -101,28 +119,46 @@ export function UpcomingRaceBoard() {
       return;
     }
 
-    async function loadUpcomingRaces() {
+    async function loadUpcomingMeetings() {
       const response = await supabase
-        .from("fixtures")
+        .from("race_meetings")
         .select(
-          "id,title,venue,league,starts_at,status,result_summary,source_name,source_url,source_updated_at",
+          "id,venue,meeting_date,first_race_at,last_race_at,status,source_name,source_url,source_updated_at",
         )
-        .gte("starts_at", new Date().toISOString())
-        .order("starts_at", { ascending: true })
-        .limit(6);
+        .in("status", ["scheduled", "in_progress"])
+        .order("first_race_at", { ascending: true })
+        .limit(7);
 
       if (!isActive) {
         return;
       }
 
+      const meetings = (response.data ?? []) as MeetingRecord[];
+      let fixtures: RaceRecord[] = [];
+      let fixtureError = "";
+
+      if (meetings.length) {
+        const fixtureResponse = await supabase
+          .from("fixtures")
+          .select(
+            "id,meeting_id,title,venue,league,starts_at,status,result_summary,source_name,source_url,source_updated_at,race_number",
+          )
+          .in("meeting_id", meetings.map((meeting) => meeting.id))
+          .order("starts_at", { ascending: true });
+
+        fixtures = (fixtureResponse.data ?? []) as RaceRecord[];
+        fixtureError = fixtureResponse.error?.message ?? "";
+      }
+
       setState({
-        data: (response.data ?? []) as RaceRecord[],
-        error: response.error?.message ?? "",
+        data: meetings,
+        fixtures,
+        error: response.error?.message ?? fixtureError,
         loading: false,
       });
     }
 
-    void loadUpcomingRaces();
+    void loadUpcomingMeetings();
 
     return () => {
       isActive = false;
@@ -132,7 +168,7 @@ export function UpcomingRaceBoard() {
   if (state.loading) {
     return (
       <div className="rounded-lg border border-brand-gold/16 bg-white/8 p-4 text-sm text-white/72">
-        Loading upcoming races from the live database…
+        Loading upcoming race meetings from the live database…
       </div>
     );
   }
@@ -150,7 +186,7 @@ export function UpcomingRaceBoard() {
   if (state.data.length === 0) {
     return (
       <div className="rounded-lg border border-brand-gold/20 bg-white/8 p-4">
-        <p className="font-semibold">No upcoming races have been imported yet.</p>
+        <p className="font-semibold">No upcoming public meetings have been imported yet.</p>
         <p className="mt-1 text-sm text-white/68">
           The database is ready for a licensed South African racing feed. Unsourced demo races are
           intentionally not shown.
@@ -160,27 +196,68 @@ export function UpcomingRaceBoard() {
   }
 
   return (
-    <div className="grid gap-3">
-      {state.data.map((race) => (
-        <div key={race.id} className="rounded-lg border border-brand-gold/16 bg-white/8 p-4">
-          <div className="flex items-start justify-between gap-4">
-            <div>
-              <p className="font-mono text-xs uppercase text-brand-cyan">
-                {race.venue || race.league || "South African racing"}
-              </p>
-              <p className="mt-1 font-semibold">{race.title}</p>
-              <p className="text-sm text-white/68">{formatRaceTime(race.starts_at)}</p>
+    <div className="flex snap-x gap-4 overflow-x-auto pb-4">
+      {state.data.map((meeting) => {
+        const meetingFixtures = state.fixtures.filter(
+          (fixture) => "meeting_id" in fixture &&
+            String((fixture as RaceRecord & { meeting_id: string }).meeting_id) === meeting.id,
+        );
+
+        return (
+          <article
+            key={meeting.id}
+            className="min-w-[18rem] snap-start rounded-xl border border-brand-gold/24 bg-brand-purple-deep/70 p-5 text-white shadow-[0_18px_44px_rgba(0,0,0,0.24)] sm:min-w-[22rem]"
+          >
+            <div className="flex items-start justify-between gap-4">
+              <div>
+                <p className="font-mono text-xs uppercase tracking-wider text-brand-cyan">
+                  {formatMeetingDay(meeting.first_race_at)}
+                </p>
+                <h3 className="mt-1 font-heading text-xl">{meeting.venue}</h3>
+              </div>
+              <Badge
+                variant="outline"
+                className="border-brand-gold/45 text-brand-gold capitalize"
+              >
+                {meeting.status.replace("_", " ")}
+              </Badge>
             </div>
-            <Badge variant="outline" className="border-brand-gold/30 text-brand-gold">
-              {race.status}
-            </Badge>
-          </div>
-          <SourceLine race={race} />
-        </div>
-      ))}
+            <div className="mt-4 flex flex-wrap gap-2">
+              {meetingFixtures.map((race) => (
+                <span
+                  key={race.id}
+                  className="rounded-md border border-white/12 bg-white/8 px-2.5 py-1.5 text-xs"
+                >
+                  R{(race as RaceRecord & { race_number: number }).race_number}{" "}
+                  <span className="text-white/66">{formatRaceClock(race.starts_at)}</span>
+                </span>
+              ))}
+              {!meetingFixtures.length ? (
+                <span className="text-sm text-white/64">Race times awaiting import</span>
+              ) : null}
+            </div>
+            <div className="mt-4 flex flex-wrap items-center justify-between gap-3 border-t border-white/10 pt-3 text-xs text-white/62">
+              <span>Verified by {meeting.source_name || "MRC Racing"}</span>
+              {meeting.source_url?.startsWith("https://") ? (
+                <a
+                  href={meeting.source_url}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="inline-flex items-center gap-1 text-brand-cyan hover:underline"
+                >
+                  Source
+                  <ExternalLink className="size-3" />
+                </a>
+              ) : null}
+            </div>
+          </article>
+        );
+      })}
     </div>
   );
 }
+
+export const UpcomingRaceBoard = UpcomingMeetingBoard;
 
 export function RaceResultsHistory() {
   const [state, setState] = useState<RaceState>(() =>

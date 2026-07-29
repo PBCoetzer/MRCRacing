@@ -97,10 +97,16 @@ export function LoginForm() {
 
       setFormState({
         kind: "success",
-        message: "Login successful. Taking you to your dashboard.",
+        message: "Login successful. Taking you to the requested page.",
       });
 
-      router.push(dashboardForRoles(roleRows.map((row) => row.role)));
+      const requestedDestination = new URLSearchParams(window.location.search).get("next");
+      const safeDestination =
+        requestedDestination?.startsWith("/") && !requestedDestination.startsWith("//")
+          ? requestedDestination
+          : dashboardForRoles(roleRows.map((row) => row.role));
+
+      router.push(safeDestination);
       router.refresh();
     } catch (error) {
       resetCaptcha();

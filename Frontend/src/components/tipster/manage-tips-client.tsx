@@ -8,9 +8,13 @@ import {
   BellRing,
   CheckCircle2,
   Clock3,
+  FilePenLine,
   Loader2,
+  Plus,
   Save,
   Send,
+  Trash2,
+  Trophy,
 } from "lucide-react";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { Badge } from "@/components/ui/badge";
@@ -52,11 +56,8 @@ function getErrorMessage(error: unknown, fallback: string) {
   return fallback;
 }
 
-function isUnlocked(value: string) {
-  return new Date(value).getTime() > Date.now();
-}
-
 export function ManageTipsClient() {
+  const [loadedAt] = useState(() => Date.now());
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState("");
@@ -67,7 +68,6 @@ export function ManageTipsClient() {
   const [fixtures, setFixtures] = useState<RaceFixture[]>([]);
   const [entries, setEntries] = useState<RaceEntry[]>([]);
   const [betOptions, setBetOptions] = useState<MeetingBetOption[]>([]);
-  const [betLegs, setBetLegs] = useState<MeetingBetLeg[]>([]);
   const [title, setTitle] = useState("");
   const [summary, setSummary] = useState("");
   const [coinPrice, setCoinPrice] = useState("25");
@@ -75,6 +75,7 @@ export function ManageTipsClient() {
   const [revisionSummary, setRevisionSummary] = useState("");
   const [raceDrafts, setRaceDrafts] = useState<RaceDraftMap>({});
   const [multipleDrafts, setMultipleDrafts] = useState<MultipleDraftMap>({});
+  const [selectedOptionId, setSelectedOptionId] = useState("");
 
   const loadEditor = useCallback(async () => {
     const supabase = createClient();
@@ -199,7 +200,7 @@ export function ManageTipsClient() {
             .eq("tip_card_id", loadedCard.id),
           supabase
             .from("tip_card_multiples")
-            .select("id,tip_card_id,bet_option_id,custom_name,comments")
+            .select("id,tip_card_id,bet_option_id,custom_name,tip_text,comments")
             .eq("tip_card_id", loadedCard.id),
         ]);
 
@@ -246,6 +247,11 @@ export function ManageTipsClient() {
 
       for (const option of loadedOptions) {
         const multiple = multipleByOption.get(option.id);
+
+        if (!multiple) {
+          continue;
+        }
+
         const officialLegs = ((legResult.data ?? []) as MeetingBetLeg[])
           .filter((leg) => leg.bet_option_id === option.id)
           .sort((left, right) => left.leg_number - right.leg_number);
@@ -260,6 +266,7 @@ export function ManageTipsClient() {
         nextMultipleDrafts[option.id] = {
           betOptionId: option.id,
           customName: multiple?.custom_name ?? "",
+          tipText: multiple?.tip_text ?? "",
           comments: multiple?.comments ?? "",
           legs: optionLegs.map((leg) => ({
             legNumber: leg.leg_number,
@@ -284,7 +291,6 @@ export function ManageTipsClient() {
       setFixtures(loadedFixtures);
       setEntries((entryResult.data ?? []) as RaceEntry[]);
       setBetOptions(loadedOptions);
-      setBetLegs((legResult.data ?? []) as MeetingBetLeg[]);
       setRaceDrafts(nextRaceDrafts);
       setMultipleDrafts(nextMultipleDrafts);
       setTitle(loadedCard?.title ?? `${loadedMeeting.venue} ${formatRaceDate(loadedMeeting.first_race_at)} Meeting Card`);
@@ -322,6 +328,15 @@ export function ManageTipsClient() {
     [fixtures],
   );
   const isPublished = card?.status === "published";
+  const isReadOnlyCard = card?.status === "settled" || card?.status === "voided";
+  const unusedBetOptions = betOptions.filter((option) => !multipleDrafts[option.id]);
+  const hasEditableSelections =
+    fixtures.some((fixture) => new Date(fixture.starts_at).getTime() > loadedAt) ||
+    betOptions.some((option) => new Date(option.cutoff_at).getTime() > loadedAt);
+
+  function isOpen(value: string) {
+    return new Date(value).getTime() > loadedAt;
+  }
 
   function updateRaceDraft(fixtureId: string, patch: Partial<RaceSelectionDraft>) {
     setRaceDrafts((current) => ({
@@ -343,33 +358,31 @@ export function ManageTipsClient() {
     }));
   }
 
-  function toggleMultipleEntry(
-    optionId: string,
-    legNumber: number,
-    entryId: string,
-  ) {
+  function addMultiple() {
+    const option = betOptions.find((item) => item.id === selectedOptionId);
+
+    if (!option || multipleDrafts[option.id]) {
+      return;
+    }
+
+    setMultipleDrafts((current) => ({
+      ...current,
+      [option.id]: {
+        betOptionId: option.id,
+        customName: option.bet_type === "other" ? "Other" : "",
+        tipText: "",
+        comments: "",
+        legs: [],
+      },
+    }));
+    setSelectedOptionId("");
+  }
+
+  function removeMultiple(optionId: string) {
     setMultipleDrafts((current) => {
-      const draft = current[optionId];
-
-      return {
-        ...current,
-        [optionId]: {
-          ...draft,
-          legs: draft.legs.map((leg) => {
-            if (leg.legNumber !== legNumber) {
-              return leg;
-            }
-
-            const selected = leg.entryIds.includes(entryId);
-            return {
-              ...leg,
-              entryIds: selected
-                ? leg.entryIds.filter((id) => id !== entryId)
-                : [...leg.entryIds, entryId],
-            };
-          }),
-        },
-      };
+      const next = { ...current };
+      delete next[optionId];
+      return next;
     });
   }
 
@@ -399,7 +412,7 @@ export function ManageTipsClient() {
     const parsedPrice = Number(coinPrice);
 
     if (!Number.isInteger(parsedPrice) || parsedPrice <= 0) {
-      setError("Enter a positive whole-coin meeting price.");
+      setError("Enter a positive whole-Credit meeting price.");
       return;
     }
 
@@ -418,7 +431,7 @@ export function ManageTipsClient() {
         }
 
         const raceChanges = fixtures
-          .filter((fixture) => isUnlocked(fixture.starts_at))
+          .filter((fixture) => isOpen(fixture.starts_at))
           .map((fixture) => {
             const draft = raceDrafts[fixture.id];
             const remove = !draft.winnerEntryId && !draft.placeEntryId && !draft.comments.trim();
@@ -428,16 +441,18 @@ export function ManageTipsClient() {
               : draft;
           });
         const multipleChanges = betOptions
-          .filter((option) => isUnlocked(option.cutoff_at))
+          .filter((option) => isOpen(option.cutoff_at))
           .map((option) => {
             const draft = multipleDrafts[option.id];
-            const hasSelections = draft.legs.some((leg) => leg.entryIds.length > 0);
+            const hasLegacySelections = draft?.legs.some(
+              (leg) => leg.entryIds.length > 0,
+            );
 
-            return hasSelections
+            return draft && (draft.tipText.trim() || hasLegacySelections)
               ? draft
               : { betOptionId: option.id, remove: true };
           });
-        const { data, error: revisionError } = await supabase.rpc("revise_tip_card", {
+        const { data, error: revisionError } = await supabase.rpc("revise_tip_card_v2", {
           p_card_id: card.id,
           p_expected_revision: card.revision,
           p_revision_summary: revisionSummary.trim(),
@@ -457,14 +472,14 @@ export function ManageTipsClient() {
       }
 
       const raceSelections = fixtures.map((fixture) => raceDrafts[fixture.id]);
-      const multiples = betOptions
-        .map((option) => multipleDrafts[option.id])
+      const multiples = Object.values(multipleDrafts)
         .filter((draft) =>
+          draft.tipText.trim() ||
           draft.legs.some((leg) => leg.entryIds.length > 0) ||
           draft.customName.trim() ||
           draft.comments.trim(),
         );
-      const { data: savedData, error: saveError } = await supabase.rpc("save_tip_card_draft", {
+      const { data: savedData, error: saveError } = await supabase.rpc("save_tip_card_draft_v2", {
         p_card_id: card?.id ?? null,
         p_meeting_id: meeting.id,
         p_title: title,
@@ -484,7 +499,7 @@ export function ManageTipsClient() {
       setCard(savedCard);
 
       if (action === "publish") {
-        const { data: publishedData, error: publishError } = await supabase.rpc("publish_tip_card", {
+        const { data: publishedData, error: publishError } = await supabase.rpc("publish_tip_card_v2", {
           p_card_id: savedCard.id,
           p_expected_revision: savedCard.revision,
         });
@@ -567,7 +582,8 @@ export function ManageTipsClient() {
           </div>
           <CardTitle className="font-heading text-2xl text-white">Meeting card setup</CardTitle>
           <CardDescription>
-            First publication must happen before Race 1. Race tips and meeting bets lock at their official cutoffs.
+            First publication must happen before Race 1. Race tips and Exotic&apos;s and
+            Multiples lock at their official cutoffs.
           </CardDescription>
         </CardHeader>
         <CardContent className="grid gap-4 md:grid-cols-2">
@@ -591,7 +607,7 @@ export function ManageTipsClient() {
             />
           </div>
           <div className="space-y-2">
-            <Label htmlFor="coin-price">Meeting price in coins</Label>
+            <Label htmlFor="coin-price">Meeting price in Credits</Label>
             <Input
               id="coin-price"
               disabled={isPublished}
@@ -632,7 +648,20 @@ export function ManageTipsClient() {
         {fixtures.map((fixture) => {
           const fixtureEntries = entriesByFixture.get(fixture.id) ?? [];
           const draft = raceDrafts[fixture.id];
-          const locked = isPublished && !isUnlocked(fixture.starts_at);
+          const locked = !isOpen(fixture.starts_at) || isReadOnlyCard;
+          const resultAvailable = Boolean(
+            fixture.result_summary ||
+              fixtureEntries.some((entry) => entry.result_position !== null),
+          );
+          const selectedWinner = fixtureEntries.find(
+            (entry) => entry.id === draft?.winnerEntryId,
+          );
+          const selectedPlace = fixtureEntries.find(
+            (entry) => entry.id === draft?.placeEntryId,
+          );
+          const officialWinner = fixtureEntries.find(
+            (entry) => entry.result_position === 1,
+          );
 
           return (
             <Card key={fixture.id} className={locked ? "opacity-75" : ""}>
@@ -646,10 +675,31 @@ export function ManageTipsClient() {
                       {fixture.race_class ? ` · ${fixture.race_class}` : ""}
                     </CardDescription>
                   </div>
-                  <Badge variant={locked ? "destructive" : "outline"}>
-                    <Clock3 className="size-3" />
-                    {locked ? "Locked" : "Open"}
-                  </Badge>
+                  <div className="flex items-center gap-2">
+                    <Badge
+                      variant={resultAvailable ? "default" : locked ? "destructive" : "outline"}
+                    >
+                      {resultAvailable ? (
+                        <Trophy className="size-3" />
+                      ) : (
+                        <Clock3 className="size-3" />
+                      )}
+                      {resultAvailable ? "Result Available" : locked ? "Locked" : "Open"}
+                    </Badge>
+                    {!locked ? (
+                      <Button
+                        type="button"
+                        size="sm"
+                        variant="outline"
+                        onClick={() =>
+                          document.getElementById(`winner-${fixture.id}`)?.focus()
+                        }
+                      >
+                        <FilePenLine className="size-3" />
+                        Edit tips
+                      </Button>
+                    ) : null}
+                  </div>
                 </div>
               </CardHeader>
               <CardContent className="grid gap-4 md:grid-cols-2">
@@ -697,6 +747,55 @@ export function ManageTipsClient() {
                     onChange={(event) => updateRaceDraft(fixture.id, { comments: event.target.value })}
                   />
                 </div>
+                {resultAvailable ? (
+                  <div className="rounded-lg border border-brand-cyan/30 bg-brand-cyan/8 p-4 md:col-span-2">
+                    <p className="font-semibold">
+                      Official result:{" "}
+                      {fixture.result_summary ||
+                        (officialWinner
+                          ? `${officialWinner.saddle_number}. ${officialWinner.horse_name} won`
+                          : "Result positions imported")}
+                    </p>
+                    <div className="mt-3 grid gap-3 text-sm sm:grid-cols-2">
+                      <div>
+                        <p className="text-muted-foreground">Winner selection</p>
+                        <p>
+                          {selectedWinner
+                            ? `${selectedWinner.saddle_number}. ${selectedWinner.horse_name} · ${
+                                selectedWinner.result_position
+                                  ? `finished ${selectedWinner.result_position}`
+                                  : "position unavailable"
+                              }`
+                            : "No selection"}
+                        </p>
+                        {selectedWinner?.result_position ? (
+                          <Badge
+                            className="mt-2"
+                            variant={selectedWinner.result_position === 1 ? "default" : "destructive"}
+                          >
+                            {selectedWinner.result_position === 1 ? "Winner hit" : "Winner miss"}
+                          </Badge>
+                        ) : null}
+                      </div>
+                      <div>
+                        <p className="text-muted-foreground">Best-place selection</p>
+                        <p>
+                          {selectedPlace
+                            ? `${selectedPlace.saddle_number}. ${selectedPlace.horse_name} · ${
+                                selectedPlace.result_position
+                                  ? `finished ${selectedPlace.result_position}`
+                                  : "position unavailable"
+                              }`
+                            : "No selection"}
+                        </p>
+                        <p className="mt-2 text-xs text-muted-foreground">
+                          Finishing position only. No monetary win is claimed without
+                          authoritative place terms or dividends.
+                        </p>
+                      </div>
+                    </div>
+                  </div>
+                ) : null}
               </CardContent>
             </Card>
           );
@@ -705,15 +804,53 @@ export function ManageTipsClient() {
 
       <div className="space-y-4">
         <div>
-          <h2 className="font-heading text-2xl text-white">Meeting-level bets</h2>
+          <h2 className="font-heading text-2xl text-white">Exotic&apos;s and Multiples</h2>
           <p className="text-sm text-muted-foreground">
-            Complete at least one PA, Pick 6, Bipot, Jackpot, or custom Other bet before publication.
+            Add only the meeting options you want to publish. At least one added option
+            needs a completed tip before publication.
           </p>
         </div>
-        {betOptions.map((option) => {
+        {!isReadOnlyCard && unusedBetOptions.length ? (
+          <Card className="border-dashed border-brand-gold/45">
+            <CardContent className="flex flex-col gap-3 p-4 sm:flex-row sm:items-end">
+              <div className="flex-1 space-y-2">
+                <Label htmlFor="add-multiple">Add Exotic or Multiple</Label>
+                <select
+                  id="add-multiple"
+                  className="h-9 w-full rounded-lg border border-input bg-background px-2.5 text-sm"
+                  value={selectedOptionId}
+                  onChange={(event) => setSelectedOptionId(event.target.value)}
+                >
+                  <option value="">Choose an unused option</option>
+                  {unusedBetOptions.map((option) => (
+                    <option key={option.id} value={option.id}>
+                      {option.display_name}
+                    </option>
+                  ))}
+                </select>
+              </div>
+              <Button
+                type="button"
+                disabled={!selectedOptionId}
+                onClick={addMultiple}
+              >
+                <Plus className="size-4" />
+                Add Exotic or Multiple
+              </Button>
+            </CardContent>
+          </Card>
+        ) : null}
+        {betOptions.filter((option) => multipleDrafts[option.id]).map((option) => {
           const draft = multipleDrafts[option.id];
-          const locked = isPublished && !isUnlocked(option.cutoff_at);
-          const officialLegCount = betLegs.filter((leg) => leg.bet_option_id === option.id).length;
+          const locked = !isOpen(option.cutoff_at) || isReadOnlyCard;
+          const legacySelections = draft.legs.flatMap((leg) =>
+            leg.entryIds.map((entryId) => ({
+              entryId,
+              legNumber: leg.legNumber,
+              fixtureId: leg.fixtureId,
+            })),
+          );
+          const isLegacy = legacySelections.length > 0 && !draft.tipText.trim();
 
           return (
             <Card key={option.id} className={locked ? "opacity-75" : ""}>
@@ -723,62 +860,74 @@ export function ManageTipsClient() {
                     <CardTitle>{option.display_name}</CardTitle>
                     <CardDescription>
                       Cutoff {formatRaceDateTime(option.cutoff_at)}
-                      {option.bet_type !== "other" ? ` · ${officialLegCount} official legs` : " · custom multi-race bet"}
+                      {isLegacy ? " · legacy structured selection" : " · free-text meeting tip"}
                     </CardDescription>
                   </div>
-                  <Badge variant={locked ? "destructive" : "secondary"}>
-                    {locked ? "Cutoff passed" : "Selections open"}
-                  </Badge>
+                  <div className="flex items-center gap-2">
+                    <Badge variant={locked ? "destructive" : "secondary"}>
+                      {locked ? "Cutoff passed" : "Tip open"}
+                    </Badge>
+                    {!locked && !isPublished ? (
+                      <Button
+                        type="button"
+                        size="icon-sm"
+                        variant="outline"
+                        aria-label={`Remove ${option.display_name}`}
+                        onClick={() => removeMultiple(option.id)}
+                      >
+                        <Trash2 className="size-4" />
+                      </Button>
+                    ) : null}
+                  </div>
                 </div>
               </CardHeader>
               <CardContent className="space-y-4">
-                {option.bet_type === "other" ? (
+                {isLegacy ? (
+                  <div className="rounded-lg border bg-background/40 p-4">
+                    <p className="font-semibold">Historical structured selection</p>
+                    <div className="mt-3 space-y-2 text-sm">
+                      {draft.legs.map((leg) => {
+                        const fixture = fixturesById.get(leg.fixtureId);
+                        const legEntries = leg.entryIds
+                          .map((entryId) => entries.find((entry) => entry.id === entryId))
+                          .filter(Boolean);
+
+                        return (
+                          <p key={`${option.id}-${leg.legNumber}`}>
+                            <span className="text-muted-foreground">
+                              Leg {leg.legNumber}
+                              {fixture ? ` / Race ${fixture.race_number}` : ""}:{" "}
+                            </span>
+                            {legEntries
+                              .map((entry) => `${entry?.saddle_number}. ${entry?.horse_name}`)
+                              .join(", ")}
+                          </p>
+                        );
+                      })}
+                    </div>
+                    <p className="mt-3 text-xs text-muted-foreground">
+                      Legacy structured records remain readable. New entries use the
+                      free-text format below.
+                    </p>
+                  </div>
+                ) : (
                   <div className="space-y-2">
-                    <Label htmlFor={`custom-name-${option.id}`}>Custom bet name</Label>
-                    <Input
-                      id={`custom-name-${option.id}`}
+                    <Label htmlFor={`multiple-tip-${option.id}`}>
+                      {option.display_name} tip
+                    </Label>
+                    <Textarea
+                      id={`multiple-tip-${option.id}`}
                       disabled={locked}
-                      placeholder="Example: Daily double"
-                      value={draft?.customName ?? ""}
-                      onChange={(event) => updateMultipleDraft(option.id, { customName: event.target.value })}
+                      required
+                      rows={6}
+                      placeholder="Enter your full multiline Exotic or Multiple tip exactly as clients should receive it."
+                      value={draft.tipText}
+                      onChange={(event) =>
+                        updateMultipleDraft(option.id, { tipText: event.target.value })
+                      }
                     />
                   </div>
-                ) : null}
-                <div className="grid gap-3 lg:grid-cols-2">
-                  {draft?.legs.map((leg) => {
-                    const fixture = fixturesById.get(leg.fixtureId);
-                    const legEntries = entriesByFixture.get(leg.fixtureId) ?? [];
-
-                    return (
-                      <div key={`${option.id}-${leg.legNumber}`} className="rounded-lg border bg-background/40 p-3">
-                        <p className="font-semibold">
-                          Leg {leg.legNumber}
-                          {fixture ? ` · Race ${fixture.race_number}` : ""}
-                        </p>
-                        <div className="mt-3 grid gap-2 sm:grid-cols-2">
-                          {legEntries.map((entry) => {
-                            const checked = leg.entryIds.includes(entry.id);
-
-                            return (
-                              <label
-                                key={entry.id}
-                                className="flex cursor-pointer items-center gap-2 rounded-md border p-2 text-sm has-checked:border-brand-gold has-checked:bg-brand-gold/10"
-                              >
-                                <input
-                                  checked={checked}
-                                  disabled={locked || entry.status === "scratched"}
-                                  type="checkbox"
-                                  onChange={() => toggleMultipleEntry(option.id, leg.legNumber, entry.id)}
-                                />
-                                <span>{entry.saddle_number}. {entry.horse_name}</span>
-                              </label>
-                            );
-                          })}
-                        </div>
-                      </div>
-                    );
-                  })}
-                </div>
+                )}
                 <div className="space-y-2">
                   <Label htmlFor={`multiple-comments-${option.id}`}>{option.display_name} comments</Label>
                   <Textarea
@@ -793,6 +942,16 @@ export function ManageTipsClient() {
             </Card>
           );
         })}
+        {!Object.keys(multipleDrafts).length ? (
+          <Alert>
+            <Plus className="size-4" />
+            <AlertTitle>No Exotic or Multiple added</AlertTitle>
+            <AlertDescription>
+              Use the Add Exotic or Multiple control to add PA, Pick 6, Bipot,
+              Jackpot, or Other only when needed.
+            </AlertDescription>
+          </Alert>
+        ) : null}
       </div>
 
       <Card className="sticky bottom-4 z-20 border-brand-gold bg-card/95 shadow-2xl backdrop-blur">
@@ -800,12 +959,19 @@ export function ManageTipsClient() {
           <div>
             <p className="font-semibold">{tipster?.display_name}</p>
             <p className="text-sm text-muted-foreground">
-              {isPublished
+              {isReadOnlyCard || (isPublished && !hasEditableSelections)
+                ? "All selections are locked. This card is now a read-only results record."
+                : isPublished
                 ? "Corrections are audited and only unlocked future selections can change."
                 : "Save privately, list as Coming Soon, or publish the completed card."}
             </p>
           </div>
-          {isPublished ? (
+          {isReadOnlyCard || (isPublished && !hasEditableSelections) ? (
+            <Badge variant="outline">
+              <Trophy className="size-3" />
+              View results only
+            </Badge>
+          ) : isPublished ? (
             <div className="flex w-full flex-col gap-2 sm:w-auto sm:min-w-96">
               <Input
                 placeholder="Required correction summary"

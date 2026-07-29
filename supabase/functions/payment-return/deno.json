@@ -1,0 +1,6 @@
+{
+  "imports": {
+    "@supabase/supabase-js": "npm:@supabase/supabase-js@2.110.8",
+    "spark-md5": "npm:spark-md5@3.0.2"
+  }
+}

@@ -13,7 +13,7 @@ export default function ManageTipsPage() {
       accessDescription="the meeting-card editor"
       accessTitle="Tipster access required"
       title="Manage meeting tips"
-      description="Create structured horse-racing selections, meeting bets, pre-sale cards, publications, and audited revisions."
+      description="Create race-by-race selections, free-text Exotic's and Multiples, pre-sale cards, publications, results, and audited revisions."
       nav={tipsterNav}
     >
       <ManageTipsClient />
