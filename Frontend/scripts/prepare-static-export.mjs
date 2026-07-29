@@ -5,33 +5,33 @@ import { fileURLToPath } from "node:url";
 const scriptsDirectory = path.dirname(fileURLToPath(import.meta.url));
 const outputDirectory = path.resolve(scriptsDirectory, "..", "out");
 
-async function findPagePayloads(directory) {
+async function findFiles(directory) {
   const entries = await readdir(directory, { withFileTypes: true });
-  const payloads = [];
+  const files = [];
 
   for (const entry of entries) {
     const entryPath = path.join(directory, entry.name);
 
     if (entry.isDirectory()) {
-      payloads.push(...(await findPagePayloads(entryPath)));
-    } else if (entry.name === "__PAGE__.txt") {
-      payloads.push(entryPath);
+      files.push(...(await findFiles(entryPath)));
+    } else {
+      files.push(entryPath);
     }
   }
 
-  return payloads;
+  return files;
 }
 
-const pagePayloads = await findPagePayloads(outputDirectory);
+const exportedFiles = await findFiles(outputDirectory);
 let copiedPayloads = 0;
 
-for (const sourcePath of pagePayloads) {
+for (const sourcePath of exportedFiles) {
   const relativeParts = path.relative(outputDirectory, sourcePath).split(path.sep);
   const nextPayloadIndex = relativeParts.findIndex((part) =>
     part.startsWith("__next."),
   );
 
-  if (nextPayloadIndex < 0) {
+  if (nextPayloadIndex < 0 || nextPayloadIndex === relativeParts.length - 1) {
     continue;
   }
 
@@ -48,5 +48,5 @@ for (const sourcePath of pagePayloads) {
 }
 
 console.log(
-  `Prepared ${copiedPayloads} flattened page payloads for static Apache hosting.`,
+  `Prepared ${copiedPayloads} flattened Next payload aliases for static Apache hosting.`,
 );
