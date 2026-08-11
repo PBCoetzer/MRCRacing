@@ -9,7 +9,7 @@ export default function AdminRacingPage() {
       accessDescription="the administrator race-feed monitor"
       accessTitle="Administrator access required"
       title="Race-feed monitor"
-      description="Manage approved sources, monitor LLM extraction, review quarantined changes, and inspect tip-impact alerts."
+      description="Review grounded race proposals, monitor staged extraction, manage source trust, and control approval safeguards."
       nav={adminNav}
     >
       <AdminRaceFeedClient />
