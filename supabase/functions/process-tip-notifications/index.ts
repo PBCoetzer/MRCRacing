@@ -16,6 +16,13 @@ type NotificationPayload = {
   status?: "active" | "flagged" | "suspended" | "banned";
   suspensionUntil?: string;
   publicMessage?: string;
+  raceNumber?: number;
+  changeSummary?: string;
+  changedFields?: string[];
+  beforeValues?: Record<string, unknown>;
+  afterValues?: Record<string, unknown>;
+  isAfterLock?: boolean;
+  tipsterUrl?: string;
 };
 
 type NotificationJob = {
@@ -201,6 +208,28 @@ function renderEmail(job: NotificationJob): EmailContent {
       `<p style="margin:0 0 14px"><strong>${escapeHtml(credits)} MRC Credits</strong> were returned to your wallet.</p><p style="margin:0">${escapeHtml(reason)}</p>`,
       clientUrl,
       "Open your dashboard",
+    );
+
+    return { subject, text, html };
+  }
+
+  if (job.event_type === "tip_card_race_data_changed") {
+    const venue = String(payload.meetingVenue ?? "the selected meeting");
+    const raceLabel = payload.raceNumber ? `Race ${payload.raceNumber}` : "meeting";
+    const summary = String(payload.changeSummary ?? "Official race information changed.");
+    const changedFields = Array.isArray(payload.changedFields)
+      ? payload.changedFields.join(", ")
+      : "race information";
+    const isAfterLock = payload.isAfterLock === true;
+    const subject = `Race data changed: ${venue} ${raceLabel}`;
+    const text = isAfterLock
+      ? `${summary} The affected tip was already locked and remains immutable.`
+      : `${summary} Review the affected meeting card before its cutoff.`;
+    const html = renderLayout(
+      isAfterLock ? "Race data changed after cutoff" : "Race data changed — review required",
+      `<p style="margin:0 0 14px">${escapeHtml(summary)}</p><p style="margin:0 0 14px">Changed fields: <strong>${escapeHtml(changedFields)}</strong>.</p><p style="margin:0">${isAfterLock ? "The affected tip remains locked. Clients are not notified." : "Review the affected selection. Clients are notified only if you publish a correction."}</p>`,
+      payload.tipsterUrl ?? "https://www.mrcracing.co.za/tipster/",
+      "Review meeting card",
     );
 
     return { subject, text, html };

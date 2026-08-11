@@ -159,9 +159,13 @@ export function UpcomingMeetingBoard() {
     }
 
     void loadUpcomingMeetings();
+    const intervalId = window.setInterval(() => {
+      void loadUpcomingMeetings();
+    }, 60_000);
 
     return () => {
       isActive = false;
+      window.clearInterval(intervalId);
     };
   }, []);
 
@@ -237,7 +241,9 @@ export function UpcomingMeetingBoard() {
               ) : null}
             </div>
             <div className="mt-4 flex flex-wrap items-center justify-between gap-3 border-t border-white/10 pt-3 text-xs text-white/62">
-              <span>Verified by {meeting.source_name || "MRC Racing"}</span>
+              <span>
+                Verified by {meeting.source_name || "MRC Racing"} · Updated {formatSyncTime(meeting.source_updated_at)}
+              </span>
               {meeting.source_url?.startsWith("https://") ? (
                 <a
                   href={meeting.source_url}
@@ -294,9 +300,13 @@ export function RaceResultsHistory() {
     }
 
     void loadResultsHistory();
+    const intervalId = window.setInterval(() => {
+      void loadResultsHistory();
+    }, 60_000);
 
     return () => {
       isActive = false;
+      window.clearInterval(intervalId);
     };
   }, []);
 

@@ -272,7 +272,7 @@ export function ClientDashboardClient() {
       if (loadedFixtures.length) {
         const { data: entryData, error: entryError } = await supabase
           .from("race_entries")
-          .select("id,fixture_id,saddle_number,horse_name,jockey_name,trainer_name,draw,odds,status,result_position")
+          .select("id,fixture_id,saddle_number,horse_name,jockey_name,trainer_name,draw,status,result_position")
           .in("fixture_id", loadedFixtures.map((fixture) => fixture.id))
           .order("saddle_number");
 

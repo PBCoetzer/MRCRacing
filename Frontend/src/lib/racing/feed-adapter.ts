@@ -6,8 +6,8 @@ export type ProviderRunner = {
   trainerName?: string;
   draw?: number;
   carriedWeight?: number;
-  odds?: string;
-  scratched: boolean;
+  status: "active" | "scratched" | "withdrawn";
+  resultPosition?: number;
   providerPayload: Record<string, unknown>;
 };
 
@@ -24,20 +24,6 @@ export type ProviderRace = {
   providerPayload: Record<string, unknown>;
 };
 
-export type ProviderBetLeg = {
-  legNumber: number;
-  raceExternalId: string;
-};
-
-export type ProviderBetOption = {
-  externalId: string;
-  type: "pa" | "pick6" | "bipot" | "jackpot" | "other";
-  displayName: string;
-  cutoffAt: string;
-  legs: ProviderBetLeg[];
-  providerPayload: Record<string, unknown>;
-};
-
 export type ProviderMeeting = {
   externalId: string;
   venue: string;
@@ -46,7 +32,6 @@ export type ProviderMeeting = {
   firstRaceAt: string;
   lastRaceAt?: string;
   races: ProviderRace[];
-  betOptions: ProviderBetOption[];
   providerPayload: Record<string, unknown>;
 };
 
@@ -65,11 +50,5 @@ export function assertValidProviderMeeting(meeting: ProviderMeeting) {
 
   if (raceNumbers.size !== meeting.races.length) {
     throw new Error("The racing provider returned duplicate race numbers.");
-  }
-
-  for (const option of meeting.betOptions) {
-    if (!option.cutoffAt || option.legs.some((leg) => !leg.raceExternalId)) {
-      throw new Error(`The ${option.displayName} betting cutoff or leg mapping is invalid.`);
-    }
   }
 }

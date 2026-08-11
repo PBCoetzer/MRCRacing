@@ -35,6 +35,7 @@ import type {
   RaceSelectionDraft,
   RaceTipSelection,
   TipCard,
+  TipCardChangeAlert,
   TipCardMultiple,
   TipCardMultipleSelection,
   TipCardStatus,
@@ -57,7 +58,7 @@ function getErrorMessage(error: unknown, fallback: string) {
 }
 
 export function ManageTipsClient() {
-  const [loadedAt] = useState(() => Date.now());
+  const [currentTime, setCurrentTime] = useState(() => Date.now());
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState("");
@@ -76,6 +77,8 @@ export function ManageTipsClient() {
   const [raceDrafts, setRaceDrafts] = useState<RaceDraftMap>({});
   const [multipleDrafts, setMultipleDrafts] = useState<MultipleDraftMap>({});
   const [selectedOptionId, setSelectedOptionId] = useState("");
+  const [changeAlerts, setChangeAlerts] = useState<TipCardChangeAlert[]>([]);
+  const [acknowledgingAlertId, setAcknowledgingAlertId] = useState("");
 
   const loadEditor = useCallback(async () => {
     const supabase = createClient();
@@ -148,7 +151,7 @@ export function ManageTipsClient() {
       const [fixtureResult, optionResult] = await Promise.all([
         supabase
           .from("fixtures")
-          .select("id,meeting_id,race_number,title,venue,starts_at,distance_m,race_class,status,result_summary")
+          .select("id,meeting_id,race_number,title,venue,starts_at,selection_lock_at,distance_m,race_class,status,result_summary")
           .eq("meeting_id", resolvedMeetingId)
           .order("race_number"),
         supabase
@@ -171,7 +174,7 @@ export function ManageTipsClient() {
         fixtureIds.length
           ? supabase
               .from("race_entries")
-              .select("id,fixture_id,saddle_number,horse_name,jockey_name,trainer_name,draw,odds,status,result_position")
+              .select("id,fixture_id,saddle_number,horse_name,jockey_name,trainer_name,draw,status,result_position")
               .in("fixture_id", fixtureIds)
               .order("saddle_number")
           : Promise.resolve({ data: [], error: null }),
@@ -191,6 +194,7 @@ export function ManageTipsClient() {
       let loadedRaceSelections: RaceTipSelection[] = [];
       let loadedMultiples: TipCardMultiple[] = [];
       let loadedMultipleSelections: TipCardMultipleSelection[] = [];
+      let loadedChangeAlerts: TipCardChangeAlert[] = [];
 
       if (loadedCard) {
         const [raceSelectionResult, multipleResult] = await Promise.all([
@@ -223,6 +227,19 @@ export function ManageTipsClient() {
 
           loadedMultipleSelections = (selectionData ?? []) as TipCardMultipleSelection[];
         }
+
+        const { data: alertData, error: alertError } = await supabase.rpc(
+          "tipster_get_card_change_alerts",
+          { p_card_id: loadedCard.id },
+        );
+
+        if (alertError) {
+          throw alertError;
+        }
+
+        loadedChangeAlerts = Array.isArray(alertData)
+          ? alertData as TipCardChangeAlert[]
+          : [];
       }
 
       const raceSelectionByFixture = new Map(
@@ -297,6 +314,7 @@ export function ManageTipsClient() {
       setSummary(loadedCard?.summary ?? "");
       setCoinPrice(String(loadedCard?.coin_price ?? 25));
       setListingStatus(loadedCard?.status === "coming_soon" ? "coming_soon" : "draft");
+      setChangeAlerts(loadedChangeAlerts);
     } catch (loadError) {
       setError(getErrorMessage(loadError, "Could not load the meeting card editor."));
     } finally {
@@ -311,6 +329,12 @@ export function ManageTipsClient() {
 
     return () => window.clearTimeout(timeoutId);
   }, [loadEditor]);
+
+  useEffect(() => {
+    const intervalId = window.setInterval(() => setCurrentTime(Date.now()), 30_000);
+
+    return () => window.clearInterval(intervalId);
+  }, []);
 
   const entriesByFixture = useMemo(() => {
     const grouped = new Map<string, RaceEntry[]>();
@@ -331,11 +355,48 @@ export function ManageTipsClient() {
   const isReadOnlyCard = card?.status === "settled" || card?.status === "voided";
   const unusedBetOptions = betOptions.filter((option) => !multipleDrafts[option.id]);
   const hasEditableSelections =
-    fixtures.some((fixture) => new Date(fixture.starts_at).getTime() > loadedAt) ||
-    betOptions.some((option) => new Date(option.cutoff_at).getTime() > loadedAt);
+    fixtures.some((fixture) => new Date(fixture.selection_lock_at).getTime() > currentTime) ||
+    betOptions.some((option) => new Date(option.cutoff_at).getTime() > currentTime);
 
   function isOpen(value: string) {
-    return new Date(value).getTime() > loadedAt;
+    return new Date(value).getTime() > currentTime;
+  }
+
+  async function acknowledgeChange(alertId: string) {
+    const supabase = createClient();
+
+    if (!supabase) {
+      setError("Supabase is not configured.");
+      return;
+    }
+
+    setAcknowledgingAlertId(alertId);
+    setError("");
+
+    try {
+      const { error: acknowledgeError } = await supabase.rpc(
+        "acknowledge_tip_card_change",
+        {
+          p_alert_id: alertId,
+          p_note: "Reviewed; the current tip remains valid.",
+        },
+      );
+
+      if (acknowledgeError) {
+        throw acknowledgeError;
+      }
+
+      setChangeAlerts((current) => current.map((alert) =>
+        alert.id === alertId
+          ? { ...alert, status: "acknowledged", acknowledgedAt: new Date().toISOString() }
+          : alert
+      ));
+      setMessage("Race-data change acknowledged. Clients were not notified because the tip remains unchanged.");
+    } catch (acknowledgeError) {
+      setError(getErrorMessage(acknowledgeError, "Could not acknowledge the race-data change."));
+    } finally {
+      setAcknowledgingAlertId("");
+    }
   }
 
   function updateRaceDraft(fixtureId: string, patch: Partial<RaceSelectionDraft>) {
@@ -465,7 +526,18 @@ export function ManageTipsClient() {
         }
 
         const notificationMessage = await invokeNotificationWorker();
-        setCard(data as TipCard);
+        const revisedCard = data as TipCard;
+        setCard(revisedCard);
+        setChangeAlerts((current) => current.map((alert) =>
+          alert.status === "pending"
+            ? {
+                ...alert,
+                status: "resolved",
+                resolvedAt: new Date().toISOString(),
+                resolvedRevision: revisedCard.revision,
+              }
+            : alert
+        ));
         setRevisionSummary("");
         setMessage(`Correction published. ${notificationMessage}`);
         return;
@@ -572,6 +644,80 @@ export function ManageTipsClient() {
         </Alert>
       ) : null}
 
+      {changeAlerts.some((alert) => ["pending", "locked"].includes(alert.status)) ? (
+        <Card className="border-brand-gold/50 bg-brand-gold/5">
+          <CardHeader>
+            <CardTitle className="flex items-center gap-2">
+              <BellRing className="size-5 text-brand-gold" />
+              Race data changed — review required
+            </CardTitle>
+            <CardDescription>
+              These factual source changes may affect this published meeting card. Clients are notified only after you publish a correction.
+            </CardDescription>
+          </CardHeader>
+          <CardContent className="grid gap-3">
+            {changeAlerts
+              .filter((alert) => ["pending", "locked"].includes(alert.status))
+              .map((alert) => (
+                <div key={alert.id} className="rounded-lg border border-brand-gold/30 bg-background/55 p-4">
+                  <div className="flex flex-wrap items-start justify-between gap-2">
+                    <div>
+                      <p className="font-semibold">{alert.summary}</p>
+                      <p className="mt-1 text-xs text-muted-foreground">
+                        {alert.raceNumber ? `Race ${alert.raceNumber}` : "Meeting change"}
+                        {alert.horseName ? ` · ${alert.horseName}` : ""}
+                        {alert.changedFields.length ? ` · ${alert.changedFields.join(", ")}` : ""}
+                      </p>
+                    </div>
+                    <Badge variant={alert.status === "locked" ? "destructive" : "outline"}>
+                      {alert.status === "locked" ? "Changed after lock" : "Review required"}
+                    </Badge>
+                  </div>
+                  <div className="mt-3 grid gap-3 text-xs md:grid-cols-2">
+                    <div className="rounded-md border bg-black/10 p-3">
+                      <p className="mb-1 font-semibold text-muted-foreground">Previous data</p>
+                      <pre className="whitespace-pre-wrap break-words font-mono">
+                        {JSON.stringify(alert.beforeValues, null, 2)}
+                      </pre>
+                    </div>
+                    <div className="rounded-md border bg-black/10 p-3">
+                      <p className="mb-1 font-semibold text-muted-foreground">Updated data</p>
+                      <pre className="whitespace-pre-wrap break-words font-mono">
+                        {JSON.stringify(alert.afterValues, null, 2)}
+                      </pre>
+                    </div>
+                  </div>
+                  {alert.status === "pending" ? (
+                    <div className="mt-3 flex flex-wrap gap-2">
+                      <Button
+                        type="button"
+                        size="sm"
+                        variant="outline"
+                        onClick={() => void acknowledgeChange(alert.id)}
+                        disabled={acknowledgingAlertId === alert.id}
+                      >
+                        {acknowledgingAlertId === alert.id ? (
+                          <Loader2 className="size-4 animate-spin" />
+                        ) : (
+                          <CheckCircle2 className="size-4" />
+                        )}
+                        Tip remains valid
+                      </Button>
+                      <p className="self-center text-xs text-muted-foreground">
+                        Otherwise edit the affected selection and publish a correction below.
+                      </p>
+                    </div>
+                  ) : (
+                    <p className="mt-3 text-xs text-muted-foreground">
+                      This change arrived after cutoff. The existing tip remains immutable and clients are not notified.
+                    </p>
+                  )}
+                </div>
+              ))}
+          </CardContent>
+        </Card>
+      ) : null}
+
       <Card className="border-brand-gold/40">
         <CardHeader>
           <div className="flex flex-wrap items-center gap-2">
@@ -648,7 +794,7 @@ export function ManageTipsClient() {
         {fixtures.map((fixture) => {
           const fixtureEntries = entriesByFixture.get(fixture.id) ?? [];
           const draft = raceDrafts[fixture.id];
-          const locked = !isOpen(fixture.starts_at) || isReadOnlyCard;
+          const locked = !isOpen(fixture.selection_lock_at) || isReadOnlyCard;
           const resultAvailable = Boolean(
             fixture.result_summary ||
               fixtureEntries.some((entry) => entry.result_position !== null),
@@ -732,7 +878,7 @@ export function ManageTipsClient() {
                     <option value="">No selection</option>
                     {fixtureEntries.map((entry) => (
                       <option key={entry.id} value={entry.id} disabled={entry.status === "scratched"}>
-                        {entry.saddle_number}. {entry.horse_name}{entry.odds ? ` · ${entry.odds}` : ""}
+                        {entry.saddle_number}. {entry.horse_name}{entry.jockey_name ? ` · ${entry.jockey_name}` : ""}
                       </option>
                     ))}
                   </select>

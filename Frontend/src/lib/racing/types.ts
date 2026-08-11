@@ -20,6 +20,7 @@ export type RaceFixture = {
   title: string;
   venue: string | null;
   starts_at: string;
+  selection_lock_at: string;
   distance_m: number | null;
   race_class: string | null;
   status: string;
@@ -34,9 +35,27 @@ export type RaceEntry = {
   jockey_name: string | null;
   trainer_name: string | null;
   draw: number | null;
-  odds: string | null;
-  status: "active" | "scratched";
+  status: "active" | "scratched" | "withdrawn";
   result_position: number | null;
+};
+
+export type TipCardChangeAlert = {
+  id: string;
+  status: "pending" | "acknowledged" | "resolved" | "locked";
+  isAfterLock: boolean;
+  createdAt: string;
+  acknowledgedAt: string | null;
+  resolvedAt: string | null;
+  resolvedRevision: number | null;
+  fixtureId: string | null;
+  entryId: string | null;
+  summary: string;
+  changedFields: string[];
+  beforeValues: Record<string, unknown>;
+  afterValues: Record<string, unknown>;
+  raceNumber: number | null;
+  horseName: string | null;
+  changeCreatedAt: string;
 };
 
 export type MeetingBetOption = {
