@@ -560,10 +560,10 @@ Deno.serve(async (request: Request) => {
 
   const supabaseUrl = Deno.env.get("SUPABASE_URL") ?? "";
   const serviceRoleKey = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY") ?? "";
-  const llmBaseUrl = Deno.env.get("RACE_LLM_BASE_URL") ?? "";
-  const llmApiKey = Deno.env.get("RACE_LLM_API_KEY") ?? "";
-  const llmModel = Deno.env.get("RACE_LLM_MODEL") ?? "";
-  const responseMode = Deno.env.get("RACE_LLM_RESPONSE_MODE") ?? "json_schema";
+  let llmBaseUrl = Deno.env.get("RACE_LLM_BASE_URL") ?? "";
+  let llmApiKey = Deno.env.get("RACE_LLM_API_KEY") ?? "";
+  let llmModel = Deno.env.get("RACE_LLM_MODEL") ?? "";
+  let responseMode = Deno.env.get("RACE_LLM_RESPONSE_MODE") ?? "";
 
   if (!supabaseUrl || !serviceRoleKey) {
     return jsonResponse(request, { error: "Supabase worker configuration is incomplete." }, 500);
@@ -607,6 +607,23 @@ Deno.serve(async (request: Request) => {
 
   if (!authorizedAs) {
     return jsonResponse(request, { error: "Race-feed worker authentication failed." }, 401);
+  }
+
+  if (!llmBaseUrl || !llmApiKey || !llmModel || !responseMode) {
+    const { data: vaultConfiguration } = await serviceClient.rpc(
+      "get_race_llm_configuration",
+    );
+    const configuration = (vaultConfiguration ?? {}) as {
+      baseUrl?: string;
+      apiKey?: string;
+      model?: string;
+      responseMode?: string;
+    };
+
+    llmBaseUrl ||= configuration.baseUrl ?? "";
+    llmApiKey ||= configuration.apiKey ?? "";
+    llmModel ||= configuration.model ?? "";
+    responseMode ||= configuration.responseMode ?? "json_schema";
   }
 
   const requestBody = await request.json().catch(() => ({})) as SyncRequest;

@@ -15,6 +15,11 @@ RACE_LLM_RESPONSE_MODE=json_schema
 `RACE_LLM_BASE_URL` may be changed later to the authenticated public Linux endpoint.
 Never add these values to the Xneelo frontend or a `NEXT_PUBLIC_` variable.
 
+When Edge Function secret management is unavailable, the worker can read the same
+four values from Supabase Vault through the service-role-only
+`get_race_llm_configuration` RPC. Vault secret names use the
+`mrc_race_llm_` prefix and are never returned to browser roles.
+
 ## Deployment
 
 1. Apply `Database/20260811_mrc_llm_race_feed.sql`.
