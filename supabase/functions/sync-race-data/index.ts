@@ -1371,6 +1371,118 @@ async function handleManualResearch(
   return await handleWeeklyCalendar(serviceClient, task, settings, configuration);
 }
 
+function shouldDelegateToHermes(task: RaceFeedTask) {
+  const mode = (Deno.env.get("MRC_HERMES_DELEGATION_MODE") ?? "explicit")
+    .toLowerCase();
+  if (mode === "disabled") return false;
+  if (mode === "all") return true;
+  return task.task_payload.delegate_to_hermes === true ||
+    task.task_payload.provider === "hermes";
+}
+
+function requiredFieldsForTask(taskType: RaceFeedTask["task_type"]) {
+  switch (taskType) {
+    case "weekly_calendar":
+      return ["venue", "countryCode", "meetingDate", "status"];
+    case "meeting_schedule":
+      return [
+        "venue",
+        "meetingDate",
+        "races",
+        "raceNumber",
+        "title",
+        "startsAt",
+        "distanceMetres",
+      ];
+    case "race_detail":
+    case "result_refresh":
+      return [
+        "race",
+        "runners",
+        "horseName",
+        "jockeyName",
+        "trainerName",
+        "draw",
+        "carriedWeight",
+        "status",
+      ];
+    default:
+      return ["meetings", "races", "runners", "sources"];
+  }
+}
+
+async function delegateTaskToHermes(
+  supabaseUrl: string,
+  task: RaceFeedTask,
+): Promise<TaskResult> {
+  const internalToken = Deno.env.get("MRC_HERMES_INTERNAL_TOKEN") ?? "";
+  if (internalToken.length < 32) {
+    throw new Error("MRC_HERMES_INTERNAL_TOKEN is missing or too short.");
+  }
+
+  const deadline = new Date(Date.now() + 2 * 60 * 60 * 1000).toISOString();
+  const configuredSources = (Deno.env.get("MRC_HERMES_PERMITTED_SOURCES") ?? "")
+    .split(",")
+    .map((source) => source.trim().toLowerCase())
+    .filter(Boolean);
+  const permittedSources = Array.isArray(task.task_payload.permitted_sources)
+    ? task.task_payload.permitted_sources
+    : configuredSources;
+  if (permittedSources.length === 0) {
+    throw new Error(
+      "Hermes delegation requires MRC_HERMES_PERMITTED_SOURCES or an explicit task allowlist.",
+    );
+  }
+  const response = await fetch(
+    `${supabaseUrl}/functions/v1/hermes-race-bridge/jobs`,
+    {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        "x-mrc-internal-token": internalToken,
+      },
+      body: JSON.stringify({
+        correlation_id: `race-feed:${task.id}:${task.run_id}`,
+        schema_version: 1,
+        task_type: task.task_type,
+        source_task_id: task.id,
+        source_run_id: task.run_id,
+        venue: task.venue,
+        meeting_date: task.meeting_date,
+        race_number: task.race_number,
+        required_fields: requiredFieldsForTask(task.task_type),
+        permitted_sources: permittedSources,
+        task_payload: {
+          ...task.task_payload,
+          taskKey: task.task_key,
+          meetingId: task.meeting_id,
+          fixtureId: task.fixture_id,
+          meetingExternalId: task.meeting_external_id,
+        },
+        deadline,
+      }),
+    },
+  );
+  const payload = await response.json().catch(() => ({})) as JsonRecord;
+  if (!response.ok) {
+    throw new Error(
+      `Hermes race bridge rejected the task: ${
+        String(payload.error ?? response.status)
+      }`,
+    );
+  }
+
+  return {
+    status: "pending_approval",
+    payload: {
+      delegatedTo: "hermes-race-bridge",
+      bridge: payload,
+      deadline,
+    },
+    evidenceCount: 0,
+  };
+}
+
 async function authorizeRequest(request: Request, serviceClient: ServiceClient) {
   const workerToken = request.headers.get("x-mrc-worker-token") ?? "";
   const authorization = request.headers.get("authorization") ?? "";
@@ -1445,38 +1557,64 @@ Deno.serve(async (request: Request) => {
   let evidenceCount = 0;
 
   try {
-    const configuration = await loadConfiguration(serviceClient);
-    const { error: modelMetadataError } = await serviceClient
-      .from("race_feed_runs")
-      .update({
-        search_model_name: configuration.searchModel,
-        extraction_model_name: configuration.extractionModel,
-      })
-      .eq("id", task.run_id);
-    if (modelMetadataError) {
-      throw new Error(`Could not record active model configuration: ${modelMetadataError.message}`);
-    }
     let result: TaskResult;
-    searchCount = 1;
 
-    switch (task.task_type) {
-      case "weekly_calendar":
-        result = await handleWeeklyCalendar(serviceClient, task, settings, configuration);
-        break;
-      case "meeting_schedule":
-        result = await handleMeetingSchedule(serviceClient, task, configuration);
-        break;
-      case "race_detail":
-        result = await handleRaceDetail(serviceClient, task, configuration);
-        break;
-      case "result_refresh":
-        result = await handleResultRefresh(serviceClient, task, configuration);
-        break;
-      case "manual_research":
-        result = await handleManualResearch(serviceClient, task, settings, configuration);
-        break;
-      default:
-        throw new Error("Unsupported race-feed task type.");
+    if (shouldDelegateToHermes(task)) {
+      result = await delegateTaskToHermes(supabaseUrl, task);
+      searchCount = 0;
+    } else {
+      const configuration = await loadConfiguration(serviceClient);
+      const { error: modelMetadataError } = await serviceClient
+        .from("race_feed_runs")
+        .update({
+          search_model_name: configuration.searchModel,
+          extraction_model_name: configuration.extractionModel,
+        })
+        .eq("id", task.run_id);
+      if (modelMetadataError) {
+        throw new Error(
+          `Could not record active model configuration: ${modelMetadataError.message}`,
+        );
+      }
+      searchCount = 1;
+
+      switch (task.task_type) {
+        case "weekly_calendar":
+          result = await handleWeeklyCalendar(
+            serviceClient,
+            task,
+            settings,
+            configuration,
+          );
+          break;
+        case "meeting_schedule":
+          result = await handleMeetingSchedule(
+            serviceClient,
+            task,
+            configuration,
+          );
+          break;
+        case "race_detail":
+          result = await handleRaceDetail(serviceClient, task, configuration);
+          break;
+        case "result_refresh":
+          result = await handleResultRefresh(
+            serviceClient,
+            task,
+            configuration,
+          );
+          break;
+        case "manual_research":
+          result = await handleManualResearch(
+            serviceClient,
+            task,
+            settings,
+            configuration,
+          );
+          break;
+        default:
+          throw new Error("Unsupported race-feed task type.");
+      }
     }
 
     evidenceCount = result.evidenceCount;
