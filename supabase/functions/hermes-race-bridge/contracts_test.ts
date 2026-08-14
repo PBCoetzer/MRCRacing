@@ -1,6 +1,7 @@
 import {
   constantTimeEqual,
   evidenceHash,
+  sourceMatchesPermittedDomain,
   stableStringify,
   validateJobRequest,
   validateResult,
@@ -96,6 +97,42 @@ Deno.test("result validation verifies the evidence hash", async () => {
     completed_at: "2026-08-14T00:01:00Z",
   });
   assert(result.confidence === 0.9, "Confidence was changed.");
+});
+
+Deno.test("result validation binds the declared domain to the URL hostname", async () => {
+  const sources = [{
+    domain: "4racing.com",
+    url: "https://attacker.example/mislabeled",
+    retrieved_at: "2026-08-14T00:00:00Z",
+  }];
+  let failed = false;
+  try {
+    await validateResult({
+      job_id: "123e4567-e89b-42d3-a456-426614174000",
+      correlation_id: "domain-binding",
+      schema_version: 1,
+      status: "succeeded",
+      normalized_data: {},
+      sources,
+      confidence: 0.9,
+      warnings: [],
+      conflicts: [],
+      evidence_hash: await evidenceHash(sources),
+      started_at: "2026-08-14T00:00:00Z",
+      completed_at: "2026-08-14T00:01:00Z",
+    });
+  } catch {
+    failed = true;
+  }
+  assert(failed, "A mislabeled source URL was accepted.");
+  assert(
+    sourceMatchesPermittedDomain("www.4racing.com", ["4racing.com"]),
+    "A permitted www subdomain was rejected.",
+  );
+  assert(
+    !sourceMatchesPermittedDomain("attacker.example", ["4racing.com"]),
+    "An off-domain hostname was accepted.",
+  );
 });
 
 Deno.test("constant-time comparison handles equal and different values", () => {

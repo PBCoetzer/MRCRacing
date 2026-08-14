@@ -4,6 +4,7 @@ import {
   constantTimeEqual,
   type HermesRaceResult,
   type JsonRecord,
+  sourceMatchesPermittedDomain,
   validateJobRequest,
   validateResult,
 } from "./contracts.ts";
@@ -386,6 +387,32 @@ Deno.serve(async (request: Request) => {
     }
 
     const result = await validateResult(body.result);
+    const { data: claimedJob, error: claimedJobError } = await serviceClient
+      .rpc(
+        "get_hermes_race_job",
+        { p_job_id: result.job_id },
+      );
+    if (claimedJobError) throw claimedJobError;
+    if (!claimedJob || typeof claimedJob !== "object") {
+      throw new Error("Claimed job was not found.");
+    }
+    const claimed = claimedJob as JsonRecord;
+    if (claimed.correlation_id !== result.correlation_id) {
+      throw new Error("Result correlation_id does not match the claimed job.");
+    }
+    const permittedSources = Array.isArray(claimed.permitted_sources)
+      ? claimed.permitted_sources.filter((item): item is string =>
+        typeof item === "string"
+      )
+      : [];
+    if (
+      !permittedSources.length ||
+      result.sources.some((source) =>
+        !sourceMatchesPermittedDomain(source.domain, permittedSources)
+      )
+    ) {
+      throw new Error("Result contains a source outside the job allowlist.");
+    }
     const { data: completed, error: completionError } = await serviceClient.rpc(
       "complete_hermes_race_job",
       {

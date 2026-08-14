@@ -1,0 +1,9 @@
+create index if not exists tips_sport_idx on public.tips (sport_id);
+create index if not exists announcements_created_by_idx on public.announcements (created_by);
+create index if not exists audit_logs_actor_idx on public.audit_logs (actor_id);
+create index if not exists credit_transactions_created_by_idx on public.credit_transactions (created_by);
+create index if not exists credit_transactions_payment_idx on public.credit_transactions (payment_id);
+create index if not exists credit_transactions_tip_idx on public.credit_transactions (tip_id);
+create index if not exists media_assets_owner_idx on public.media_assets (owner_id);
+create index if not exists subscriptions_user_idx on public.subscriptions (user_id);
+create index if not exists tip_unlocks_tip_idx on public.tip_unlocks (tip_id);;

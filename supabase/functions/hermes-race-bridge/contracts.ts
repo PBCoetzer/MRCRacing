@@ -97,6 +97,32 @@ function isoDate(value: unknown, label: string) {
   return normalized;
 }
 
+export function canonicalDomain(value: string) {
+  let normalized = value.trim().toLowerCase().replace(/\.$/, "");
+  if (normalized.includes("://")) {
+    try {
+      normalized = new URL(normalized).hostname.toLowerCase().replace(
+        /\.$/,
+        "",
+      );
+    } catch {
+      throw new Error("Source domain or URL is invalid.");
+    }
+  }
+  return normalized.startsWith("www.") ? normalized.slice(4) : normalized;
+}
+
+export function sourceMatchesPermittedDomain(
+  sourceDomain: string,
+  permittedSources: string[],
+) {
+  const source = canonicalDomain(sourceDomain);
+  return permittedSources.some((item) => {
+    const permitted = canonicalDomain(item);
+    return source === permitted || source.endsWith(`.${permitted}`);
+  });
+}
+
 function stringArray(value: unknown, label: string, maxItems = 100) {
   if (value === undefined) return [];
   if (!Array.isArray(value) || value.length > maxItems) {
@@ -170,7 +196,7 @@ export function validateJobRequest(value: unknown): HermesRaceJobRequest {
       if (sources.length < 1) {
         throw new Error("permitted_sources must not be empty.");
       }
-      return sources;
+      return [...new Set(sources.map((source) => canonicalDomain(source)))];
     })(),
     task_payload: payload,
     ...(availableAt ? { available_at: availableAt } : {}),
@@ -242,13 +268,29 @@ export async function validateResult(
     if (parsed.protocol !== "https:") {
       throw new Error(`sources[${index}].url must use HTTPS.`);
     }
+    const declaredDomain = canonicalDomain(
+      stringValue(item.domain, `sources[${index}].domain`, 255),
+    );
+    const hostname = parsed.hostname.toLowerCase().replace(/\.$/, "");
+    const hostnameDomain = canonicalDomain(hostname);
+    if (
+      hostnameDomain !== declaredDomain &&
+      !hostnameDomain.endsWith(`.${declaredDomain}`)
+    ) {
+      throw new Error(
+        `sources[${index}].domain does not match its URL hostname.`,
+      );
+    }
     const retrievedAt = isoTimestamp(
       item.retrieved_at,
       `sources[${index}].retrieved_at`,
       true,
     );
+    if (Date.parse(retrievedAt) > Date.now() + 5 * 60 * 1000) {
+      throw new Error(`sources[${index}].retrieved_at is in the future.`);
+    }
     return {
-      domain: stringValue(item.domain, `sources[${index}].domain`, 255),
+      domain: hostname,
       url,
       ...(stringValue(item.title, `sources[${index}].title`, 500, false)
         ? {
