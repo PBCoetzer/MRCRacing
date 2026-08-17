@@ -188,6 +188,36 @@ async function handoffResult(
     ? job.source_task_id
     : "";
   const runId = typeof job.source_run_id === "string" ? job.source_run_id : "";
+
+  if (job.task_type === "weekly_calendar") {
+    const meetings = result.normalized_data.meetings;
+    if (!taskId || !runId || !Array.isArray(meetings) || meetings.length === 0) {
+      throw new Error("Weekly Hermes results did not contain staged meeting data.");
+    }
+    const { data: staged, error: stageError } = await serviceClient.rpc(
+      "stage_hermes_weekly_calendar_result",
+      {
+        p_task_id: taskId,
+        p_run_id: runId,
+        p_meetings: meetings,
+        p_evidence: result.sources,
+      },
+    );
+    if (stageError) throw stageError;
+    const recorded = await recordHandoff(
+      serviceClient,
+      result.job_id,
+      "not_applicable",
+    );
+    if (recorded.error) throw recorded.error;
+    return {
+      mode: "staged",
+      proposalId: null,
+      meetingCount: meetings.length,
+      staging: staged,
+    };
+  }
+
   const snapshot = proposalSnapshotForResult(job, result);
   if (!taskId || !runId || !snapshot) {
     const recorded = await recordHandoff(
@@ -212,7 +242,15 @@ async function handoffResult(
       conflicts: result.conflicts,
       evidenceHash: result.evidence_hash,
     },
-    p_evidence: result.sources,
+    p_evidence: result.sources.map((source) => ({
+      domain: source.domain,
+      url: source.url,
+      title: source.title ?? null,
+      retrievedAt: source.retrieved_at,
+      excerpt: source.excerpt ?? null,
+      factScope: "meeting",
+      contentHash: source.content_hash ?? null,
+    })),
     p_completeness_score: result.confidence,
     p_agreement_score: result.confidence,
     p_has_critical_conflict: hasCriticalConflict(result.conflicts),

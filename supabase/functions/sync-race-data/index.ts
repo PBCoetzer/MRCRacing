@@ -18,7 +18,7 @@ type ServiceClient = SupabaseClient;
 
 type SyncRequest = {
   trigger?: "cron" | "manual" | "retry";
-  mode?: "pipeline" | "search_only" | "pilot_extract";
+  mode?: "pipeline" | "search_only" | "pilot_extract" | "hermes_weekly";
   searchType?: "upcoming_calendar" | "meeting_detail";
   pilotType?: "calendar" | "meeting_schedule" | "race_detail" | "search_evidence";
   pilotQuery?: string;
@@ -2467,6 +2467,28 @@ Deno.serve(async (request: Request) => {
     return await handleSearchOnlyRequest(request, serviceClient, requestBody, authorizedAs.userId);
   }
 
+  if (requestBody.mode === "hermes_weekly") {
+    if (authorizedAs.kind !== "administrator") {
+      return jsonResponse(request, {
+        error: "Administrator access is required to queue a seven-day Hermes import.",
+      }, 403);
+    }
+    const dateFrom = johannesburgDate(new Date().toISOString());
+    const dateTo = addCalendarDays(dateFrom, 6);
+    const { error: queueError } = await serviceClient.rpc(
+      "queue_hermes_weekly_calendar",
+      {
+        p_created_by: authorizedAs.userId,
+        p_date_from: dateFrom,
+        p_date_to: dateTo,
+        p_additional_guidance: String(requestBody.additionalGuidance ?? "").trim() || null,
+      },
+    );
+    if (queueError) {
+      return jsonResponse(request, { error: sanitizeError(queueError) }, 400);
+    }
+  }
+
   const trigger = authorizedAs.kind === "administrator"
     ? requestBody.trigger === "retry" ? "retry" : "manual"
     : "cron";
@@ -2499,9 +2521,22 @@ Deno.serve(async (request: Request) => {
     let result: TaskResult;
 
     if (shouldDelegateToHermes(task)) {
-      const prepared = await prepareTaskForHermes(serviceClient, task);
+      const { data: localTask, error: localTaskError } = await serviceClient.rpc(
+        "prepare_hermes_race_task",
+        { p_task_id: task.id, p_run_id: task.run_id },
+      );
+      if (localTaskError) {
+        throw new Error(`Could not bind the task to native Hermes: ${localTaskError.message}`);
+      }
+      const prepared = await prepareTaskForHermes(
+        serviceClient,
+        (localTask ?? task) as RaceFeedTask,
+      );
       result = prepared.result ??
-        await delegateTaskToHermes(supabaseUrl, prepared.task ?? task);
+        await delegateTaskToHermes(
+          supabaseUrl,
+          prepared.task ?? ((localTask ?? task) as RaceFeedTask),
+        );
     } else {
       configuration = await loadConfiguration(serviceClient);
       await updateProviderTelemetry(serviceClient, task.run_id, configuration);
