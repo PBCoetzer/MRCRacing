@@ -1554,9 +1554,14 @@ async function handleManualResearch(
   return await handleWeeklyCalendar(serviceClient, task, settings, configuration);
 }
 
-function shouldDelegateToHermes(task: RaceFeedTask) {
-  const mode = (Deno.env.get("MRC_HERMES_DELEGATION_MODE") ?? "explicit")
+function hermesDelegationMode() {
+  return (Deno.env.get("MRC_HERMES_DELEGATION_MODE") ?? "explicit")
+    .trim()
     .toLowerCase();
+}
+
+function shouldDelegateToHermes(task: RaceFeedTask) {
+  const mode = hermesDelegationMode();
   if (mode === "disabled") return false;
   if (mode === "all") return true;
   if (mode === "result_refresh" || mode === "results") {
@@ -2466,7 +2471,10 @@ Deno.serve(async (request: Request) => {
     ? requestBody.trigger === "retry" ? "retry" : "manual"
     : "cron";
   const workerId = `sync-race-data:${crypto.randomUUID()}`;
-  const { data: claimed, error: claimError } = await serviceClient.rpc("claim_race_feed_task_plan", {
+  const claimRpc = ["result_refresh", "results"].includes(hermesDelegationMode())
+    ? "claim_race_feed_result_task_plan"
+    : "claim_race_feed_task_plan";
+  const { data: claimed, error: claimError } = await serviceClient.rpc(claimRpc, {
     p_worker_id: workerId,
     p_trigger: trigger,
   });
