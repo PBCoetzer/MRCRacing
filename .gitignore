@@ -27,6 +27,9 @@ yarn-debug.log*
 yarn-error.log*
 pnpm-debug.log*
 
+# Supabase CLI local project state
+supabase/.temp/
+
 # OS/editor noise
 .DS_Store
 Thumbs.db
