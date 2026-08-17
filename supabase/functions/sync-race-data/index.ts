@@ -1445,11 +1445,7 @@ async function handleResultRefresh(
 ): Promise<TaskResult> {
   if (!task.meeting_id) throw new Error("Result refresh task is missing a meeting ID.");
   const current = await loadMeetingSnapshot(serviceClient, task.meeting_id);
-  const now = Date.now();
-  const startedRaces = current.meeting.races.filter((race) => Date.parse(race.startsAt) <= now);
-  const targetRace = startedRaces.find((race) =>
-    !race.resultSummary || race.runners.some((runner) => runner.resultPosition == null)
-  ) ?? startedRaces.at(-1);
+  const targetRace = selectResultRefreshRace(current.meeting);
 
   if (!targetRace) {
     return { status: "skipped", payload: { reason: "No race has started yet." }, evidenceCount: 0 };
@@ -1510,6 +1506,42 @@ async function handleResultRefresh(
   };
 }
 
+function selectResultRefreshRace(meeting: NormalizedMeeting) {
+  const now = Date.now();
+  const startedRaces = meeting.races.filter((race) => Date.parse(race.startsAt) <= now);
+  return startedRaces.find((race) =>
+    !race.resultSummary || race.runners.some((runner) => runner.resultPosition == null)
+  ) ?? startedRaces.at(-1);
+}
+
+async function prepareTaskForHermes(
+  serviceClient: ServiceClient,
+  task: RaceFeedTask,
+): Promise<{ task?: RaceFeedTask; result?: TaskResult }> {
+  if (task.task_type !== "result_refresh") return { task };
+  if (!task.meeting_id) {
+    throw new Error("Result refresh task is missing a meeting ID.");
+  }
+  const current = await loadMeetingSnapshot(serviceClient, task.meeting_id);
+  const targetRace = selectResultRefreshRace(current.meeting);
+  if (!targetRace) {
+    return {
+      result: {
+        status: "skipped",
+        payload: { reason: "No race has started yet." },
+        evidenceCount: 0,
+      },
+    };
+  }
+  return { task: {
+    ...task,
+    venue: current.meeting.venue,
+    meeting_date: current.meeting.meetingDate,
+    race_number: targetRace.raceNumber,
+    task_payload: { ...task.task_payload, currentMeeting: current.meeting },
+  } };
+}
+
 async function handleManualResearch(
   serviceClient: ServiceClient,
   task: RaceFeedTask,
@@ -1527,6 +1559,9 @@ function shouldDelegateToHermes(task: RaceFeedTask) {
     .toLowerCase();
   if (mode === "disabled") return false;
   if (mode === "all") return true;
+  if (mode === "result_refresh" || mode === "results") {
+    return task.task_type === "result_refresh";
+  }
   return task.task_payload.delegate_to_hermes === true ||
     task.task_payload.provider === "hermes";
 }
@@ -1546,6 +1581,16 @@ function requiredFieldsForHermesTask(taskType: RaceFeedTask["task_type"]) {
         "distanceMetres",
       ];
     case "race_detail":
+      return [
+        "race",
+        "runners",
+        "horseName",
+        "jockeyName",
+        "trainerName",
+        "draw",
+        "carriedWeight",
+        "status",
+      ];
     case "result_refresh":
       return [
         "race",
@@ -1556,6 +1601,7 @@ function requiredFieldsForHermesTask(taskType: RaceFeedTask["task_type"]) {
         "draw",
         "carriedWeight",
         "status",
+        "resultPosition",
       ];
     default:
       return ["meetings", "races", "runners", "sources"];
@@ -1585,6 +1631,8 @@ async function delegateTaskToHermes(
   }
 
   const deadline = new Date(Date.now() + 2 * 60 * 60 * 1000).toISOString();
+  const { scheduleEvidence: _storedEvidence, ...safeTaskPayload } =
+    task.task_payload;
   const response = await fetch(
     `${supabaseUrl}/functions/v1/hermes-race-bridge/jobs`,
     {
@@ -1605,7 +1653,7 @@ async function delegateTaskToHermes(
         required_fields: requiredFieldsForHermesTask(task.task_type),
         permitted_sources: permittedSources,
         task_payload: {
-          ...task.task_payload,
+          ...safeTaskPayload,
           taskKey: task.task_key,
           meetingId: task.meeting_id,
           fixtureId: task.fixture_id,
@@ -2443,7 +2491,9 @@ Deno.serve(async (request: Request) => {
     let result: TaskResult;
 
     if (shouldDelegateToHermes(task)) {
-      result = await delegateTaskToHermes(supabaseUrl, task);
+      const prepared = await prepareTaskForHermes(serviceClient, task);
+      result = prepared.result ??
+        await delegateTaskToHermes(supabaseUrl, prepared.task ?? task);
     } else {
       configuration = await loadConfiguration(serviceClient);
       await updateProviderTelemetry(serviceClient, task.run_id, configuration);

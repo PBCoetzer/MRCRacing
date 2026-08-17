@@ -1,6 +1,7 @@
 import {
   constantTimeEqual,
   evidenceHash,
+  proposalSnapshotForResult,
   sourceMatchesPermittedDomain,
   stableStringify,
   validateJobRequest,
@@ -148,4 +149,95 @@ Deno.test("constant-time comparison handles equal and different values", () => {
     !constantTimeEqual("short", "longer"),
     "Different lengths were accepted.",
   );
+});
+
+Deno.test("a local result refresh becomes an existing-workflow meeting snapshot", () => {
+  const completedAt = "2026-08-17T04:00:00Z";
+  const snapshot = proposalSnapshotForResult({
+    task_type: "result_refresh",
+    race_number: 1,
+    task_payload: {
+      currentMeeting: {
+        externalId: "za-vaal-2026-08-13",
+        venue: "Vaal",
+        countryCode: "ZA",
+        meetingDate: "2026-08-13",
+        status: "scheduled",
+        races: [{
+          externalId: "za-vaal-2026-08-13-r1",
+          raceNumber: 1,
+          title: "Maiden Plate",
+          startsAt: "2026-08-13T09:15:00Z",
+          distanceMetres: 1000,
+          raceClass: null,
+          status: "scheduled",
+          resultSummary: null,
+          sourceUpdatedAt: "2026-08-13T08:00:00Z",
+          runners: [{
+            externalId: "za-vaal-2026-08-13-r1-s5",
+            saddleNumber: 5,
+            horseName: "Caladrius",
+            jockeyName: "P Mongqawa",
+            trainerName: "T Peter",
+            draw: 6,
+            carriedWeight: 57,
+            status: "active",
+            resultPosition: null,
+          }],
+        }, {
+          externalId: "za-vaal-2026-08-13-r2",
+          raceNumber: 2,
+          status: "scheduled",
+          runners: [],
+        }],
+      },
+    },
+  }, {
+    job_id: "123e4567-e89b-42d3-a456-426614174000",
+    correlation_id: "result-conversion",
+    schema_version: 1,
+    status: "succeeded",
+    normalized_data: { races: [{
+      race: 1,
+      raceName: "Workriders Maiden Plate",
+      distanceMeters: 1000,
+      winTime: 59.64,
+      runners: [{
+        horseName: "Caladrius",
+        horseNumber: 5,
+        jockeyName: "P Mongqawa",
+        trainerName: "T Peter",
+        draw: 6,
+        carriedWeight: 57,
+        status: "Finished",
+        resultPosition: 1,
+      }],
+      nonRunners: [{
+        horseName: "Pennys Choice",
+        horseNumber: 3,
+        jockeyName: "C Mabaya",
+        trainerName: "James Crawford",
+        draw: 5,
+        carriedWeight: 60,
+        status: "Non-runner",
+        resultPosition: null,
+      }],
+    }] },
+    sources: [],
+    confidence: 1,
+    warnings: [],
+    conflicts: [],
+    evidence_hash: "sha256:0000000000000000000000000000000000000000000000000000000000000000",
+    started_at: "2026-08-17T03:58:00Z",
+    completed_at: completedAt,
+  });
+  assert(snapshot !== null, "Result snapshot was not created.");
+  const meetings = snapshot?.meetings as Record<string, unknown>[];
+  const races = meetings[0].races as Record<string, unknown>[];
+  const runners = races[0].runners as Record<string, unknown>[];
+  assert(races[0].status === "completed", "Race was not completed.");
+  assert(meetings[0].status === "in_progress", "Meeting status was not updated.");
+  assert(runners[0].externalId === "za-vaal-2026-08-13-r1-s5", "Existing runner identity was lost.");
+  assert(runners[1].status === "withdrawn", "Non-runner was not normalized.");
+  assert(races[0].resultSummary === "Caladrius won in 59.64s.", "Result summary is incorrect.");
 });

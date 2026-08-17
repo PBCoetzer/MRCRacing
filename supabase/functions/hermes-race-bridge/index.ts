@@ -4,6 +4,7 @@ import {
   constantTimeEqual,
   type HermesRaceResult,
   type JsonRecord,
+  proposalSnapshotForResult,
   sourceMatchesPermittedDomain,
   validateJobRequest,
   validateResult,
@@ -187,8 +188,8 @@ async function handoffResult(
     ? job.source_task_id
     : "";
   const runId = typeof job.source_run_id === "string" ? job.source_run_id : "";
-  const meetings = result.normalized_data.meetings;
-  if (!taskId || !runId || !Array.isArray(meetings) || meetings.length !== 1) {
+  const snapshot = proposalSnapshotForResult(job, result);
+  if (!taskId || !runId || !snapshot) {
     const recorded = await recordHandoff(
       serviceClient,
       result.job_id,
@@ -201,7 +202,7 @@ async function handoffResult(
   const { data, error } = await serviceClient.rpc("submit_race_feed_proposal", {
     p_task_id: taskId,
     p_run_id: runId,
-    p_snapshot: result.normalized_data,
+    p_snapshot: snapshot,
     p_change_type: changeType(job),
     p_current_diff: {},
     p_validation_outcome: {
