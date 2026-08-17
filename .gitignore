@@ -18,6 +18,7 @@ Frontend/.env.*
 Deployment/*.zip
 Deployment/*Upload*/
 Deployment/LIVE FIX*/
+backups/
 
 # Logs
 *.log
