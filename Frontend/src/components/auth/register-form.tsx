@@ -202,7 +202,13 @@ export function RegisterForm() {
         </label>
         <label className="flex items-start gap-3 rounded-lg border border-brand-gold/25 bg-background/60 p-3 text-sm text-muted-foreground">
           <input name="acceptedTerms" type="checkbox" required className="mt-1 accent-primary" />
-          I accept the MRC Racing Tips terms, privacy policy, and responsible gambling guidance.
+          <span>
+            I accept the MRC Racing Tips <Link href="/terms/" className="text-brand-cyan underline">terms</Link>,{" "}
+            <Link href="/privacy/" className="text-brand-cyan underline">privacy policy</Link>,{" "}
+            <Link href="/refund-policy/" className="text-brand-cyan underline">refund policy</Link>,{" "}
+            <Link href="/cancellation-policy/" className="text-brand-cyan underline">cancellation policy</Link>, and{" "}
+            <Link href="/responsible-gambling/" className="text-brand-cyan underline">responsible gambling guidance</Link>.
+          </span>
         </label>
         <CaptchaField
           ref={turnstileRef}

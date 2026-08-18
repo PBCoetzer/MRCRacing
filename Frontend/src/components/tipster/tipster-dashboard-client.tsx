@@ -20,6 +20,7 @@ import { Label } from "@/components/ui/label";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { createClient } from "@/lib/supabase/client";
 import { formatCredits, formatRaceDateTime } from "@/lib/racing/format";
+import { meetingCardSalesOpen } from "@/lib/racing/availability";
 import type {
   RaceMeeting,
   TipCard,
@@ -212,8 +213,7 @@ export function TipsterDashboardClient() {
   const cardMeetingIds = useMemo(() => new Set(cards.map((card) => card.meeting_id)), [cards]);
   const availableMeetings = meetings.filter(
     (meeting) =>
-      meeting.status === "scheduled" &&
-      new Date(meeting.first_race_at).getTime() > loadedAt &&
+      meetingCardSalesOpen(meeting, loadedAt) &&
       !cardMeetingIds.has(meeting.id),
   );
   const netEarnings = earnings.reduce((total, entry) => total + Number(entry.net_coins), 0);

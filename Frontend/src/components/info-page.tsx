@@ -2,12 +2,13 @@ import { SiteFooter } from "@/components/site-footer";
 import { SiteHeader } from "@/components/site-header";
 import { Badge } from "@/components/ui/badge";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import type { ReactNode } from "react";
 
 type InfoPageProps = {
   badge: string;
   title: string;
   description: string;
-  sections: { title: string; body: string }[];
+  sections: { title: string; body: ReactNode }[];
 };
 
 export function InfoPage({ badge, title, description, sections }: InfoPageProps) {
@@ -25,7 +26,7 @@ export function InfoPage({ badge, title, description, sections }: InfoPageProps)
                 <CardTitle>{section.title}</CardTitle>
               </CardHeader>
               <CardContent>
-                <p className="leading-7 text-muted-foreground">{section.body}</p>
+                <div className="space-y-3 leading-7 text-muted-foreground">{section.body}</div>
               </CardContent>
             </Card>
           ))}

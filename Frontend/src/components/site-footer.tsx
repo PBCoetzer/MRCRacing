@@ -7,6 +7,8 @@ const links = [
   { label: "Horse Care", href: "/horse-care/" },
   { label: "Responsible Gambling", href: "/responsible-gambling" },
   { label: "Privacy", href: "/privacy" },
+  { label: "Refunds", href: "/refund-policy/" },
+  { label: "Cancellations", href: "/cancellation-policy/" },
   { label: "Terms", href: "/terms" },
   { label: "Contact", href: "/contact" },
 ];

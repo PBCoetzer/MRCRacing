@@ -9,6 +9,7 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/com
 import { JsonLd } from "@/lib/json-ld";
 import { canonicalSiteUrl, publicMetadata } from "@/lib/metadata";
 import { getPublicManifest, getPublicRaceMeeting } from "@/lib/public-content";
+import { professionalSourceName, publicSourceUrl } from "@/lib/racing/source-brand";
 
 type PageProps = { params: Promise<{ venueSlug: string; meetingDate: string }> };
 
@@ -43,7 +44,16 @@ export default async function RaceMeetingPage({ params }: PageProps) {
         <div className="mt-8 space-y-6">{meeting.races.map((race) => <Card key={race.id} className="border-brand-gold/20"><CardHeader><div className="flex flex-wrap items-center gap-2"><Badge variant="outline">Race {race.raceNumber ?? "—"}</Badge><Badge variant="secondary"><Clock3 className="size-3" />{formatTime(race.startsAt)} SAST</Badge></div><CardTitle>{race.title}</CardTitle><CardDescription>{[race.distanceMetres ? `${race.distanceMetres}m` : null, race.raceClass, race.status].filter(Boolean).join(" · ")}</CardDescription></CardHeader><CardContent>
           {race.resultSummary ? <p className="mb-4 rounded-lg border border-brand-cyan/25 bg-brand-cyan/8 p-3 text-sm"><Trophy className="mr-2 inline size-4 text-brand-cyan" />{race.resultSummary}</p> : null}
           <div className="overflow-x-auto"><table className="w-full min-w-[760px] text-left text-sm"><thead className="border-b text-muted-foreground"><tr><th className="p-2">Pos.</th><th className="p-2">No.</th><th className="p-2">Horse</th><th className="p-2">Jockey</th><th className="p-2">Trainer</th><th className="p-2">Draw</th><th className="p-2">Weight</th><th className="p-2">Status</th></tr></thead><tbody>{race.runners.map((runner) => <tr key={`${race.id}-${runner.saddleNumber}`} className="border-b border-border/50"><td className="p-2 font-mono">{runner.resultPosition ?? "—"}</td><td className="p-2">{runner.saddleNumber}</td><td className="p-2 font-semibold text-white">{runner.horseName}</td><td className="p-2">{runner.jockeyName ?? "—"}</td><td className="p-2">{runner.trainerName ?? "—"}</td><td className="p-2">{runner.draw ?? "—"}</td><td className="p-2">{runner.carriedWeight ? `${runner.carriedWeight} kg` : "—"}</td><td className="p-2">{runner.status}</td></tr>)}</tbody></table></div>
-          {race.sourceUrl ? <p className="mt-4 text-xs text-muted-foreground">Source: <Link href={race.sourceUrl} target="_blank" rel="noreferrer" className="text-brand-cyan underline">{race.sourceName}<ExternalLink className="ml-1 inline size-3" /></Link>{race.sourceUpdatedAt ? ` · Updated ${new Date(race.sourceUpdatedAt).toLocaleString("en-ZA", { timeZone: "Africa/Johannesburg" })}` : ""}</p> : null}
+          <p className="mt-4 text-xs text-muted-foreground">
+            Verified by{" "}
+            {publicSourceUrl(race.sourceName, race.sourceUrl) ? (
+              <Link href={publicSourceUrl(race.sourceName, race.sourceUrl) ?? "#"} target="_blank" rel="noreferrer" className="text-brand-cyan underline">
+                {professionalSourceName(race.sourceName)}
+                <ExternalLink className="ml-1 inline size-3" />
+              </Link>
+            ) : professionalSourceName(race.sourceName)}
+            {race.sourceUpdatedAt ? ` · Updated ${new Date(race.sourceUpdatedAt).toLocaleString("en-ZA", { timeZone: "Africa/Johannesburg" })}` : ""}
+          </p>
         </CardContent></Card>)}</div>
         <Card className="mt-8"><CardHeader><CardTitle className="flex items-center gap-2"><Flag className="size-5 text-brand-gold" />Responsible racing information</CardTitle></CardHeader><CardContent className="text-sm leading-7 text-muted-foreground">This page presents factual race and result information, not guaranteed outcomes. MRC Racing Tips does not accept bets. If you choose to gamble, be 18+, set limits, and never chase losses.</CardContent></Card>
       </main><SiteFooter /></div>

@@ -33,6 +33,7 @@ import {
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Textarea } from "@/components/ui/textarea";
 import { createRequiredClient } from "@/lib/supabase/client";
+import { professionalProviderLabel } from "@/lib/racing/source-brand";
 
 type FeedSettings = {
   confidence_threshold: number;
@@ -598,7 +599,7 @@ export function AdminRaceFeedClient() {
 
         <TabsContent value="pipeline" className="grid gap-4 lg:grid-cols-2">
           <Card>
-            <CardHeader><CardTitle className="flex items-center gap-2"><DatabaseZap className="size-5 text-brand-cyan" />Per-race polling tasks</CardTitle><CardDescription>Each started fixture has its own Formgrids-first local Hermes task, retry time, attempt history, and terminal state.</CardDescription></CardHeader>
+            <CardHeader><CardTitle className="flex items-center gap-2"><DatabaseZap className="size-5 text-brand-cyan" />Per-race polling tasks</CardTitle><CardDescription>Each started fixture has its own Formgrids-first Influx Server verification task, retry time, attempt history, and terminal state.</CardDescription></CardHeader>
             <CardContent className="grid gap-2">
               {tasks.length ? tasks.map((task) => (
                 <div key={task.id} className="rounded-xl border border-border/70 p-3">
@@ -617,7 +618,7 @@ export function AdminRaceFeedClient() {
               {runs.length ? runs.map((run) => (
                 <div key={run.id} className="rounded-xl border border-border/70 p-3">
                   <div className="flex flex-wrap items-center justify-between gap-2"><span className="font-medium">{formatDateTime(run.started_at)}</span><Badge variant={statusVariant(run.status)}>{run.status.replaceAll("_", " ")}</Badge></div>
-                  <p className="mt-1 text-xs text-muted-foreground">{run.search_model_name || "Legacy worker"} → {run.extraction_model_name || "Legacy extraction"} · {run.search_query_count} search · {run.evidence_count} evidence domains · {run.duration_ms ?? 0} ms</p>
+                  <p className="mt-1 text-xs text-muted-foreground">{professionalProviderLabel(run.search_model_name)} → {professionalProviderLabel(run.extraction_model_name)} · {run.search_query_count} search · {run.evidence_count} evidence domains · {run.duration_ms ?? 0} ms</p>
                   {run.error_message ? <p className="mt-2 text-sm text-destructive">{run.error_message}</p> : null}
                 </div>
               )) : <p className="text-sm text-muted-foreground">No worker runs yet.</p>}

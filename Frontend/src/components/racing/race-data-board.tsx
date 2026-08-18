@@ -7,6 +7,8 @@ import { Badge } from "@/components/ui/badge";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { createClient } from "@/lib/supabase/client";
 import { isSupabaseConfigured } from "@/lib/supabase/config";
+import { minimumUpcomingFirstRace } from "@/lib/racing/availability";
+import { professionalSourceName, publicSourceUrl } from "@/lib/racing/source-brand";
 
 type RaceRecord = {
   id: string;
@@ -125,7 +127,8 @@ export function UpcomingMeetingBoard() {
         .select(
           "id,venue,meeting_date,first_race_at,last_race_at,status,source_name,source_url,source_updated_at",
         )
-        .in("status", ["scheduled", "in_progress"])
+        .eq("status", "scheduled")
+        .gt("first_race_at", minimumUpcomingFirstRace())
         .order("first_race_at", { ascending: true })
         .limit(7);
 
@@ -202,6 +205,7 @@ export function UpcomingMeetingBoard() {
   return (
     <div className="flex snap-x gap-4 overflow-x-auto pb-4">
       {state.data.map((meeting) => {
+        const sourceUrl = publicSourceUrl(meeting.source_name, meeting.source_url);
         const meetingFixtures = state.fixtures.filter(
           (fixture) => "meeting_id" in fixture &&
             String((fixture as RaceRecord & { meeting_id: string }).meeting_id) === meeting.id,
@@ -242,11 +246,11 @@ export function UpcomingMeetingBoard() {
             </div>
             <div className="mt-4 flex flex-wrap items-center justify-between gap-3 border-t border-white/10 pt-3 text-xs text-white/62">
               <span>
-                Verified by {meeting.source_name || "MRC Racing"} · Updated {formatSyncTime(meeting.source_updated_at)}
+                Verified by {professionalSourceName(meeting.source_name)} · Updated {formatSyncTime(meeting.source_updated_at)}
               </span>
-              {meeting.source_url?.startsWith("https://") ? (
+              {sourceUrl ? (
                 <a
-                  href={meeting.source_url}
+                  href={sourceUrl}
                   target="_blank"
                   rel="noopener noreferrer"
                   className="inline-flex items-center gap-1 text-brand-cyan hover:underline"
@@ -366,11 +370,11 @@ export function RaceResultsHistory() {
       <CardContent>
         <p className="font-semibold">{race.result_summary}</p>
         <div className="mt-3 text-xs text-muted-foreground">
-          <p>Source: {race.source_name || "MRC manual entry"}</p>
+          <p>Source: {professionalSourceName(race.source_name)}</p>
           <p>Updated: {formatSyncTime(race.source_updated_at)}</p>
-          {race.source_url?.startsWith("https://") ? (
+          {publicSourceUrl(race.source_name, race.source_url) ? (
             <a
-              href={race.source_url}
+              href={publicSourceUrl(race.source_name, race.source_url) ?? undefined}
               target="_blank"
               rel="noopener noreferrer"
               className="mt-1 inline-flex items-center gap-1 text-brand-cyan hover:underline"

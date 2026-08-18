@@ -23,6 +23,7 @@ import {
   CardTitle,
 } from "@/components/ui/card";
 import { formatCredits, formatRaceDateTime } from "@/lib/racing/format";
+import { meetingCardSalesOpen } from "@/lib/racing/availability";
 import type {
   RaceMeeting,
   TipCard,
@@ -153,7 +154,7 @@ export function TipsterProfileClient() {
   );
   const availableCards = cards.filter((card) => {
     const meeting = meetingById.get(card.meeting_id);
-    return meeting?.status === "scheduled" && new Date(meeting.first_race_at).getTime() > loadedAt;
+    return meetingCardSalesOpen(meeting, loadedAt);
   });
 
   function requireClient(action: string) {

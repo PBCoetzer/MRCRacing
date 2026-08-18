@@ -4,7 +4,7 @@ import { getPublicManifest } from "@/lib/public-content";
 
 export const dynamic = "force-static";
 
-const publicRoutes = ["", "/about", "/blog", "/contact", "/faq", "/horse-care", "/horse-racing", "/pricing", "/privacy", "/responsible-gambling", "/terms", "/tipsters"];
+const publicRoutes = ["", "/about", "/blog", "/cancellation-policy", "/contact", "/faq", "/horse-care", "/horse-racing", "/pricing", "/privacy", "/refund-policy", "/responsible-gambling", "/terms", "/tipsters"];
 
 export default async function sitemap(): Promise<MetadataRoute.Sitemap> {
   const manifest = await getPublicManifest();
