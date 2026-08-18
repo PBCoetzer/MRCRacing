@@ -18,6 +18,8 @@ Frontend/.env.*
 Deployment/*.zip
 Deployment/*Upload*/
 Deployment/LIVE FIX*/
+Deployment/.secrets/
+Deployment/Xneelo Backups/
 backups/
 
 # Logs
@@ -26,6 +28,8 @@ npm-debug.log*
 yarn-debug.log*
 yarn-error.log*
 pnpm-debug.log*
+__pycache__/
+*.py[cod]
 
 # Supabase CLI local project state
 supabase/.temp/

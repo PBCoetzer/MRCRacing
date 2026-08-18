@@ -1,0 +1,9 @@
+{
+  "host": "mrcracing.co.za",
+  "port": 22,
+  "username": "mrcratdzra",
+  "remoteRoot": "public_html",
+  "localOutput": "../Frontend/out",
+  "backupDirectory": "Xneelo Backups",
+  "credentialFile": ".secrets/xneelo-sftp.password.dpapi"
+}

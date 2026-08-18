@@ -135,3 +135,32 @@ cd "C:\Users\coetz\OneDrive\MRC Website\Frontend"
 npm run build:static
 Compress-Archive -Path "C:\Users\coetz\OneDrive\MRC Website\Frontend\out\*" -DestinationPath "C:\Users\coetz\OneDrive\MRC Website\Deployment\mrc-racing-tips-xneelo-static.zip" -Force
 ```
+
+## Secure Automated Xneelo Deployment
+
+The repository contains a rollback-safe SFTP deployment workflow. The Xneelo password is never stored in the repository, static frontend, command line, or environment variables. It is encrypted for the current Windows user with Windows DPAPI and saved below the ignored `Deployment/.secrets` directory.
+
+Save or replace the credential interactively:
+
+```powershell
+Set-Location "C:\Users\coetz\OneDrive\Documents\MRC Website Hermes Bridge"
+.\Deployment\Save-XneeloCredential.ps1
+```
+
+Deploy the existing static export:
+
+```powershell
+Set-Location "C:\Users\coetz\OneDrive\Documents\MRC Website Hermes Bridge"
+.\Deployment\Deploy-Xneelo.ps1
+```
+
+Each deployment:
+
+1. Connects with strict SSH host-key verification.
+2. Downloads the current `public_html` tree into a timestamped ZIP under `Deployment/Xneelo Backups`.
+3. Uploads assets first and HTML last.
+4. Verifies every deployed file by SHA-256.
+5. Removes obsolete frontend files only after verification, while preserving hosting/system files.
+6. Reports the backup location and deployment counts as JSON.
+
+Both the encrypted credential and deployment backups are intentionally excluded from Git.
