@@ -1,4 +1,5 @@
 import { supabasePublishableKey, supabaseUrl } from "@/lib/supabase/config";
+import { professionalSourceName, publicSourceUrl } from "@/lib/racing/source-brand";
 
 export type PublicManifest = {
   generatedAt: string;
@@ -105,8 +106,22 @@ export const getPublicBlogArticle = (slug: string) =>
   publicRpc<PublicBlogArticle | null>("get_public_blog_article", { p_slug: slug });
 export const getPublicTipsterProfile = (slug: string) =>
   publicRpc<PublicTipsterProfile | null>("get_public_tipster_profile", { p_slug: slug });
-export const getPublicRaceMeeting = (venueSlug: string, meetingDate: string) =>
-  publicRpc<PublicRaceMeeting | null>("get_public_race_meeting", {
+export async function getPublicRaceMeeting(venueSlug: string, meetingDate: string) {
+  const meeting = await publicRpc<PublicRaceMeeting | null>("get_public_race_meeting", {
     p_venue_slug: venueSlug,
     p_meeting_date: meetingDate,
   });
+
+  if (!meeting) return null;
+
+  return {
+    ...meeting,
+    sourceName: professionalSourceName(meeting.sourceName),
+    sourceUrl: publicSourceUrl(meeting.sourceName, meeting.sourceUrl),
+    races: meeting.races.map((race) => ({
+      ...race,
+      sourceName: professionalSourceName(race.sourceName),
+      sourceUrl: publicSourceUrl(race.sourceName, race.sourceUrl),
+    })),
+  };
+}

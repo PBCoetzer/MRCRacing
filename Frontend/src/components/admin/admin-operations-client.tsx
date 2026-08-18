@@ -24,6 +24,7 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Textarea } from "@/components/ui/textarea";
 import { formatRaceDateTime } from "@/lib/racing/format";
+import { professionalSourceName } from "@/lib/racing/source-brand";
 import { createClient } from "@/lib/supabase/client";
 
 type PlatformSettings = {
@@ -416,7 +417,7 @@ export function AdminOperationsClient() {
                     <div>
                       <p className="font-semibold">{meeting.venue}</p>
                       <p className="text-sm text-muted-foreground">
-                        {formatRaceDateTime(meeting.first_race_at)} · {meeting.source_name}
+                        {formatRaceDateTime(meeting.first_race_at)} · {professionalSourceName(meeting.source_name)}
                       </p>
                     </div>
                     <Badge variant="outline">Private test</Badge>

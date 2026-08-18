@@ -5,11 +5,14 @@ import { useRouter } from "next/navigation";
 import {
   AlertTriangle,
   BadgeCheck,
+  Banknote,
   Building2,
   CheckCircle2,
   CreditCard,
   Loader2,
   LockKeyhole,
+  Store,
+  Ticket,
   WalletCards,
 } from "lucide-react";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
@@ -328,6 +331,95 @@ export function PricingClient() {
               </CardHeader>
             </Card>
           ))}
+        </div>
+
+        <div className="mt-12">
+          <div className="max-w-3xl">
+            <Badge variant="outline">South African payment access</Badge>
+            <h2 className="mt-3 font-heading text-3xl text-white">More ways to pay</h2>
+            <p className="mt-2 text-muted-foreground">
+              The secure PayFast checkout can expose enabled bank, card, wallet, QR, and
+              cash-assisted methods from one verified payment flow. Voucher providers need
+              separate merchant approval before MRC may redeem a PIN.
+            </p>
+          </div>
+
+          <div className="mt-6 grid gap-4 md:grid-cols-2 xl:grid-cols-5">
+            {[
+              {
+                title: "Bank apps and wallets",
+                status: "Via PayFast",
+                description:
+                  "Instant EFT, Capitec Pay, cards, QR, Apple Pay, Google Pay, and other methods appear when enabled on the MRC merchant profile.",
+                href: "https://payfast.io/features/payment-methods/",
+                icon: Banknote,
+              },
+              {
+                title: "Cash-assisted checkout",
+                status: "Provider activation",
+                description:
+                  "PayFast offers options such as MukuruPay and other cash-access methods on eligible merchant configurations.",
+                href: "https://payfast.io/features/payment-methods/",
+                icon: Store,
+              },
+              {
+                title: "1Voucher",
+                status: "Merchant onboarding",
+                description:
+                  "Customers can buy 1Voucher through supported banking apps and participating retailers. MRC needs approved Flash API access and settlement terms before redemption goes live.",
+                href: "https://www.1voucher.co.za/support",
+                icon: Ticket,
+              },
+              {
+                title: "OTT Voucher",
+                status: "Merchant onboarding",
+                description:
+                  "OTT Voucher serves cash customers through banking apps and a broad retail network. MRC will enable redemption only after approved merchant credentials are active.",
+                href: "https://ottvoucher.com/business/",
+                icon: Ticket,
+              },
+              {
+                title: "Blu Voucher",
+                status: "Merchant onboarding",
+                description:
+                  "Blu Voucher supports approved third-party online partners. MRC is preparing the secure payment boundary while commercial and API access are reviewed.",
+                href: "https://www.bluelabeltelecoms.co.za/blu-label-distribution.php",
+                icon: WalletCards,
+              },
+            ].map((method) => (
+              <Card key={method.title}>
+                <CardHeader>
+                  <method.icon className="size-5 text-brand-cyan" />
+                  <div className="flex flex-wrap items-center gap-2">
+                    <CardTitle>{method.title}</CardTitle>
+                    <Badge variant="outline">{method.status}</Badge>
+                  </div>
+                  <CardDescription>{method.description}</CardDescription>
+                </CardHeader>
+                <CardContent>
+                  <a
+                    href={method.href}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="text-sm font-semibold text-brand-cyan hover:underline"
+                  >
+                    Provider information
+                  </a>
+                </CardContent>
+              </Card>
+            ))}
+          </div>
+
+          <Alert className="mt-6 border-brand-cyan/35 bg-brand-cyan/8">
+            <LockKeyhole className="size-4" />
+            <AlertTitle>Voucher PIN safety</AlertTitle>
+            <AlertDescription>
+              Voucher redemption is not live yet. Never send a voucher PIN by email,
+              Telegram, comments, or support messages. When enabled, a PIN will be submitted
+              only to a dedicated server endpoint and never stored in the browser or public
+              database.
+            </AlertDescription>
+          </Alert>
         </div>
       </section>
     </main>

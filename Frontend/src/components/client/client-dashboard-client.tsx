@@ -24,6 +24,7 @@ import { Input } from "@/components/ui/input";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { createClient } from "@/lib/supabase/client";
 import { formatCredits, formatRaceDateTime } from "@/lib/racing/format";
+import { meetingCardSalesOpen } from "@/lib/racing/availability";
 import type {
   ClientTipsterFavourite,
   MeetingBetOption,
@@ -512,7 +513,7 @@ export function ClientDashboardClient() {
   const marketplaceCards = cards.filter((tipCard) => {
     const meeting = meetingById.get(tipCard.meeting_id);
     return ["coming_soon", "published"].includes(tipCard.status) &&
-      meeting?.status === "scheduled" && new Date(meeting.first_race_at).getTime() > loadedAt;
+      meetingCardSalesOpen(meeting, loadedAt);
   });
 
   return (

@@ -25,6 +25,7 @@ import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { createClient } from "@/lib/supabase/client";
 import { formatRaceDate, formatRaceDateTime } from "@/lib/racing/format";
+import { meetingCardSalesOpen } from "@/lib/racing/availability";
 import type {
   MeetingBetLeg,
   MeetingBetOption,
@@ -353,7 +354,7 @@ export function ManageTipsClient() {
   );
   const isPublished = card?.status === "published";
   const creationWindowClosed = !isPublished && Boolean(
-    meeting && (meeting.status !== "scheduled" || new Date(meeting.first_race_at).getTime() <= currentTime),
+    meeting && !meetingCardSalesOpen(meeting, currentTime),
   );
   const isReadOnlyCard = card?.status === "settled" || card?.status === "void" || creationWindowClosed;
   const unusedBetOptions = betOptions.filter((option) => !multipleDrafts[option.id]);
