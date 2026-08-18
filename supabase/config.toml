@@ -27,3 +27,9 @@ enabled = true
 verify_jwt = false
 import_map = "./functions/blog-media-upload/deno.json"
 entrypoint = "./functions/blog-media-upload/index.ts"
+
+[functions.site-build-bridge]
+enabled = true
+verify_jwt = false
+import_map = "./functions/site-build-bridge/deno.json"
+entrypoint = "./functions/site-build-bridge/index.ts"

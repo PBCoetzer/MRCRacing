@@ -1,4 +1,5 @@
 import Image from "next/image";
+import type { Metadata } from "next";
 import Link from "next/link";
 import {
   Activity,
@@ -29,6 +30,13 @@ import {
   CardTitle,
 } from "@/components/ui/card";
 import { affiliatePartners, creditPackages } from "@/lib/mock-data";
+import { publicMetadata } from "@/lib/metadata";
+
+export const metadata: Metadata = publicMetadata({
+  title: "South African Horse Racing Tips",
+  description: "Compare verified South African horse-racing tipsters, factual racecards, settled results, and transparent winner strike rates.",
+  path: "/",
+});
 
 export default function Home() {
   return (
@@ -39,12 +47,13 @@ export default function Home() {
           <div className="absolute inset-0 opacity-25 [background-image:linear-gradient(90deg,rgba(255,255,255,0.11)_1px,transparent_1px),linear-gradient(rgba(255,255,255,0.11)_1px,transparent_1px)] [background-size:70px_70px]" />
           <div className="relative mx-auto w-full max-w-7xl px-4 py-12 sm:px-6 lg:px-8 lg:py-16">
             <div className="grid overflow-hidden rounded-2xl border border-brand-gold/40 bg-brand-purple-deep/72 shadow-[0_28px_90px_rgba(0,0,0,0.42)] backdrop-blur lg:grid-cols-[0.9fr_1.1fr]">
-              <div className="relative min-h-72 overflow-hidden border-b border-brand-gold/25 lg:min-h-[34rem] lg:border-r lg:border-b-0">
+              <div className="relative hidden min-h-72 overflow-hidden border-b border-brand-gold/25 lg:block lg:min-h-[34rem] lg:border-r lg:border-b-0">
                 <Image
-                  src="/images/mrc-racing-tips-logo.jpeg"
+                  src="/images/mrc-racing-tips-hero.webp"
                   alt="MRC Racing Tips logo"
                   fill
                   priority
+                  fetchPriority="high"
                   sizes="(max-width: 1024px) 100vw, 45vw"
                   className="object-cover"
                 />

@@ -22,22 +22,22 @@ export const transactions = [
 export const affiliatePartners = [
   {
     name: "Playabets",
-    image: "/images/affiliates/playabets.jpg",
+    image: "/images/affiliates/playabets.webp",
     href: "https://playabets.ravn.click/o/amHwYe?lpage=lTbzxn",
   },
   {
     name: "10Bet",
-    image: "/images/affiliates/10bet.jpg",
+    image: "/images/affiliates/10bet.webp",
     href: "https://partners.10betaffiliates.co.za/visit/?bta=36777&brand=10betza",
   },
   {
     name: "World Sports Betting",
-    image: "/images/affiliates/world-sports-betting.jpg",
+    image: "/images/affiliates/world-sports-betting.webp",
     href: "https://trk.worldsportsbetting.co.za/click?o=1&a=1201&c=7&link_id=8",
   },
   {
     name: "Hollywoodbets",
-    image: "/images/affiliates/hollywoodbets.jpg",
+    image: "/images/affiliates/hollywoodbets.webp",
     href: "https://hollywoodbetsaffs.click/o/43wGic?site_id=101050",
   },
 ];

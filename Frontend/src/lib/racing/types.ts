@@ -116,6 +116,7 @@ export type TipCardMultipleSelection = {
 
 export type TipsterProfile = {
   id: string;
+  slug: string;
   user_id: string;
   display_name: string;
   biography: string | null;

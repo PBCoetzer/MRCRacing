@@ -1,5 +1,6 @@
 import "jsr:@supabase/functions-js/edge-runtime.d.ts";
 import { createClient } from "@supabase/supabase-js";
+import { corsHeaders as supabaseCorsHeaders } from "@supabase/supabase-js/cors";
 
 const maxBytes = 5 * 1024 * 1024;
 const allowedOrigins = new Set([
@@ -10,22 +11,33 @@ const allowedOrigins = new Set([
 
 function headers(request: Request) {
   const origin = request.headers.get("origin") ?? "";
+  const {
+    "Access-Control-Allow-Origin": _allowOrigin,
+    ...sdkCorsHeaders
+  } = supabaseCorsHeaders;
   return {
+    ...sdkCorsHeaders,
+    "Access-Control-Allow-Headers":
+      "authorization, x-client-info, apikey, content-type, x-retry-count, traceparent, tracestate, baggage",
     "Content-Type": "application/json; charset=utf-8",
     "Cache-Control": "no-store",
     "Vary": "Origin",
     ...(allowedOrigins.has(origin)
       ? { "Access-Control-Allow-Origin": origin }
       : {}),
-    "Access-Control-Allow-Headers": "authorization, apikey, content-type",
     "Access-Control-Allow-Methods": "POST, OPTIONS",
   };
 }
 
-function json(request: Request, body: unknown, status = 200) {
+function json(
+  request: Request,
+  body: unknown,
+  status = 200,
+  requestId = crypto.randomUUID(),
+) {
   return new Response(JSON.stringify(body), {
     status,
-    headers: headers(request),
+    headers: { ...headers(request), "X-Request-Id": requestId },
   });
 }
 
@@ -42,11 +54,27 @@ function safeError(error: unknown) {
 }
 
 Deno.serve(async (request) => {
+  const requestId = crypto.randomUUID();
   if (request.method === "OPTIONS") {
-    return new Response("ok", { headers: headers(request) });
+    return new Response(null, { status: 204, headers: headers(request) });
   }
   if (request.method !== "POST") {
-    return json(request, { error: "Method not allowed." }, 405);
+    return json(request, {
+      status: "failed",
+      code: "METHOD_NOT_ALLOWED",
+      error: "Method not allowed.",
+      requestId,
+    }, 405, requestId);
+  }
+
+  const origin = request.headers.get("origin");
+  if (origin && !allowedOrigins.has(origin)) {
+    return json(request, {
+      status: "failed",
+      code: "ORIGIN_NOT_ALLOWED",
+      error: "This upload origin is not allowed.",
+      requestId,
+    }, 403, requestId);
   }
 
   const supabaseUrl = Deno.env.get("SUPABASE_URL") ?? "";
@@ -56,10 +84,21 @@ Deno.serve(async (request) => {
     /^Bearer\s+/i,
     "",
   );
-  if (!supabaseUrl || !anonKey || !serviceRoleKey || !accessToken) {
+  if (!supabaseUrl || !anonKey || !serviceRoleKey) {
     return json(request, {
+      status: "failed",
+      code: "UPLOAD_CONFIGURATION_INCOMPLETE",
       error: "Authenticated upload configuration is incomplete.",
-    }, 401);
+      requestId,
+    }, 500, requestId);
+  }
+  if (!accessToken) {
+    return json(request, {
+      status: "failed",
+      code: "AUTHENTICATION_REQUIRED",
+      error: "Authentication required.",
+      requestId,
+    }, 401, requestId);
   }
 
   const authClient = createClient(supabaseUrl, anonKey, {
@@ -75,7 +114,12 @@ Deno.serve(async (request) => {
       accessToken,
     );
     if (authError || !authData.user) {
-      return json(request, { error: "Authentication required." }, 401);
+      return json(request, {
+        status: "failed",
+        code: "AUTHENTICATION_REQUIRED",
+        error: "Authentication required.",
+        requestId,
+      }, 401, requestId);
     }
 
     const form = await request.formData();
@@ -83,20 +127,29 @@ Deno.serve(async (request) => {
     const file = form.get("file");
     if (!/^[0-9a-f-]{36}$/i.test(postId) || !(file instanceof File)) {
       return json(request, {
+        status: "failed",
+        code: "INVALID_UPLOAD_REQUEST",
         error: "A draft post and WebP cover file are required.",
-      }, 400);
+        requestId,
+      }, 400, requestId);
     }
     if (file.type !== "image/webp" || file.size <= 0 || file.size > maxBytes) {
       return json(request, {
+        status: "failed",
+        code: "INVALID_COVER_SIZE_OR_TYPE",
         error: "Cover images must be WebP and no larger than 5 MB.",
-      }, 400);
+        requestId,
+      }, 400, requestId);
     }
 
     const bytes = new Uint8Array(await file.arrayBuffer());
     if (!isWebp(bytes)) {
       return json(request, {
+        status: "failed",
+        code: "INVALID_WEBP_SIGNATURE",
         error: "The file signature is not a valid WebP image.",
-      }, 400);
+        requestId,
+      }, 400, requestId);
     }
 
     const { data: tipster, error: tipsterError } = await serviceClient
@@ -127,8 +180,14 @@ Deno.serve(async (request) => {
     ) {
       return json(
         request,
-        { error: "Blog publishing permission is required." },
+        {
+          status: "failed",
+          code: "BLOG_PERMISSION_REQUIRED",
+          error: "Blog publishing permission is required.",
+          requestId,
+        },
         403,
+        requestId,
       );
     }
 
@@ -141,8 +200,11 @@ Deno.serve(async (request) => {
     if (postError) throw postError;
     if (!post || !["draft", "published"].includes(post.status)) {
       return json(request, {
+        status: "failed",
+        code: "EDITABLE_DRAFT_REQUIRED",
         error: "An editable draft owned by this tipster is required.",
-      }, 403);
+        requestId,
+      }, 403, requestId);
     }
 
     const path = `${tipster.id}/${post.id}/cover-${Date.now()}.webp`;
@@ -161,8 +223,20 @@ Deno.serve(async (request) => {
       status: "succeeded",
       path,
       publicUrl: publicUrl.publicUrl,
-    });
+      requestId,
+    }, 200, requestId);
   } catch (error) {
-    return json(request, { status: "failed", error: safeError(error) }, 500);
+    const errorMessage = safeError(error);
+    console.error(JSON.stringify({
+      event: "blog_media_upload_failed",
+      requestId,
+      error: errorMessage,
+    }));
+    return json(request, {
+      status: "failed",
+      code: "COVER_UPLOAD_FAILED",
+      error: errorMessage,
+      requestId,
+    }, 500, requestId);
   }
 });

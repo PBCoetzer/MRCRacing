@@ -1,7 +1,5 @@
-"use client";
-
-import { TooltipProvider } from "@/components/ui/tooltip";
+import { AnalyticsConsent } from "@/components/analytics-consent";
 
 export function Providers({ children }: { children: React.ReactNode }) {
-  return <TooltipProvider>{children}</TooltipProvider>;
+  return <>{children}<AnalyticsConsent /></>;
 }

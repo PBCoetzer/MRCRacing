@@ -3,6 +3,7 @@ import Image from "next/image";
 
 const links = [
   { label: "MRC Blog", href: "/blog/" },
+  { label: "Racecards & Results", href: "/horse-racing/" },
   { label: "Horse Care", href: "/horse-care/" },
   { label: "Responsible Gambling", href: "/responsible-gambling" },
   { label: "Privacy", href: "/privacy" },
@@ -16,7 +17,7 @@ export function SiteFooter() {
       <div className="mx-auto grid w-full max-w-7xl gap-6 px-4 py-8 text-sm text-muted-foreground sm:px-6 md:grid-cols-[1fr_auto] lg:px-8">
         <div className="flex gap-4">
           <Image
-            src="/images/mrc-racing-tips-logo.jpeg"
+            src="/images/mrc-racing-tips-logo.webp"
             alt="MRC Racing Tips logo"
             width={84}
             height={66}

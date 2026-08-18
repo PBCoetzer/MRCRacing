@@ -1,0 +1,8 @@
+{
+  "host": "mrcracing.co.za",
+  "port": 22,
+  "username": "mrcratdzra",
+  "remoteRoot": "public_html",
+  "localOutput": "/srv/mrc-site/repository/Frontend/out",
+  "backupDirectory": "/srv/mrc-site/backups"
+}
