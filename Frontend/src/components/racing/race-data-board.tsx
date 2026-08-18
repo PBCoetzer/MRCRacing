@@ -1,10 +1,9 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { AlertCircle, CalendarClock, Database, ExternalLink, Trophy } from "lucide-react";
+import { AlertCircle, ExternalLink } from "lucide-react";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { Badge } from "@/components/ui/badge";
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { createClient } from "@/lib/supabase/client";
 import { isSupabaseConfigured } from "@/lib/supabase/config";
 import { minimumUpcomingFirstRace } from "@/lib/racing/availability";
@@ -35,44 +34,12 @@ type MeetingRecord = {
   source_updated_at: string | null;
 };
 
-type RaceState = {
-  data: RaceRecord[];
-  error: string;
-  loading: boolean;
-};
-
 type MeetingState = {
   data: MeetingRecord[];
   fixtures: RaceRecord[];
   error: string;
   loading: boolean;
 };
-
-const initialState: RaceState = {
-  data: [],
-  error: "",
-  loading: true,
-};
-
-function createInitialState(error: string): RaceState {
-  if (isSupabaseConfigured) {
-    return initialState;
-  }
-
-  return {
-    data: [],
-    error,
-    loading: false,
-  };
-}
-
-function formatRaceTime(value: string) {
-  return new Intl.DateTimeFormat("en-ZA", {
-    dateStyle: "medium",
-    timeStyle: "short",
-    timeZone: "Africa/Johannesburg",
-  }).format(new Date(value));
-}
 
 function formatRaceClock(value: string) {
   return new Intl.DateTimeFormat("en-ZA", {
@@ -268,123 +235,3 @@ export function UpcomingMeetingBoard() {
 }
 
 export const UpcomingRaceBoard = UpcomingMeetingBoard;
-
-export function RaceResultsHistory() {
-  const [state, setState] = useState<RaceState>(() =>
-    createInitialState("The results database is not configured for this build."),
-  );
-
-  useEffect(() => {
-    let isActive = true;
-    const supabase = createClient();
-
-    if (!supabase) {
-      return;
-    }
-
-    async function loadResultsHistory() {
-      const response = await supabase
-        .from("fixtures")
-        .select(
-          "id,title,venue,league,starts_at,status,result_summary,source_name,source_url,source_updated_at",
-        )
-        .not("result_summary", "is", null)
-        .order("starts_at", { ascending: false })
-        .limit(6);
-
-      if (!isActive) {
-        return;
-      }
-
-      setState({
-        data: (response.data ?? []) as RaceRecord[],
-        error: response.error?.message ?? "",
-        loading: false,
-      });
-    }
-
-    void loadResultsHistory();
-    const intervalId = window.setInterval(() => {
-      void loadResultsHistory();
-    }, 60_000);
-
-    return () => {
-      isActive = false;
-      window.clearInterval(intervalId);
-    };
-  }, []);
-
-  if (state.loading) {
-    return (
-      <Card className="lg:col-span-3">
-        <CardContent className="flex items-center gap-3 py-3 text-muted-foreground">
-          <Database className="size-4 text-brand-cyan" />
-          Loading verified race history…
-        </CardContent>
-      </Card>
-    );
-  }
-
-  if (state.error) {
-    return (
-      <Card className="lg:col-span-3 border-brand-red/35">
-        <CardHeader>
-          <CardTitle className="flex items-center gap-2">
-            <AlertCircle className="size-5 text-brand-red" />
-            Results feed unavailable
-          </CardTitle>
-          <CardDescription>{state.error}</CardDescription>
-        </CardHeader>
-      </Card>
-    );
-  }
-
-  if (state.data.length === 0) {
-    return (
-      <Card className="lg:col-span-3">
-        <CardHeader>
-          <CardTitle className="flex items-center gap-2">
-            <CalendarClock className="size-5 text-brand-gold" />
-            Verified results history
-          </CardTitle>
-          <CardDescription>
-            Results will appear here after the first licensed data import. Each result retains its
-            source link and sync timestamp.
-          </CardDescription>
-        </CardHeader>
-      </Card>
-    );
-  }
-
-  return state.data.map((race) => (
-    <Card key={race.id}>
-      <CardHeader>
-        <CardTitle className="flex items-start gap-2 text-lg">
-          <Trophy className="mt-0.5 size-4 shrink-0 text-brand-gold" />
-          {race.title}
-        </CardTitle>
-        <CardDescription>
-          {race.venue || race.league || "South African racing"} · {formatRaceTime(race.starts_at)}
-        </CardDescription>
-      </CardHeader>
-      <CardContent>
-        <p className="font-semibold">{race.result_summary}</p>
-        <div className="mt-3 text-xs text-muted-foreground">
-          <p>Source: {professionalSourceName(race.source_name)}</p>
-          <p>Updated: {formatSyncTime(race.source_updated_at)}</p>
-          {publicSourceUrl(race.source_name, race.source_url) ? (
-            <a
-              href={publicSourceUrl(race.source_name, race.source_url) ?? undefined}
-              target="_blank"
-              rel="noopener noreferrer"
-              className="mt-1 inline-flex items-center gap-1 text-brand-cyan hover:underline"
-            >
-              Verify result
-              <ExternalLink className="size-3" />
-            </a>
-          ) : null}
-        </div>
-      </CardContent>
-    </Card>
-  ));
-}

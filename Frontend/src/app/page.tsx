@@ -14,10 +14,7 @@ import {
   Users,
   Wallet,
 } from "lucide-react";
-import {
-  RaceResultsHistory,
-  UpcomingMeetingBoard,
-} from "@/components/racing/race-data-board";
+import { UpcomingMeetingBoard } from "@/components/racing/race-data-board";
 import { SiteFooter } from "@/components/site-footer";
 import { SiteHeader } from "@/components/site-header";
 import { Badge } from "@/components/ui/badge";
@@ -123,7 +120,12 @@ export default function Home() {
                     Up to seven public meetings, ordered by the first race.
                   </p>
                 </div>
-                <Badge className="bg-brand-red text-white">Live database</Badge>
+                <div className="flex flex-wrap items-center gap-2">
+                  <Badge className="bg-brand-red text-white">Live database</Badge>
+                  <Button asChild size="sm" variant="outline" className="border-brand-cyan/40 text-brand-cyan">
+                    <Link href="/horse-racing/">Racecards &amp; results</Link>
+                  </Button>
+                </div>
               </div>
               <UpcomingMeetingBoard />
             </div>
@@ -188,12 +190,6 @@ export default function Home() {
               </Button>
             </CardContent>
           </Card>
-        </section>
-
-        <section className="border-y bg-card/45">
-          <div className="mx-auto grid w-full max-w-7xl gap-6 px-4 py-10 sm:px-6 lg:grid-cols-3 lg:px-8">
-            <RaceResultsHistory />
-          </div>
         </section>
 
         <section className="mx-auto w-full max-w-7xl px-4 py-12 sm:px-6 lg:px-8">

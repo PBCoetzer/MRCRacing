@@ -1,9 +1,8 @@
 "use client";
 
 import Link from "next/link";
-import { useRouter } from "next/navigation";
 import { useEffect, useState } from "react";
-import type { EmailOtpType } from "@supabase/supabase-js";
+import type { EmailOtpType, Session, SupabaseClient } from "@supabase/supabase-js";
 import { AlertCircle, CheckCircle2, Loader2 } from "lucide-react";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { Button } from "@/components/ui/button";
@@ -26,8 +25,33 @@ const emailOtpTypes = new Set<EmailOtpType>([
   "email_change",
 ]);
 
+const sessionWaitAttempts = 20;
+const sessionWaitIntervalMs = 250;
+
+async function waitForAuthSession(supabase: SupabaseClient): Promise<Session | null> {
+  for (let attempt = 0; attempt < sessionWaitAttempts; attempt += 1) {
+    const {
+      data: { session },
+      error,
+    } = await supabase.auth.getSession();
+
+    if (error) {
+      throw error;
+    }
+
+    if (session) {
+      return session;
+    }
+
+    await new Promise<void>((resolve) => {
+      window.setTimeout(resolve, sessionWaitIntervalMs);
+    });
+  }
+
+  return null;
+}
+
 export function AuthCallback() {
-  const router = useRouter();
   const [callbackState, setCallbackState] = useState<CallbackState>("checking");
   const [message, setMessage] = useState("Confirming your email and preparing your account.");
 
@@ -45,8 +69,15 @@ export function AuthCallback() {
 
       try {
         const searchParams = new URLSearchParams(window.location.search);
+        const hashParams = new URLSearchParams(window.location.hash.replace(/^#/, ""));
+        const callbackError =
+          searchParams.get("error_description") ?? hashParams.get("error_description");
         const tokenHash = searchParams.get("token_hash");
         const otpType = searchParams.get("type") as EmailOtpType | null;
+
+        if (callbackError) {
+          throw new Error(callbackError);
+        }
 
         if (tokenHash && otpType && emailOtpTypes.has(otpType)) {
           const { error: verificationError } = await supabase.auth.verifyOtp({
@@ -59,10 +90,18 @@ export function AuthCallback() {
           }
         }
 
+        const session = await waitForAuthSession(supabase);
+
+        if (!session) {
+          throw new Error(
+            "This confirmation link could not start a secure session. It may be expired or already used. If your email is already confirmed, continue to login.",
+          );
+        }
+
         const {
           data: { user },
           error: userError,
-        } = await supabase.auth.getUser();
+        } = await supabase.auth.getUser(session.access_token);
 
         if (userError) {
           throw userError;
@@ -91,8 +130,7 @@ export function AuthCallback() {
         window.history.replaceState({}, document.title, window.location.pathname);
         setCallbackState("success");
         setMessage("Email confirmed. Taking you to your dashboard.");
-        router.replace(destination);
-        router.refresh();
+        window.location.replace(destination);
       } catch (error) {
         if (!isMounted) {
           return;
@@ -112,7 +150,7 @@ export function AuthCallback() {
     return () => {
       isMounted = false;
     };
-  }, [router]);
+  }, []);
 
   return (
     <div className="grid gap-4">
@@ -139,7 +177,7 @@ export function AuthCallback() {
             <Link href="/login/">Go to login</Link>
           </Button>
           <Button asChild variant="outline">
-            <Link href="/register/">Register again</Link>
+            <Link href="/forgot-password/">Reset password</Link>
           </Button>
         </div>
       ) : null}

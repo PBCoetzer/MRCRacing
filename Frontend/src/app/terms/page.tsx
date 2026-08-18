@@ -1,6 +1,6 @@
 import Link from "next/link";
 import { InfoPage } from "@/components/info-page";
-import { businessDetails, registeredOffice } from "@/lib/business-details";
+import { businessDetails, publicBusinessLocation } from "@/lib/business-details";
 
 export default function TermsPage() {
   return (
@@ -11,7 +11,7 @@ export default function TermsPage() {
       sections={[
         {
           title: "Website operator",
-          body: <p>This website and the MRC Racing Tips service are operated by {businessDetails.legalName} (registration {businessDetails.registrationNumber}), trading as {businessDetails.tradingName}, from its registered office at {registeredOffice}. Support is available at <a href={`mailto:${businessDetails.supportEmail}`} className="text-brand-cyan underline">{businessDetails.supportEmail}</a> or <a href={businessDetails.telephoneHref} className="text-brand-cyan underline">{businessDetails.telephoneDisplay}</a>.</p>,
+          body: <p>This website and the MRC Racing Tips service are operated by {businessDetails.legalName} (registration {businessDetails.registrationNumber}), trading as {businessDetails.tradingName}, with its public business location in {publicBusinessLocation}. Support is available at <a href={`mailto:${businessDetails.supportEmail}`} className="text-brand-cyan underline">{businessDetails.supportEmail}</a> or <a href={businessDetails.telephoneHref} className="text-brand-cyan underline">{businessDetails.telephoneDisplay}</a>.</p>,
         },
         {
           title: "Service scope",
