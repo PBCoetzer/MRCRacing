@@ -104,6 +104,11 @@ def upload_priority(relative: str) -> tuple[int, str]:
     return (1, relative)
 
 
+def remote_safe_relative(relative: str) -> str:
+    """Map generated Next route-token filenames to names accepted by Xneelo SFTP."""
+    return relative.replace("$", "_")
+
+
 def replace_remote_file(
     sftp: paramiko.SFTPClient,
     local_path: Path,
@@ -162,11 +167,18 @@ def main() -> int:
     if not (local_output / "index.html").is_file():
         raise RuntimeError(f"Static export not found at {local_output}.")
 
-    local_files = {
-        path.relative_to(local_output).as_posix(): path
-        for path in local_output.rglob("*")
-        if path.is_file()
-    }
+    local_files: dict[str, Path] = {}
+    for path in local_output.rglob("*"):
+        if not path.is_file():
+            continue
+        relative = path.relative_to(local_output).as_posix()
+        remote_relative = remote_safe_relative(relative)
+        if remote_relative in local_files:
+            raise RuntimeError(
+                f"Static export contains colliding Xneelo paths: {relative} and "
+                f"{local_files[remote_relative].relative_to(local_output).as_posix()}."
+            )
+        local_files[remote_relative] = path
     release_id = uuid.uuid4().hex[:12]
     timestamp = datetime.now().strftime("%Y%m%d-%H%M%S")
     backup_path = backup_directory / f"public_html-before-{timestamp}.zip"
@@ -219,14 +231,19 @@ def main() -> int:
                     except FileNotFoundError:
                         pass
                 relative_directory = posixpath.dirname(relative)
-                if relative_directory:
-                    ensure_remote_directory(sftp, remote_root, relative_directory, known_directories)
-                replace_remote_file(
-                    sftp,
-                    local_path,
-                    remote_path,
-                    release_id,
-                )
+                try:
+                    if relative_directory:
+                        ensure_remote_directory(sftp, remote_root, relative_directory, known_directories)
+                    replace_remote_file(
+                        sftp,
+                        local_path,
+                        remote_path,
+                        release_id,
+                    )
+                except Exception as error:
+                    raise RuntimeError(
+                        f"Could not publish {relative} to {remote_path}: {error}"
+                    ) from error
                 if local_hash(local_path) != remote_hash(sftp, remote_path):
                     raise RuntimeError(
                         f"Hash verification failed for {relative}; backup retained at {backup_path}."
