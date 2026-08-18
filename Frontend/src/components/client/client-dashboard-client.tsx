@@ -77,6 +77,17 @@ type WalletRow = {
   balance: number;
 };
 
+type CardOutcome = {
+  tip_card_id: string;
+  fixture_id: string;
+  selected_winner_position: number | null;
+  winner_hit: boolean | null;
+  selected_place_position: number | null;
+  result_summary: string | null;
+  evidence_hash: string;
+  settled_at: string;
+};
+
 function messageFrom(error: unknown, fallback: string) {
   if (error instanceof Error) {
     return error.message;
@@ -112,6 +123,7 @@ export function ClientDashboardClient() {
   const [betOptions, setBetOptions] = useState<MeetingBetOption[]>([]);
   const [performanceStats, setPerformanceStats] = useState<TipsterPerformanceStats[]>([]);
   const [favourites, setFavourites] = useState<ClientTipsterFavourite[]>([]);
+  const [cardOutcomes, setCardOutcomes] = useState<CardOutcome[]>([]);
   const [userId, setUserId] = useState("");
   const [disputeReasons, setDisputeReasons] = useState<Record<string, string>>({});
 
@@ -154,7 +166,7 @@ export function ClientDashboardClient() {
         supabase
           .from("tip_cards")
           .select("id,tipster_id,meeting_id,title,summary,coin_price,status,revision,listed_at,published_at,voided_at,updated_at")
-          .in("status", ["coming_soon", "published"])
+          .in("status", ["coming_soon", "published", "settled"])
           .order("updated_at", { ascending: false }),
         supabase
           .from("race_meetings")
@@ -218,7 +230,7 @@ export function ClientDashboardClient() {
       const loadedEntitlements = (entitlementResult.data ?? []) as EntitlementRow[];
       const accessibleCardIds = new Set(loadedEntitlements.map((item) => item.tip_card_id));
       const accessibleCards = loadedCards.filter(
-        (tipCard) => tipCard.status === "published" && accessibleCardIds.has(tipCard.id),
+        (tipCard) => ["published", "settled"].includes(tipCard.status) && accessibleCardIds.has(tipCard.id),
       );
       const accessibleMeetingIds = [...new Set(accessibleCards.map((tipCard) => tipCard.meeting_id))];
 
@@ -228,6 +240,7 @@ export function ClientDashboardClient() {
       let loadedMultiples: TipCardMultiple[] = [];
       let loadedMultipleSelections: TipCardMultipleSelection[] = [];
       let loadedOptions: MeetingBetOption[] = [];
+      let loadedOutcomes: CardOutcome[] = [];
 
       if (accessibleMeetingIds.length) {
         const { data: fixtureData, error: fixtureError } = await supabase
@@ -245,7 +258,7 @@ export function ClientDashboardClient() {
 
       if (accessibleCards.length) {
         const cardIds = accessibleCards.map((tipCard) => tipCard.id);
-        const [raceResult, multipleResult, optionResult] = await Promise.all([
+        const [raceResult, multipleResult, optionResult, outcomeResult] = await Promise.all([
           supabase
             .from("race_tip_selections")
             .select("id,tip_card_id,fixture_id,winner_entry_id,place_entry_id,comments")
@@ -258,15 +271,20 @@ export function ClientDashboardClient() {
             .from("meeting_bet_options")
             .select("id,meeting_id,bet_type,display_name,cutoff_at,leg_count,sort_order")
             .in("meeting_id", accessibleMeetingIds),
+          supabase
+            .from("tip_card_race_outcomes")
+            .select("tip_card_id,fixture_id,selected_winner_position,winner_hit,selected_place_position,result_summary,evidence_hash,settled_at")
+            .in("tip_card_id", cardIds),
         ]);
 
-        if (raceResult.error || multipleResult.error || optionResult.error) {
-          throw raceResult.error ?? multipleResult.error ?? optionResult.error;
+        if (raceResult.error || multipleResult.error || optionResult.error || outcomeResult.error) {
+          throw raceResult.error ?? multipleResult.error ?? optionResult.error ?? outcomeResult.error;
         }
 
         loadedRaceSelections = (raceResult.data ?? []) as RaceTipSelection[];
         loadedMultiples = (multipleResult.data ?? []) as TipCardMultiple[];
         loadedOptions = (optionResult.data ?? []) as MeetingBetOption[];
+        loadedOutcomes = (outcomeResult.data ?? []) as CardOutcome[];
       }
 
       if (loadedFixtures.length) {
@@ -313,6 +331,7 @@ export function ClientDashboardClient() {
       setBetOptions(loadedOptions);
       setPerformanceStats((performanceResult.data ?? []) as TipsterPerformanceStats[]);
       setFavourites((favouriteResult.data ?? []) as ClientTipsterFavourite[]);
+      setCardOutcomes(loadedOutcomes);
       setUserId(user.id);
     } catch (loadError) {
       setError(messageFrom(loadError, "Could not load the client marketplace."));
@@ -488,8 +507,13 @@ export function ClientDashboardClient() {
   }
 
   const accessibleCards = cards.filter(
-    (tipCard) => tipCard.status === "published" && entitlementIds.has(tipCard.id),
+    (tipCard) => ["published", "settled"].includes(tipCard.status) && entitlementIds.has(tipCard.id),
   );
+  const marketplaceCards = cards.filter((tipCard) => {
+    const meeting = meetingById.get(tipCard.meeting_id);
+    return ["coming_soon", "published"].includes(tipCard.status) &&
+      meeting?.status === "scheduled" && new Date(meeting.first_race_at).getTime() > loadedAt;
+  });
 
   return (
     <div className="space-y-6">
@@ -589,7 +613,7 @@ export function ClientDashboardClient() {
 
       <div id="unlocked-tips" className="scroll-mt-24 space-y-4">
         <div>
-          <h2 className="font-heading text-2xl text-white">My Meeting Cards</h2>
+          <h2 className="font-heading text-2xl text-white">My Meeting Cards &amp; History</h2>
           <p className="text-sm text-muted-foreground">
             Premium selections are returned by Supabase only when your entitlement is active.
           </p>
@@ -604,7 +628,7 @@ export function ClientDashboardClient() {
             <Card key={tipCard.id} className="border-brand-cyan/35">
               <CardHeader>
                 <div className="flex flex-wrap items-center gap-2">
-                  <Badge>Published</Badge>
+                  <Badge>{tipCard.status === "settled" ? "Settled history" : "Published"}</Badge>
                   <Badge variant="outline">Revision {tipCard.revision}</Badge>
                 </div>
                 <CardTitle className="font-heading text-2xl text-white">{tipCard.title}</CardTitle>
@@ -618,6 +642,7 @@ export function ClientDashboardClient() {
                     const selection = cardRaceSelections.find((item) => item.fixture_id === fixture.id);
                     const winner = selection?.winner_entry_id ? entryById.get(selection.winner_entry_id) : null;
                     const place = selection?.place_entry_id ? entryById.get(selection.place_entry_id) : null;
+                    const outcome = cardOutcomes.find((item) => item.tip_card_id === tipCard.id && item.fixture_id === fixture.id);
 
                     return (
                       <div key={fixture.id} className="rounded-lg border bg-background/40 p-4">
@@ -627,6 +652,7 @@ export function ClientDashboardClient() {
                           <div><dt className="text-muted-foreground">Winner</dt><dd>{winner ? `${winner.saddle_number}. ${winner.horse_name}` : "No selection"}</dd></div>
                           <div><dt className="text-muted-foreground">Best place</dt><dd>{place ? `${place.saddle_number}. ${place.horse_name}` : "No selection"}</dd></div>
                           <div><dt className="text-muted-foreground">Comments</dt><dd>{selection?.comments || "No comments"}</dd></div>
+                          {outcome ? <><div><dt className="text-muted-foreground">Winner outcome</dt><dd>{outcome.selected_winner_position == null ? "No winner selection graded" : outcome.winner_hit ? `Correct — finished 1st` : `Missed — finished ${outcome.selected_winner_position}`}</dd></div><div><dt className="text-muted-foreground">Best-place finish</dt><dd>{outcome.selected_place_position ?? "No official finishing position"}</dd></div><div><dt className="text-muted-foreground">Official result</dt><dd>{outcome.result_summary ?? fixture.result_summary ?? "Recorded"}</dd></div></> : null}
                         </dl>
                       </div>
                     );
@@ -787,7 +813,7 @@ export function ClientDashboardClient() {
           </Button>
         </CardHeader>
         <CardContent className="grid gap-4 lg:grid-cols-2">
-          {cards.map((tipCard) => {
+          {marketplaceCards.map((tipCard) => {
             const meeting = meetingById.get(tipCard.meeting_id);
             const tipster = tipsterById.get(tipCard.tipster_id);
             const entitled = entitlementIds.has(tipCard.id);
@@ -843,7 +869,7 @@ export function ClientDashboardClient() {
               </div>
             );
           })}
-          {!cards.length ? (
+          {!marketplaceCards.length ? (
             <p className="text-sm text-muted-foreground">
               No cards are listed for sale yet.
             </p>

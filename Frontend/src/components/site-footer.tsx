@@ -2,6 +2,8 @@ import Link from "next/link";
 import Image from "next/image";
 
 const links = [
+  { label: "MRC Blog", href: "/blog/" },
+  { label: "Horse Care", href: "/horse-care/" },
   { label: "Responsible Gambling", href: "/responsible-gambling" },
   { label: "Privacy", href: "/privacy" },
   { label: "Terms", href: "/terms" },

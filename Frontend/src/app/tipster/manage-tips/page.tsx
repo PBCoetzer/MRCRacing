@@ -4,6 +4,7 @@ import { ManageTipsClient } from "@/components/tipster/manage-tips-client";
 const tipsterNav = [
   { label: "Dashboard", href: "/tipster/" },
   { label: "Manage Tips", href: "/tipster/manage-tips/" },
+  { label: "Blog", href: "/tipster/blog/" },
 ];
 
 export default function ManageTipsPage() {

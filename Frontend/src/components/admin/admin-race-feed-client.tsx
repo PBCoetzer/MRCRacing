@@ -101,6 +101,7 @@ type SourceDomain = {
 
 type FeedTask = {
   id: string;
+  fixture_id: string | null;
   task_type: string;
   state: string;
   venue: string | null;
@@ -227,7 +228,7 @@ export function AdminRaceFeedClient() {
         supabase.from("race_feed_settings").select("confidence_threshold,minimum_approved_sources,auto_approve_new_meetings,auto_approve_routine_changes,auto_approve_results,future_lookahead_days,daily_search_limit,last_weekly_discovery_at").single(),
         supabase.from("race_feed_proposals").select("id,parent_proposal_id,meeting_key,meeting_external_id,venue,meeting_date,proposal_version,change_type,status,snapshot,current_diff,validation_outcome,confidence_score,confidence_breakdown,distinct_source_count,approved_source_count,has_critical_conflict,conflict_summary,auto_approval_eligible,research_guidance,review_note,created_at,reviewed_at,applied_at").order("created_at", { ascending: false }).limit(40),
         supabase.from("race_source_domains").select("id,domain,display_name,status,reliability_score,reuse_basis,direct_fetch_allowed,can_auto_approve,last_reviewed_at").order("domain", { ascending: true }),
-        supabase.from("race_feed_tasks").select("id,task_type,state,venue,meeting_date,race_number,due_at,attempts,last_error,last_completed_at").order("created_at", { ascending: false }).limit(60),
+        supabase.from("race_feed_tasks").select("id,fixture_id,task_type,state,venue,meeting_date,race_number,due_at,attempts,last_error,last_completed_at").order("created_at", { ascending: false }).limit(60),
         supabase.from("race_feed_fragments").select("id,fragment_type,meeting_key,venue,meeting_date,race_number,created_at").eq("is_current", true).order("created_at", { ascending: false }).limit(100),
         supabase.from("race_feed_runs").select("id,trigger_type,status,search_model_name,extraction_model_name,search_query_count,evidence_count,changes_applied,alerts_created,error_message,started_at,completed_at,duration_ms").order("started_at", { ascending: false }).limit(40),
         supabase.from("race_change_events").select("id,entity_type,change_type,changed_fields,summary,created_at").order("created_at", { ascending: false }).limit(40),
@@ -303,6 +304,17 @@ export function AdminRaceFeedClient() {
     });
     if (invokeError) throw invokeError;
     return data as { status?: string; error?: string } | null;
+  }
+
+  async function previewLifecycle() {
+    setBusyKey("lifecycle"); setError(""); setSuccess("");
+    try {
+      const supabase = createRequiredClient();
+      const { data, error: invokeError } = await supabase.functions.invoke("race-lifecycle", { body: { dryRun: true } });
+      if (invokeError) throw invokeError;
+      setSuccess(`Lifecycle dry run: ${Number(data?.startedMeetings ?? 0)} meeting(s) to start, ${Number(data?.voidableCards ?? 0)} card(s) to void, ${Number(data?.resultTasksDue ?? 0)} per-race result task(s) due.`);
+    } catch (lifecycleError) { setError(errorMessage(lifecycleError, "Could not preview the race lifecycle.")); }
+    finally { setBusyKey(""); }
   }
 
   async function requestResearch(proposalId?: string) {
@@ -497,6 +509,9 @@ export function AdminRaceFeedClient() {
             <Button variant="outline" onClick={() => void loadDashboard(true)} disabled={Boolean(busyKey)}>
               <RefreshCw className="size-4" /> Refresh monitor
             </Button>
+            <Button variant="outline" onClick={() => void previewLifecycle()} disabled={Boolean(busyKey)}>
+              <Activity className="size-4" /> Lifecycle dry run
+            </Button>
           </div>
         </CardContent>
       </Card>
@@ -583,13 +598,14 @@ export function AdminRaceFeedClient() {
 
         <TabsContent value="pipeline" className="grid gap-4 lg:grid-cols-2">
           <Card>
-            <CardHeader><CardTitle className="flex items-center gap-2"><DatabaseZap className="size-5 text-brand-cyan" />Staged tasks</CardTitle><CardDescription>One bounded Google Search request is allowed per task execution.</CardDescription></CardHeader>
+            <CardHeader><CardTitle className="flex items-center gap-2"><DatabaseZap className="size-5 text-brand-cyan" />Per-race polling tasks</CardTitle><CardDescription>Each started fixture has its own Formgrids-first local Hermes task, retry time, attempt history, and terminal state.</CardDescription></CardHeader>
             <CardContent className="grid gap-2">
               {tasks.length ? tasks.map((task) => (
                 <div key={task.id} className="rounded-xl border border-border/70 p-3">
                   <div className="flex flex-wrap items-center justify-between gap-2"><span className="font-medium">{task.task_type.replaceAll("_", " ")}</span><Badge variant={statusVariant(task.state)}>{task.state}</Badge></div>
                   <p className="mt-1 text-sm text-muted-foreground">{task.venue || "South Africa weekly calendar"}{task.meeting_date ? ` · ${task.meeting_date}` : ""}{task.race_number ? ` · Race ${task.race_number}` : ""}</p>
                   <p className="mt-1 text-xs text-muted-foreground">Due {formatDateTime(task.due_at)} · attempt {task.attempts}</p>
+                  {task.fixture_id ? <p className="mt-1 font-mono text-[0.68rem] text-muted-foreground">Fixture {task.fixture_id}</p> : null}
                   {task.last_error ? <p className="mt-2 text-sm text-destructive">{task.last_error}</p> : null}
                 </div>
               )) : <p className="text-sm text-muted-foreground">No staged tasks yet.</p>}

@@ -280,6 +280,15 @@ async function handoffResult(
     proposal && typeof proposal === "object" && !Array.isArray(proposal)
       ? String((proposal as JsonRecord).id ?? "")
       : "";
+  let finalization: unknown = null;
+  if (proposalId && job.task_type === "result_refresh") {
+    const { data: finalized, error: finalizeError } = await serviceClient.rpc(
+      "finalize_auto_applied_race_result",
+      { p_proposal_id: proposalId },
+    );
+    if (finalizeError) throw finalizeError;
+    finalization = finalized;
+  }
   const recorded = await recordHandoff(
     serviceClient,
     result.job_id,
@@ -287,7 +296,7 @@ async function handoffResult(
     proposalId || undefined,
   );
   if (recorded.error) throw recorded.error;
-  return { mode: "proposal", proposalId: proposalId || null };
+  return { mode: "proposal", proposalId: proposalId || null, finalization };
 }
 
 Deno.serve(async (request: Request) => {

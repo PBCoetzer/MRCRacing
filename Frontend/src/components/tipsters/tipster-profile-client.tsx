@@ -33,6 +33,7 @@ import type {
 import { createClient } from "@/lib/supabase/client";
 
 export function TipsterProfileClient() {
+  const [loadedAt] = useState(() => Date.now());
   const [loading, setLoading] = useState(true);
   const [processing, setProcessing] = useState("");
   const [error, setError] = useState("");
@@ -150,6 +151,10 @@ export function TipsterProfileClient() {
     () => new Map(meetings.map((meeting) => [meeting.id, meeting])),
     [meetings],
   );
+  const availableCards = cards.filter((card) => {
+    const meeting = meetingById.get(card.meeting_id);
+    return meeting?.status === "scheduled" && new Date(meeting.first_race_at).getTime() > loadedAt;
+  });
 
   function requireClient(action: string) {
     if (userId) {
@@ -339,7 +344,7 @@ export function TipsterProfileClient() {
           Upcoming meeting cards
         </h2>
         <div className="mt-5 grid gap-4 lg:grid-cols-2">
-          {cards.map((card) => {
+          {availableCards.map((card) => {
             const meeting = meetingById.get(card.meeting_id);
 
             return (
@@ -376,7 +381,7 @@ export function TipsterProfileClient() {
               </Card>
             );
           })}
-          {!cards.length ? (
+          {!availableCards.length ? (
             <p className="text-sm text-muted-foreground">
               No meeting cards are listed for this tipster yet.
             </p>

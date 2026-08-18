@@ -1445,7 +1445,7 @@ async function handleResultRefresh(
 ): Promise<TaskResult> {
   if (!task.meeting_id) throw new Error("Result refresh task is missing a meeting ID.");
   const current = await loadMeetingSnapshot(serviceClient, task.meeting_id);
-  const targetRace = selectResultRefreshRace(current.meeting);
+  const targetRace = selectResultRefreshRace(current.meeting, task.race_number);
 
   if (!targetRace) {
     return { status: "skipped", payload: { reason: "No race has started yet." }, evidenceCount: 0 };
@@ -1506,9 +1506,12 @@ async function handleResultRefresh(
   };
 }
 
-function selectResultRefreshRace(meeting: NormalizedMeeting) {
+function selectResultRefreshRace(meeting: NormalizedMeeting, requestedRaceNumber?: number | null) {
   const now = Date.now();
   const startedRaces = meeting.races.filter((race) => Date.parse(race.startsAt) <= now);
+  if (requestedRaceNumber != null) {
+    return startedRaces.find((race) => race.raceNumber === requestedRaceNumber) ?? null;
+  }
   return startedRaces.find((race) =>
     !race.resultSummary || race.runners.some((runner) => runner.resultPosition == null)
   ) ?? startedRaces.at(-1);
@@ -1523,15 +1526,22 @@ async function prepareTaskForHermes(
     throw new Error("Result refresh task is missing a meeting ID.");
   }
   const current = await loadMeetingSnapshot(serviceClient, task.meeting_id);
-  const targetRace = selectResultRefreshRace(current.meeting);
+  const targetRace = selectResultRefreshRace(current.meeting, task.race_number);
   if (!targetRace) {
     return {
       result: {
         status: "skipped",
-        payload: { reason: "No race has started yet." },
+        payload: {
+          reason: task.race_number == null
+            ? "No race has started yet."
+            : `Race ${task.race_number} is not available or has not started.`,
+        },
         evidenceCount: 0,
       },
     };
+  }
+  if (task.fixture_id && task.race_number == null) {
+    throw new Error("A per-fixture result task must include its race number.");
   }
   return { task: {
     ...task,

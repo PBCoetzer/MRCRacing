@@ -20,6 +20,8 @@ import { createClient } from "@/lib/supabase/client";
 const publicNavItems = [
   { label: "Home", href: "/" },
   { label: "Tipsters", href: "/tipsters/" },
+  { label: "Blog", href: "/blog/" },
+  { label: "Horse Care", href: "/horse-care/" },
   { label: "Pricing", href: "/pricing" },
 ];
 

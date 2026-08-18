@@ -1,4 +1,4 @@
-export type TipCardStatus = "draft" | "coming_soon" | "published" | "settled" | "voided";
+export type TipCardStatus = "draft" | "coming_soon" | "published" | "settled" | "void";
 
 export type RaceMeeting = {
   id: string;

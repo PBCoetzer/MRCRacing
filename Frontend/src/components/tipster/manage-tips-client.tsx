@@ -352,7 +352,10 @@ export function ManageTipsClient() {
     [fixtures],
   );
   const isPublished = card?.status === "published";
-  const isReadOnlyCard = card?.status === "settled" || card?.status === "voided";
+  const creationWindowClosed = !isPublished && Boolean(
+    meeting && (meeting.status !== "scheduled" || new Date(meeting.first_race_at).getTime() <= currentTime),
+  );
+  const isReadOnlyCard = card?.status === "settled" || card?.status === "void" || creationWindowClosed;
   const unusedBetOptions = betOptions.filter((option) => !multipleDrafts[option.id]);
   const hasEditableSelections =
     fixtures.some((fixture) => new Date(fixture.selection_lock_at).getTime() > currentTime) ||

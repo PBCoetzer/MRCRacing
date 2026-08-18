@@ -179,6 +179,7 @@ type AccessDraft = {
   tipsterDisplayName: string;
   tipsterBiography: string;
   tipsterVerified: boolean;
+  blogPublish: boolean;
   testAccess: boolean;
   reason: string;
 };
@@ -243,6 +244,7 @@ export function AdminUserDetailClient() {
     tipsterDisplayName: "",
     tipsterBiography: "",
     tipsterVerified: false,
+    blogPublish: false,
     testAccess: false,
     reason: "Administrator access configuration",
   });
@@ -285,12 +287,17 @@ export function AdminUserDetailClient() {
       return;
     }
 
-    const [detailResult, ownerResult] = await Promise.all([
+    const [detailResult, ownerResult, blogPermissionResult] = await Promise.all([
       supabase.rpc("admin_get_user_detail", { p_user_id: userId }),
       supabase
         .from("platform_owners")
         .select("user_id")
         .eq("user_id", user.id)
+        .maybeSingle(),
+      supabase
+        .from("tipsters")
+        .select("tipster_blog_permissions(can_publish)")
+        .eq("user_id", userId)
         .maybeSingle(),
     ]);
 
@@ -300,8 +307,8 @@ export function AdminUserDetailClient() {
       return;
     }
 
-    if (ownerResult.error) {
-      setError(ownerResult.error.message);
+    if (ownerResult.error || blogPermissionResult.error) {
+      setError(ownerResult.error?.message ?? blogPermissionResult.error?.message ?? "Could not load access controls.");
       setLoading(false);
       return;
     }
@@ -327,6 +334,11 @@ export function AdminUserDetailClient() {
         loadedDetail.identity.email.split("@")[0],
       tipsterBiography: loadedDetail.access.tipsterBiography ?? "",
       tipsterVerified: loadedDetail.access.tipsterVerified,
+      blogPublish: (() => {
+        const permission = blogPermissionResult.data?.tipster_blog_permissions;
+        const value = Array.isArray(permission) ? permission[0] : permission;
+        return value?.can_publish === true;
+      })(),
       testAccess: loadedDetail.access.testAccess,
       reason: "Administrator access configuration",
     });
@@ -421,7 +433,20 @@ export function AdminUserDetailClient() {
         throw accessError;
       }
 
-      setMessage("Roles, tipster verification, and private test access were audit logged.");
+      if (accessDraft.tipster || detail.access.tipsterId) {
+        const { error: blogPermissionError } = await supabase.rpc(
+          "admin_set_tipster_blog_permission",
+          {
+            p_user_id: detail.identity.userId,
+            p_can_publish:
+              accessDraft.tipster && accessDraft.tipsterVerified && accessDraft.blogPublish,
+            p_reason: accessDraft.reason,
+          },
+        );
+        if (blogPermissionError) throw blogPermissionError;
+      }
+
+      setMessage("Roles, tipster verification, blog-author permission, and private test access were audit logged.");
       await loadDetail();
     } catch (caughtError) {
       setError(errorMessage(caughtError, "Could not update user access."));
@@ -789,6 +814,14 @@ export function AdminUserDetailClient() {
                   disabled={!accessDraft.tipster}
                   onChange={(checked) =>
                     setAccessDraft((current) => ({ ...current, tipsterVerified: checked }))
+                  }
+                />
+                <CheckboxField
+                  label="May publish blog posts"
+                  checked={accessDraft.blogPublish}
+                  disabled={!accessDraft.tipster || !accessDraft.tipsterVerified}
+                  onChange={(checked) =>
+                    setAccessDraft((current) => ({ ...current, blogPublish: checked }))
                   }
                 />
               </div>

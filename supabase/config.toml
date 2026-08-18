@@ -15,3 +15,15 @@ enabled = true
 verify_jwt = false
 import_map = "./functions/sync-race-data/deno.json"
 entrypoint = "./functions/sync-race-data/index.ts"
+
+[functions.race-lifecycle]
+enabled = true
+verify_jwt = false
+import_map = "./functions/race-lifecycle/deno.json"
+entrypoint = "./functions/race-lifecycle/index.ts"
+
+[functions.blog-media-upload]
+enabled = true
+verify_jwt = false
+import_map = "./functions/blog-media-upload/deno.json"
+entrypoint = "./functions/blog-media-upload/index.ts"

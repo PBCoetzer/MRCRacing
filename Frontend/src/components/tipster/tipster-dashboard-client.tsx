@@ -46,6 +46,17 @@ type CardFixture = {
   result_summary: string | null;
 };
 
+type CardOutcome = {
+  tip_card_id: string;
+  fixture_id: string;
+  selected_winner_entry_id: string | null;
+  selected_winner_position: number | null;
+  winner_hit: boolean | null;
+  selected_place_position: number | null;
+  result_summary: string | null;
+  settled_at: string;
+};
+
 const packageDurations = [1, 3, 6, 12] as const;
 const emptyPackageDraft: PackageDraft = { 1: "", 3: "", 6: "", 12: "" };
 
@@ -69,6 +80,7 @@ export function TipsterDashboardClient() {
   const [packages, setPackages] = useState<TipsterPackage[]>([]);
   const [earnings, setEarnings] = useState<EarningRow[]>([]);
   const [cardFixtures, setCardFixtures] = useState<CardFixture[]>([]);
+  const [cardOutcomes, setCardOutcomes] = useState<CardOutcome[]>([]);
   const [packageDraft, setPackageDraft] = useState<PackageDraft>(emptyPackageDraft);
 
   const loadDashboard = useCallback(async () => {
@@ -142,6 +154,7 @@ export function TipsterDashboardClient() {
       const loadedCards = (cardResult.data ?? []) as TipCard[];
       const nextDraft = { ...emptyPackageDraft };
       let loadedCardFixtures: CardFixture[] = [];
+      let loadedCardOutcomes: CardOutcome[] = [];
 
       if (loadedCards.length) {
         const fixtureResult = await supabase
@@ -155,6 +168,14 @@ export function TipsterDashboardClient() {
         }
 
         loadedCardFixtures = (fixtureResult.data ?? []) as CardFixture[];
+
+        const outcomeResult = await supabase
+          .from("tip_card_race_outcomes")
+          .select("tip_card_id,fixture_id,selected_winner_entry_id,selected_winner_position,winner_hit,selected_place_position,result_summary,settled_at")
+          .in("tip_card_id", loadedCards.map((card) => card.id))
+          .order("settled_at", { ascending: false });
+        if (outcomeResult.error) throw outcomeResult.error;
+        loadedCardOutcomes = (outcomeResult.data ?? []) as CardOutcome[];
       }
 
       for (const tipsterPackage of loadedPackages) {
@@ -167,6 +188,7 @@ export function TipsterDashboardClient() {
       setPackages(loadedPackages);
       setEarnings((earningResult.data ?? []) as EarningRow[]);
       setCardFixtures(loadedCardFixtures);
+      setCardOutcomes(loadedCardOutcomes);
       setPackageDraft(nextDraft);
     } catch (loadError) {
       setError(loadError instanceof Error ? loadError.message : "Could not load tipster data.");
@@ -190,7 +212,9 @@ export function TipsterDashboardClient() {
   const cardMeetingIds = useMemo(() => new Set(cards.map((card) => card.meeting_id)), [cards]);
   const availableMeetings = meetings.filter(
     (meeting) =>
-      meeting.status === "scheduled" && !cardMeetingIds.has(meeting.id),
+      meeting.status === "scheduled" &&
+      new Date(meeting.first_race_at).getTime() > loadedAt &&
+      !cardMeetingIds.has(meeting.id),
   );
   const netEarnings = earnings.reduce((total, entry) => total + Number(entry.net_coins), 0);
 
@@ -340,6 +364,7 @@ export function TipsterDashboardClient() {
                 <TableHead>Status</TableHead>
                 <TableHead>Revision</TableHead>
                 <TableHead>Price</TableHead>
+                <TableHead>Winner record</TableHead>
                 <TableHead />
               </TableRow>
             </TableHeader>
@@ -354,6 +379,9 @@ export function TipsterDashboardClient() {
                 const openCount = fixtures.filter(
                   (fixture) => new Date(fixture.starts_at).getTime() > loadedAt,
                 ).length;
+                const outcomes = cardOutcomes.filter((outcome) => outcome.tip_card_id === card.id);
+                const graded = outcomes.filter((outcome) => outcome.selected_winner_position != null);
+                const hits = graded.filter((outcome) => outcome.winner_hit === true).length;
                 const actionLabel =
                   openCount === 0 || (fixtures.length > 0 && resultCount === fixtures.length)
                     ? "View results"
@@ -377,12 +405,15 @@ export function TipsterDashboardClient() {
                       </p>
                     </TableCell>
                     <TableCell>
-                      <Badge variant={card.status === "published" ? "default" : "secondary"}>
+                      <Badge variant={["published", "settled"].includes(card.status) ? "default" : "secondary"}>
                         {card.status.replace("_", " ")}
                       </Badge>
                     </TableCell>
                     <TableCell className="font-mono">{card.revision}</TableCell>
                     <TableCell className="font-mono">{formatCredits(card.coin_price)}</TableCell>
+                    <TableCell className="font-mono">
+                      {card.status === "settled" ? `${hits}/${graded.length} hits` : `${resultCount}/${fixtures.length} results`}
+                    </TableCell>
                     <TableCell className="text-right">
                       <Button asChild variant="outline">
                         <Link href={`/tipster/manage-tips/?card=${encodeURIComponent(card.id)}`}>
@@ -395,7 +426,7 @@ export function TipsterDashboardClient() {
               })}
               {!cards.length ? (
                 <TableRow>
-                  <TableCell colSpan={5} className="text-center text-muted-foreground">
+                  <TableCell colSpan={6} className="text-center text-muted-foreground">
                     No meeting cards yet.
                   </TableCell>
                 </TableRow>
