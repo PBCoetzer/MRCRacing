@@ -9,7 +9,7 @@ RewriteCond %{REQUEST_URI} \$
 RewriteRule ^(.*)\$([^$]+)\$(.*)$ $1_$2_$3 [N]
 
 RewriteCond %{QUERY_STRING} (^|&)slug=([a-z0-9-]+)(&|$) [NC]
-RewriteRule ^blog/post/?$ /blog/%2/? [R=301,L,NE]
+RewriteRule ^blog/post/?$ https://www.mrcracing.co.za/blog/%2/? [R=301,L,NE]
 
 Options -Indexes
 
