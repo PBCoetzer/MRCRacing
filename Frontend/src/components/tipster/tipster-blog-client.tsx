@@ -26,8 +26,33 @@ type BlogPost = {
 };
 
 const emptyDraft = { title: "", excerpt: "", body: "", coverPath: "" };
+const supportedCoverTypes = new Set(["image/jpeg", "image/png", "image/webp"]);
+const maxSourceCoverBytes = 20 * 1024 * 1024;
+
+async function edgeFunctionErrorMessage(error: unknown, fallback: string) {
+  if (error && typeof error === "object" && "context" in error) {
+    const context = (error as { context?: unknown }).context;
+    if (context instanceof Response) {
+      try {
+        const payload = await context.clone().json() as { error?: unknown; requestId?: unknown };
+        const message = typeof payload.error === "string" ? payload.error : fallback;
+        const requestId = typeof payload.requestId === "string" ? ` Reference: ${payload.requestId}.` : "";
+        return `${message}${requestId}`;
+      } catch {
+        // Fall through to the SDK error when the response is not JSON.
+      }
+    }
+  }
+  return error instanceof Error ? error.message : fallback;
+}
 
 async function toWebp(file: File) {
+  if (!supportedCoverTypes.has(file.type)) {
+    throw new Error("Choose a JPEG, PNG, or WebP cover image.");
+  }
+  if (file.size <= 0 || file.size > maxSourceCoverBytes) {
+    throw new Error("The original cover image must be no larger than 20 MB.");
+  }
   const bitmap = await createImageBitmap(file);
   const scale = Math.min(1, 1600 / bitmap.width);
   const canvas = document.createElement("canvas");
@@ -123,7 +148,7 @@ export function TipsterBlogClient() {
       form.append("postId", saved.id);
       form.append("file", webp);
       const { data, error: uploadError } = await supabase.functions.invoke("blog-media-upload", { body: form });
-      if (uploadError) throw uploadError;
+      if (uploadError) throw new Error(await edgeFunctionErrorMessage(uploadError, "Cover upload failed."));
       if (!data?.path) throw new Error(data?.error ?? "The cover upload returned no path.");
       setDraft((current) => ({ ...current, coverPath: String(data.path) }));
       const { error: attachError } = await supabase.rpc("save_blog_post", {

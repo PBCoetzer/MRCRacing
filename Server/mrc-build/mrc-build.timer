@@ -1,0 +1,12 @@
+[Unit]
+Description=Poll for MRC static build jobs
+
+[Timer]
+OnBootSec=5min
+OnUnitActiveSec=2min
+RandomizedDelaySec=20
+Persistent=true
+Unit=mrc-build.service
+
+[Install]
+WantedBy=timers.target

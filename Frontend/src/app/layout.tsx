@@ -1,6 +1,8 @@
 import type { Metadata } from "next";
 import { Bungee, JetBrains_Mono, Nunito_Sans } from "next/font/google";
 import { Providers } from "@/components/providers";
+import { JsonLd } from "@/lib/json-ld";
+import { canonicalSiteUrl, defaultDescription, defaultShareImage, siteName } from "@/lib/metadata";
 import "./globals.css";
 
 const bungee = Bungee({
@@ -20,9 +22,21 @@ const jetBrainsMono = JetBrains_Mono({
 });
 
 export const metadata: Metadata = {
-  title: "MRC Racing Tips | South African Horse Racing Tips",
-  description:
-    "A South African horse-racing tipping platform for tipsters, credits, verified race cards, results history, and transparent betting analysis.",
+  metadataBase: new URL(canonicalSiteUrl),
+  title: { default: "MRC Racing Tips | South African Horse Racing", template: `%s | ${siteName}` },
+  description: defaultDescription,
+  applicationName: siteName,
+  alternates: { canonical: "/" },
+  openGraph: {
+    type: "website", locale: "en_ZA", siteName,
+    title: "MRC Racing Tips | South African Horse Racing",
+    description: defaultDescription, url: "/",
+    images: [{ url: defaultShareImage, width: 1200, height: 630, alt: "MRC Racing Tips — South African horse racing" }],
+  },
+  twitter: { card: "summary_large_image", title: "MRC Racing Tips", description: defaultDescription, images: [defaultShareImage] },
+  verification: process.env.NEXT_PUBLIC_GOOGLE_SITE_VERIFICATION
+    ? { google: process.env.NEXT_PUBLIC_GOOGLE_SITE_VERIFICATION }
+    : undefined,
 };
 
 export default function RootLayout({
@@ -36,6 +50,10 @@ export default function RootLayout({
       className={`${bungee.variable} ${nunitoSans.variable} ${jetBrainsMono.variable} dark h-full antialiased`}
     >
       <body className="flex min-h-full flex-col">
+        <JsonLd data={[
+          { "@context": "https://schema.org", "@type": "Organization", name: siteName, url: canonicalSiteUrl, logo: `${canonicalSiteUrl}/images/mrc-racing-tips-logo.webp` },
+          { "@context": "https://schema.org", "@type": "WebSite", name: siteName, url: canonicalSiteUrl, inLanguage: "en-ZA" },
+        ]} />
         <Providers>{children}</Providers>
       </body>
     </html>

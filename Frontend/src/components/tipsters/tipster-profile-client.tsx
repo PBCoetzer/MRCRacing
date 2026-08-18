@@ -65,7 +65,7 @@ export function TipsterProfileClient() {
         supabase
           .from("tipsters")
           .select(
-            "id,user_id,display_name,biography,photo_path,is_verified,ranking,commission_rate_override",
+            "id,slug,user_id,display_name,biography,photo_path,is_verified,ranking,commission_rate_override",
           )
           .eq("id", tipsterId)
           .eq("is_verified", true)

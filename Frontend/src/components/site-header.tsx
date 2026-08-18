@@ -21,6 +21,7 @@ const publicNavItems = [
   { label: "Home", href: "/" },
   { label: "Tipsters", href: "/tipsters/" },
   { label: "Blog", href: "/blog/" },
+  { label: "Racing", href: "/horse-racing/" },
   { label: "Horse Care", href: "/horse-care/" },
   { label: "Pricing", href: "/pricing" },
 ];
@@ -131,7 +132,7 @@ export function SiteHeader() {
         <Link href="/" className="flex items-center gap-3">
           <span className="relative flex h-11 w-14 overflow-hidden rounded-md border border-brand-gold/70 bg-brand-purple shadow-[0_0_0_2px_rgba(255,176,0,0.12)]">
             <Image
-              src="/images/mrc-racing-tips-logo.jpeg"
+              src="/images/mrc-racing-tips-logo.webp"
               alt="MRC Racing Tips logo"
               width={112}
               height={88}

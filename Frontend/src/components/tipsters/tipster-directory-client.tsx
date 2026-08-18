@@ -83,7 +83,7 @@ function TipsterCard({
           ROI is not shown until authoritative dividends support a verified calculation.
         </p>
         <Button asChild className="mt-4 w-full">
-          <Link href={`/tipsters/profile/?tipster=${tipster.id}`}>View profile</Link>
+          <Link href={`/tipsters/${tipster.slug}/`}>View profile</Link>
         </Button>
       </CardContent>
     </Card>
@@ -115,7 +115,7 @@ export function TipsterDirectoryClient() {
       supabase
         .from("tipsters")
         .select(
-          "id,user_id,display_name,biography,photo_path,is_verified,ranking,commission_rate_override",
+          "id,slug,user_id,display_name,biography,photo_path,is_verified,ranking,commission_rate_override",
         )
         .eq("is_verified", true)
         .order("ranking", { ascending: true, nullsFirst: false }),
@@ -184,7 +184,7 @@ export function TipsterDirectoryClient() {
 
     if (!userId) {
       window.location.assign(
-        `/login/?next=${encodeURIComponent(`/tipsters/profile/?tipster=${tipsterId}`)}`,
+        `/login/?next=${encodeURIComponent("/tipsters/")}`,
       );
       return;
     }
