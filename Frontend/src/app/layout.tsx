@@ -64,10 +64,7 @@ export default function RootLayout({
             telephone: businessDetails.telephoneInternational,
             address: {
               "@type": "PostalAddress",
-              streetAddress: businessDetails.address.street,
-              addressLocality: businessDetails.address.locality,
               addressRegion: businessDetails.address.region,
-              postalCode: businessDetails.address.postalCode,
               addressCountry: businessDetails.address.countryCode,
             },
             contactPoint: {

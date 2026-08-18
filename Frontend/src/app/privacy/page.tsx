@@ -1,6 +1,6 @@
 import Link from "next/link";
 import { InfoPage } from "@/components/info-page";
-import { businessDetails, registeredOffice } from "@/lib/business-details";
+import { businessDetails, publicBusinessLocation } from "@/lib/business-details";
 
 export default function PrivacyPage() {
   return (
@@ -11,7 +11,7 @@ export default function PrivacyPage() {
       sections={[
         {
           title: "Who is responsible",
-          body: <p>{businessDetails.legalName} (registration {businessDetails.registrationNumber}), trading as {businessDetails.tradingName}, operates this website and is responsible for the personal information processed through its accounts, Credits, content purchases, comments, support requests, and administration tools. Its registered office is {registeredOffice}.</p>,
+          body: <p>{businessDetails.legalName} (registration {businessDetails.registrationNumber}), trading as {businessDetails.tradingName}, operates this website and is responsible for the personal information processed through its accounts, Credits, content purchases, comments, support requests, and administration tools. Its public business location is {publicBusinessLocation}.</p>,
         },
         {
           title: "Information we collect",

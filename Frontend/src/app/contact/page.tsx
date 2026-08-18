@@ -1,6 +1,6 @@
 import Link from "next/link";
 import { InfoPage } from "@/components/info-page";
-import { businessDetails, registeredOffice } from "@/lib/business-details";
+import { businessDetails, publicBusinessLocation } from "@/lib/business-details";
 
 export default function ContactPage() {
   return (
@@ -10,11 +10,11 @@ export default function ContactPage() {
       description="The right support route for account, payment, privacy, racing-content, and responsible-use enquiries."
       sections={[
         {
-          title: "Registered business and support",
+          title: "Business details and support",
           body: (
             <div className="space-y-2">
               <p><strong>{businessDetails.legalName}</strong> (registration {businessDetails.registrationNumber}), trading as {businessDetails.tradingName}.</p>
-              <p>Registered office: {registeredOffice}.</p>
+              <p>Business location: {publicBusinessLocation}.</p>
               <p>Email: <a href={`mailto:${businessDetails.supportEmail}`} className="text-brand-cyan underline">{businessDetails.supportEmail}</a><br />Telephone: <a href={businessDetails.telephoneHref} className="text-brand-cyan underline">{businessDetails.telephoneDisplay}</a></p>
             </div>
           ),

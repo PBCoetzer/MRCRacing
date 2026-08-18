@@ -5,7 +5,7 @@ The public website now includes Terms, Privacy, Refund, Cancellation, Responsibl
 - Registered company: MRC Racing Tips (Pty) Ltd.
 - Trading name: MRC Racing Tips.
 - Registration number: 2025/406293/07.
-- Registered office: 9 Winston Crescent, Newton Park, Gqeberha, Eastern Cape, 6055, South Africa.
+- Public business location: Eastern Cape, South Africa.
 - Monitored support email: support@mrcracing.co.za.
 - Support telephone: 083 703 6174.
 
@@ -15,7 +15,7 @@ Before submitting the final merchant review, confirm:
 - ZAR pricing and fulfilment process.
 - Refund and cancellation links in the footer and registration acceptance.
 - HTTPS, working registration/login, and a functioning contact route.
-- PayFast merchant profile uses the same legal name, registration number, address, email, and telephone shown above.
+- PayFast merchant profile uses the legal name, registration number, full registered address from the privately stored CIPC certificate, email, and telephone supplied by the business owner.
 - Payment methods are enabled only after PayFast approval.
 
-The tax number and director identity details remain in the private merchant documentation and are not published in the website source.
+The full registered address, tax number, and director identity details remain in the private merchant documentation and are not published in the website source.

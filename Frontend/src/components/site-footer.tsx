@@ -1,6 +1,6 @@
 import Link from "next/link";
 import Image from "next/image";
-import { businessDetails, registeredOffice } from "@/lib/business-details";
+import { businessDetails, publicBusinessLocation } from "@/lib/business-details";
 
 const links = [
   { label: "MRC Blog", href: "/blog/" },
@@ -35,7 +35,7 @@ export function SiteFooter() {
           </p>
           <p className="mt-3 max-w-2xl text-xs">
             {businessDetails.legalName} · Registration {businessDetails.registrationNumber}<br />
-            {registeredOffice}<br />
+            {publicBusinessLocation}<br />
             <a href={`mailto:${businessDetails.supportEmail}`} className="hover:text-foreground">{businessDetails.supportEmail}</a>
             {" · "}
             <a href={businessDetails.telephoneHref} className="hover:text-foreground">{businessDetails.telephoneDisplay}</a>
