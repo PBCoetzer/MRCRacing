@@ -1,5 +1,6 @@
 import Link from "next/link";
 import { InfoPage } from "@/components/info-page";
+import { businessDetails } from "@/lib/business-details";
 
 export default function RefundPolicyPage() {
   return (
@@ -26,7 +27,7 @@ export default function RefundPolicyPage() {
         },
         {
           title: "How to request a review",
-          body: <p>Use the <Link href="/contact/" className="text-brand-cyan underline">contact page</Link> and include your account email, payment or purchase reference, amount, date, and reason. Do not send card details, banking credentials, OTPs, or voucher PINs. Approved external-payment refunds are returned through the original provider where supported; provider and bank processing times apply.</p>,
+          body: <p>Email <a href={`mailto:${businessDetails.supportEmail}`} className="text-brand-cyan underline">{businessDetails.supportEmail}</a>, telephone <a href={businessDetails.telephoneHref} className="text-brand-cyan underline">{businessDetails.telephoneDisplay}</a>, or use the <Link href="/contact/" className="text-brand-cyan underline">contact page</Link>. Include your account email, payment or purchase reference, amount, date, and reason. Do not send card details, banking credentials, OTPs, or voucher PINs. Approved external-payment refunds are returned through the original provider where supported; provider and bank processing times apply.</p>,
         },
         {
           title: "Statutory rights",

@@ -1,5 +1,6 @@
 import Link from "next/link";
 import { InfoPage } from "@/components/info-page";
+import { businessDetails, registeredOffice } from "@/lib/business-details";
 
 export default function PrivacyPage() {
   return (
@@ -10,7 +11,7 @@ export default function PrivacyPage() {
       sections={[
         {
           title: "Who is responsible",
-          body: <p>MRC Racing Tips operates this website and is responsible for the personal information processed through its accounts, Credits, content purchases, comments, support requests, and administration tools.</p>,
+          body: <p>{businessDetails.legalName} (registration {businessDetails.registrationNumber}), trading as {businessDetails.tradingName}, operates this website and is responsible for the personal information processed through its accounts, Credits, content purchases, comments, support requests, and administration tools. Its registered office is {registeredOffice}.</p>,
         },
         {
           title: "Information we collect",
@@ -34,7 +35,7 @@ export default function PrivacyPage() {
         },
         {
           title: "Contact and related policies",
-          body: <p>Send a privacy request through the <Link href="/contact/" className="text-brand-cyan underline">contact page</Link>. Payment reversals and service cancellation are explained in the <Link href="/refund-policy/" className="text-brand-cyan underline">Refund Policy</Link> and <Link href="/cancellation-policy/" className="text-brand-cyan underline">Cancellation Policy</Link>.</p>,
+          body: <p>Send a privacy request to <a href={`mailto:${businessDetails.supportEmail}`} className="text-brand-cyan underline">{businessDetails.supportEmail}</a>, telephone <a href={businessDetails.telephoneHref} className="text-brand-cyan underline">{businessDetails.telephoneDisplay}</a>, or use the <Link href="/contact/" className="text-brand-cyan underline">contact page</Link>. Payment reversals and service cancellation are explained in the <Link href="/refund-policy/" className="text-brand-cyan underline">Refund Policy</Link> and <Link href="/cancellation-policy/" className="text-brand-cyan underline">Cancellation Policy</Link>.</p>,
         },
       ]}
     />

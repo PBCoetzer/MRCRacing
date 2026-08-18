@@ -1,5 +1,6 @@
 import Link from "next/link";
 import { InfoPage } from "@/components/info-page";
+import { businessDetails, registeredOffice } from "@/lib/business-details";
 
 export default function TermsPage() {
   return (
@@ -8,6 +9,10 @@ export default function TermsPage() {
       title="Terms and conditions"
       description="Terms for accounts, Credits, digital racing content, and participation on MRC Racing Tips. Effective 18 August 2026."
       sections={[
+        {
+          title: "Website operator",
+          body: <p>This website and the MRC Racing Tips service are operated by {businessDetails.legalName} (registration {businessDetails.registrationNumber}), trading as {businessDetails.tradingName}, from its registered office at {registeredOffice}. Support is available at <a href={`mailto:${businessDetails.supportEmail}`} className="text-brand-cyan underline">{businessDetails.supportEmail}</a> or <a href={businessDetails.telephoneHref} className="text-brand-cyan underline">{businessDetails.telephoneDisplay}</a>.</p>,
+        },
         {
           title: "Service scope",
           body: <p>MRC Racing Tips provides horse-racing analysis, tipster content, ratings, selections, opinions, factual race information, and result history for informational purposes. MRC does not accept bets, hold betting deposits, or pay gambling winnings.</p>,

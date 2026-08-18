@@ -2,6 +2,7 @@ import type { Metadata } from "next";
 import { Bungee, JetBrains_Mono, Nunito_Sans } from "next/font/google";
 import { Providers } from "@/components/providers";
 import { JsonLd } from "@/lib/json-ld";
+import { businessDetails } from "@/lib/business-details";
 import { canonicalSiteUrl, defaultDescription, defaultShareImage, siteName } from "@/lib/metadata";
 import "./globals.css";
 
@@ -51,7 +52,33 @@ export default function RootLayout({
     >
       <body className="flex min-h-full flex-col">
         <JsonLd data={[
-          { "@context": "https://schema.org", "@type": "Organization", name: siteName, url: canonicalSiteUrl, logo: `${canonicalSiteUrl}/images/mrc-racing-tips-logo.webp` },
+          {
+            "@context": "https://schema.org",
+            "@type": "Organization",
+            name: siteName,
+            legalName: businessDetails.legalName,
+            identifier: businessDetails.registrationNumber,
+            url: canonicalSiteUrl,
+            logo: `${canonicalSiteUrl}/images/mrc-racing-tips-logo.webp`,
+            email: businessDetails.supportEmail,
+            telephone: businessDetails.telephoneInternational,
+            address: {
+              "@type": "PostalAddress",
+              streetAddress: businessDetails.address.street,
+              addressLocality: businessDetails.address.locality,
+              addressRegion: businessDetails.address.region,
+              postalCode: businessDetails.address.postalCode,
+              addressCountry: businessDetails.address.countryCode,
+            },
+            contactPoint: {
+              "@type": "ContactPoint",
+              contactType: "customer support",
+              email: businessDetails.supportEmail,
+              telephone: businessDetails.telephoneInternational,
+              areaServed: "ZA",
+              availableLanguage: "English",
+            },
+          },
           { "@context": "https://schema.org", "@type": "WebSite", name: siteName, url: canonicalSiteUrl, inLanguage: "en-ZA" },
         ]} />
         <Providers>{children}</Providers>

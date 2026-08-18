@@ -1,5 +1,6 @@
 import Link from "next/link";
 import { InfoPage } from "@/components/info-page";
+import { businessDetails } from "@/lib/business-details";
 
 export default function CancellationPolicyPage() {
   return (
@@ -22,7 +23,7 @@ export default function CancellationPolicyPage() {
         },
         {
           title: "Account closure",
-          body: <p>You may request account closure through the <Link href="/contact/" className="text-brand-cyan underline">contact page</Link>. Identity verification may be required. Closure does not erase financial, fraud-prevention, dispute, or audit records that MRC must lawfully retain, and it does not convert Credits into cash.</p>,
+          body: <p>You may request account closure by emailing <a href={`mailto:${businessDetails.supportEmail}`} className="text-brand-cyan underline">{businessDetails.supportEmail}</a> from the address associated with your account or through the <Link href="/contact/" className="text-brand-cyan underline">contact page</Link>. Identity verification may be required. Closure does not erase financial, fraud-prevention, dispute, or audit records that MRC must lawfully retain, and it does not convert Credits into cash.</p>,
         },
         {
           title: "Provider or voucher cancellation",
