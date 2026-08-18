@@ -1,5 +1,6 @@
 import Link from "next/link";
 import Image from "next/image";
+import { businessDetails, registeredOffice } from "@/lib/business-details";
 
 const links = [
   { label: "MRC Blog", href: "/blog/" },
@@ -31,6 +32,13 @@ export function SiteFooter() {
             Horse-racing analysis and digital tipping content only. MRC Racing Tips does not
             accept bets, process gambling deposits, or pay out winnings. 18+ only. Gamble
             responsibly.
+          </p>
+          <p className="mt-3 max-w-2xl text-xs">
+            {businessDetails.legalName} · Registration {businessDetails.registrationNumber}<br />
+            {registeredOffice}<br />
+            <a href={`mailto:${businessDetails.supportEmail}`} className="hover:text-foreground">{businessDetails.supportEmail}</a>
+            {" · "}
+            <a href={businessDetails.telephoneHref} className="hover:text-foreground">{businessDetails.telephoneDisplay}</a>
           </p>
           </div>
         </div>
