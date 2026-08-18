@@ -15,7 +15,7 @@ export default function ContactPage() {
             <div className="space-y-2">
               <p><strong>{businessDetails.legalName}</strong> (registration {businessDetails.registrationNumber}), trading as {businessDetails.tradingName}.</p>
               <p>Registered office: {registeredOffice}.</p>
-              <p>Email: <a href={`mailto:${businessDetails.supportEmail}`} className="text-brand-cyan underline">{businessDetails.supportEmail}</a><br />Telephone/WhatsApp: <a href={businessDetails.telephoneHref} className="text-brand-cyan underline">{businessDetails.telephoneDisplay}</a></p>
+              <p>Email: <a href={`mailto:${businessDetails.supportEmail}`} className="text-brand-cyan underline">{businessDetails.supportEmail}</a><br />Telephone: <a href={businessDetails.telephoneHref} className="text-brand-cyan underline">{businessDetails.telephoneDisplay}</a></p>
             </div>
           ),
         },

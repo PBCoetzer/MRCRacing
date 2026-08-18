@@ -7,7 +7,7 @@ The public website now includes Terms, Privacy, Refund, Cancellation, Responsibl
 - Registration number: 2025/406293/07.
 - Registered office: 9 Winston Crescent, Newton Park, Gqeberha, Eastern Cape, 6055, South Africa.
 - Monitored support email: support@mrcracing.co.za.
-- Support telephone or WhatsApp: 083 703 6174.
+- Support telephone: 083 703 6174.
 
 Before submitting the final merchant review, confirm:
 
