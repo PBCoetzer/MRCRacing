@@ -7,6 +7,7 @@ import {
   ArrowLeft,
   BellRing,
   CheckCircle2,
+  CircleSlash2,
   Clock3,
   FilePenLine,
   Loader2,
@@ -201,7 +202,7 @@ export function ManageTipsClient() {
         const [raceSelectionResult, multipleResult] = await Promise.all([
           supabase
             .from("race_tip_selections")
-            .select("id,tip_card_id,fixture_id,winner_entry_id,place_entry_id,comments")
+            .select("id,tip_card_id,fixture_id,winner_entry_id,place_entry_id,comments,selection_status")
             .eq("tip_card_id", loadedCard.id),
           supabase
             .from("tip_card_multiples")
@@ -252,6 +253,7 @@ export function ManageTipsClient() {
         const selection = raceSelectionByFixture.get(fixture.id);
         nextRaceDrafts[fixture.id] = {
           fixtureId: fixture.id,
+          selectionStatus: selection?.selection_status ?? "tipped",
           winnerEntryId: selection?.winner_entry_id ?? "",
           placeEntryId: selection?.place_entry_id ?? "",
           comments: selection?.comments ?? "",
@@ -463,8 +465,8 @@ export function ManageTipsClient() {
     });
 
     return workerError
-      ? "The card was saved, but queued email delivery still needs the Resend production secret."
-      : "Entitled clients were queued for email delivery.";
+      ? "The card was saved, but the queued notification worker could not be started."
+      : "Entitled clients were queued for notification delivery.";
   }
 
   async function saveCard(action: "draft" | "publish" | "revise") {
@@ -499,7 +501,8 @@ export function ManageTipsClient() {
           .filter((fixture) => isOpen(fixture.starts_at))
           .map((fixture) => {
             const draft = raceDrafts[fixture.id];
-            const remove = !draft.winnerEntryId && !draft.placeEntryId && !draft.comments.trim();
+            const remove = draft.selectionStatus !== "skipped" &&
+              !draft.winnerEntryId && !draft.placeEntryId && !draft.comments.trim();
 
             return remove
               ? { fixtureId: fixture.id, remove: true }
@@ -792,12 +795,13 @@ export function ManageTipsClient() {
         <div>
           <h2 className="font-heading text-2xl text-white">Race-by-race tips</h2>
           <p className="text-sm text-muted-foreground">
-            Select one optional winner, one optional best-place option, and add race comments.
+            Select optional winner and best-place tips, or explicitly skip a race that offers no worthwhile selection.
           </p>
         </div>
         {fixtures.map((fixture) => {
           const fixtureEntries = entriesByFixture.get(fixture.id) ?? [];
           const draft = raceDrafts[fixture.id];
+          const skipped = draft?.selectionStatus === "skipped";
           const locked = !isOpen(fixture.selection_lock_at) || isReadOnlyCard;
           const resultAvailable = Boolean(
             fixture.result_summary ||
@@ -814,7 +818,10 @@ export function ManageTipsClient() {
           );
 
           return (
-            <Card key={fixture.id} className={locked ? "opacity-75" : ""}>
+            <Card
+              key={fixture.id}
+              className={`${locked ? "opacity-75" : ""} ${skipped ? "border-muted-foreground/45" : ""}`}
+            >
               <CardHeader>
                 <div className="flex flex-wrap items-center justify-between gap-2">
                   <div>
@@ -826,6 +833,22 @@ export function ManageTipsClient() {
                     </CardDescription>
                   </div>
                   <div className="flex items-center gap-2">
+                    <Button
+                      type="button"
+                      size="sm"
+                      variant={skipped ? "secondary" : "outline"}
+                      disabled={locked}
+                      onClick={() => updateRaceDraft(fixture.id, skipped
+                        ? { selectionStatus: "tipped" }
+                        : {
+                            selectionStatus: "skipped",
+                            winnerEntryId: "",
+                            placeEntryId: "",
+                          })}
+                    >
+                      <CircleSlash2 className="size-3" />
+                      {skipped ? "Race skipped" : "Skip this race"}
+                    </Button>
                     <Badge
                       variant={resultAvailable ? "default" : locked ? "destructive" : "outline"}
                     >
@@ -858,7 +881,7 @@ export function ManageTipsClient() {
                   <select
                     id={`winner-${fixture.id}`}
                     className="h-9 w-full rounded-lg border border-input bg-background px-2.5 text-sm"
-                    disabled={locked}
+                    disabled={locked || skipped}
                     value={draft?.winnerEntryId ?? ""}
                     onChange={(event) => updateRaceDraft(fixture.id, { winnerEntryId: event.target.value })}
                   >
@@ -875,7 +898,7 @@ export function ManageTipsClient() {
                   <select
                     id={`place-${fixture.id}`}
                     className="h-9 w-full rounded-lg border border-input bg-background px-2.5 text-sm"
-                    disabled={locked}
+                    disabled={locked || skipped}
                     value={draft?.placeEntryId ?? ""}
                     onChange={(event) => updateRaceDraft(fixture.id, { placeEntryId: event.target.value })}
                   >
@@ -892,7 +915,9 @@ export function ManageTipsClient() {
                   <Textarea
                     id={`comments-${fixture.id}`}
                     disabled={locked}
-                    placeholder="Pace, draw, form, confidence, and race-shape notes."
+                    placeholder={skipped
+                      ? "Optional: explain why no tip is recommended for this race."
+                      : "Pace, draw, form, confidence, and race-shape notes."}
                     value={draft?.comments ?? ""}
                     onChange={(event) => updateRaceDraft(fixture.id, { comments: event.target.value })}
                   />
