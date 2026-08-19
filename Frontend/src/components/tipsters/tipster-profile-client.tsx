@@ -48,42 +48,56 @@ export function TipsterProfileClient() {
   const [favourite, setFavourite] = useState(false);
 
   const loadProfile = useCallback(async () => {
-    const tipsterId = new URLSearchParams(window.location.search).get("tipster");
+    const searchParams = new URLSearchParams(window.location.search);
+    const tipsterId = searchParams.get("tipster");
+    const tipsterSlug = searchParams.get("slug");
     const supabase = createClient();
 
-    if (!tipsterId || !supabase) {
+    if ((!tipsterId && !tipsterSlug) || !supabase) {
       setError("Choose a valid tipster profile.");
       setLoading(false);
       return;
     }
 
     setLoading(true);
+    setError("");
+    const tipsterQuery = supabase
+      .from("tipsters")
+      .select(
+        "id,slug,user_id,display_name,biography,photo_path,is_verified,ranking,commission_rate_override",
+      )
+      .eq("is_verified", true);
+    const tipsterResult = tipsterId
+      ? await tipsterQuery.eq("id", tipsterId).maybeSingle()
+      : await tipsterQuery.eq("slug", tipsterSlug ?? "").maybeSingle();
+    const loadedTipster = (tipsterResult.data as TipsterProfile | null) ?? null;
+
+    if (tipsterResult.error || !loadedTipster) {
+      setTipster(null);
+      setError(tipsterResult.error?.message ?? "This profile is not publicly available.");
+      setLoading(false);
+      return;
+    }
+
+    const resolvedTipsterId = loadedTipster.id;
     const {
       data: { user },
     } = await supabase.auth.getUser();
-    const [tipsterResult, statsResult, packageResult, cardResult, favouriteResult] =
+    const [statsResult, packageResult, cardResult, favouriteResult] =
       await Promise.all([
-        supabase
-          .from("tipsters")
-          .select(
-            "id,slug,user_id,display_name,biography,photo_path,is_verified,ranking,commission_rate_override",
-          )
-          .eq("id", tipsterId)
-          .eq("is_verified", true)
-          .maybeSingle(),
         supabase
           .from("tipster_performance_stats")
           .select(
             "tipster_id,published_winner_tips,settled_winner_tips,winner_hits,winner_strike_rate,roi_percent,updated_at",
           )
-          .eq("tipster_id", tipsterId)
+          .eq("tipster_id", resolvedTipsterId)
           .maybeSingle(),
         supabase
           .from("tipster_packages")
           .select(
             "id,tipster_id,name,duration_months,coin_price,is_active,created_at",
           )
-          .eq("tipster_id", tipsterId)
+          .eq("tipster_id", resolvedTipsterId)
           .eq("is_active", true)
           .order("duration_months"),
         supabase
@@ -91,7 +105,7 @@ export function TipsterProfileClient() {
           .select(
             "id,tipster_id,meeting_id,title,summary,coin_price,status,revision,listed_at,published_at,voided_at,updated_at",
           )
-          .eq("tipster_id", tipsterId)
+          .eq("tipster_id", resolvedTipsterId)
           .in("status", ["coming_soon", "published"])
           .order("updated_at", { ascending: false }),
         user
@@ -99,18 +113,18 @@ export function TipsterProfileClient() {
               .from("client_tipster_favourites")
               .select("tipster_id")
               .eq("user_id", user.id)
-              .eq("tipster_id", tipsterId)
+              .eq("tipster_id", resolvedTipsterId)
               .maybeSingle()
           : Promise.resolve({ data: null, error: null }),
       ]);
     const firstError =
-      tipsterResult.error ??
       statsResult.error ??
       packageResult.error ??
       cardResult.error ??
       favouriteResult.error;
     const loadedCards = (cardResult.data ?? []) as TipCard[];
     let loadedMeetings: RaceMeeting[] = [];
+    let loadError = firstError?.message ?? "";
 
     if (loadedCards.length) {
       const meetingResult = await supabase
@@ -121,14 +135,14 @@ export function TipsterProfileClient() {
         .in("id", [...new Set(loadedCards.map((card) => card.meeting_id))]);
 
       if (meetingResult.error) {
-        setError(meetingResult.error.message);
+        loadError = meetingResult.error.message;
       } else {
         loadedMeetings = (meetingResult.data ?? []) as RaceMeeting[];
       }
     }
 
     setUserId(user?.id ?? "");
-    setTipster((tipsterResult.data as TipsterProfile | null) ?? null);
+    setTipster(loadedTipster);
     setStats(
       (statsResult.data as TipsterPerformanceStats | null) ?? null,
     );
@@ -136,7 +150,7 @@ export function TipsterProfileClient() {
     setCards(loadedCards);
     setMeetings(loadedMeetings);
     setFavourite(Boolean(favouriteResult.data));
-    setError(firstError?.message ?? "");
+    setError(loadError);
     setLoading(false);
   }, []);
 

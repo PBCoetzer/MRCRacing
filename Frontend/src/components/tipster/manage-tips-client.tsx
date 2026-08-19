@@ -458,7 +458,7 @@ export function ManageTipsClient() {
       return "Notification worker is not configured.";
     }
 
-    const { error: workerError } = await supabase.functions.invoke("process-tip-notifications", {
+    const { error: workerError } = await supabase.functions.invoke("deliver-tip-notifications", {
       body: { source: "tip-card-editor" },
     });
 

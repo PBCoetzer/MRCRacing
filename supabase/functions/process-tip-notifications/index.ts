@@ -1,5 +1,5 @@
 import "jsr:@supabase/functions-js/edge-runtime.d.ts";
-import { createClient } from "@supabase/supabase-js";
+import { createClient } from "npm:@supabase/supabase-js@2.110.8";
 
 type NotificationPayload = {
   template?: string;
@@ -310,12 +310,13 @@ Deno.serve(async (request: Request) => {
   const resendApiKey = Deno.env.get("RESEND_API_KEY") ?? "";
   const authorization = request.headers.get("authorization") ?? "";
   const accessToken = authorization.replace(/^Bearer\s+/i, "");
+  const workerToken = request.headers.get("x-mrc-notification-token") ?? "";
 
   if (!supabaseUrl || !serviceRoleKey) {
     return jsonResponse(request, { error: "Supabase worker configuration is incomplete." }, 500);
   }
 
-  if (!accessToken) {
+  if (!accessToken && !workerToken) {
     return jsonResponse(request, { error: "Authentication required." }, 401);
   }
 
@@ -325,23 +326,36 @@ Deno.serve(async (request: Request) => {
       persistSession: false,
     },
   });
-  const jwtPayload = decodeJwtPayload(accessToken);
+  if (workerToken) {
+    const { data: workerAuthorized, error: workerError } = await serviceClient.rpc(
+      "verify_tip_notification_worker_request",
+      { p_token: workerToken },
+    );
 
-  if (jwtPayload?.role !== "service_role") {
-    const { data: userData, error: userError } = await serviceClient.auth.getUser(accessToken);
-
-    if (userError || !userData.user) {
-      return jsonResponse(request, { error: "Invalid authenticated session." }, 401);
+    if (workerError || workerAuthorized !== true) {
+      return jsonResponse(request, { error: "Invalid notification worker token." }, 403);
     }
+  } else {
+    const jwtPayload = decodeJwtPayload(accessToken);
 
-    const { data: workerRoles, error: roleError } = await serviceClient
-      .from("user_roles")
-      .select("role")
-      .eq("user_id", userData.user.id)
-      .in("role", ["tipster", "administrator"]);
+    if (jwtPayload?.role === "service_role") {
+      // The platform service role is permitted to drain the queue.
+    } else {
+      const { data: userData, error: userError } = await serviceClient.auth.getUser(accessToken);
 
-    if (roleError || !workerRoles?.length) {
-      return jsonResponse(request, { error: "Tipster or administrator access required." }, 403);
+      if (userError || !userData.user) {
+        return jsonResponse(request, { error: "Invalid authenticated session." }, 401);
+      }
+
+      const { data: workerRoles, error: roleError } = await serviceClient
+        .from("user_roles")
+        .select("role")
+        .eq("user_id", userData.user.id)
+        .in("role", ["tipster", "administrator"]);
+
+      if (roleError || !workerRoles?.length) {
+        return jsonResponse(request, { error: "Tipster or administrator access required." }, 403);
+      }
     }
   }
 

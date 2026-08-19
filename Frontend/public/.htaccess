@@ -8,6 +8,12 @@ RewriteRule ^ https://www.mrcracing.co.za%{REQUEST_URI} [R=301,L,NE]
 RewriteCond %{REQUEST_URI} \$
 RewriteRule ^(.*)\$([^$]+)\$(.*)$ $1_$2_$3 [N]
 
+# A newly verified tipster can exist between static content deployments. Serve the
+# live compatibility profile until the next build creates the canonical slug page.
+RewriteCond %{REQUEST_FILENAME} !-f
+RewriteCond %{REQUEST_FILENAME} !-d
+RewriteRule ^tipsters/([a-z0-9-]+)/?$ tipsters/profile/index.html?slug=$1 [L,QSA,NC]
+
 RewriteCond %{QUERY_STRING} (^|&)slug=([a-z0-9-]+)(&|$) [NC]
 RewriteRule ^blog/post/?$ https://www.mrcracing.co.za/blog/%2/? [R=301,L,NE]
 

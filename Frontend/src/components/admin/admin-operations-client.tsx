@@ -180,7 +180,7 @@ export function AdminOperationsClient() {
     }
 
     const { error: workerError } = await supabase.functions.invoke(
-      "process-tip-notifications",
+      "deliver-tip-notifications",
       { body: { source: "admin-dashboard" } },
     );
 
