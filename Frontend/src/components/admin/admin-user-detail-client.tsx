@@ -596,7 +596,7 @@ export function AdminUserDetailClient() {
         suspensionUntil: "",
         confirmation: "",
       }));
-      await supabase.functions.invoke("process-tip-notifications", {
+      await supabase.functions.invoke("deliver-tip-notifications", {
         body: { source: "admin-user-control" },
       });
       await loadDetail();

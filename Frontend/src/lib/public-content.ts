@@ -1,6 +1,12 @@
 import { supabasePublishableKey, supabaseUrl } from "@/lib/supabase/config";
 import { professionalSourceName, publicSourceUrl } from "@/lib/racing/source-brand";
 
+// Next's persistent fetch cache spans static builds. A per-build header keeps
+// requests deduplicated inside one build while preventing an older content
+// manifest from being reused by a later automated deployment.
+const publicContentBuildId =
+  process.env.MRC_CONTENT_BUILD_ID?.trim() || new Date().toISOString();
+
 export type PublicManifest = {
   generatedAt: string;
   blogPosts: { slug: string; lastModified: string }[];
@@ -93,6 +99,7 @@ export async function publicRpc<T>(name: string, body: Record<string, unknown> =
       apikey: supabasePublishableKey,
       authorization: `Bearer ${supabasePublishableKey}`,
       "content-type": "application/json",
+      "x-mrc-content-build": publicContentBuildId,
     },
     body: JSON.stringify(body),
     cache: "force-cache",
