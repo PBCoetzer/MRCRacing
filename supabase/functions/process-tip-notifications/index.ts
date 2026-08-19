@@ -41,6 +41,15 @@ type EmailContent = {
   html: string;
 };
 
+type SmtpConfig = {
+  host: string;
+  port: number;
+  username: string;
+  password: string;
+  fromEmail: string;
+  senderName: string;
+};
+
 const allowedOrigins = new Set([
   "https://mrcracing.co.za",
   "https://www.mrcracing.co.za",
@@ -96,7 +105,101 @@ function decodeJwtPayload(token: string) {
   }
 }
 
-function renderLayout(title: string, body: string, actionUrl: string, actionLabel: string) {
+function encodeBase64(value: string) {
+  const bytes = new TextEncoder().encode(value);
+  let binary = "";
+
+  for (let offset = 0; offset < bytes.length; offset += 0x8000) {
+    binary += String.fromCharCode(...bytes.subarray(offset, offset + 0x8000));
+  }
+
+  return btoa(binary);
+}
+
+function wrapBase64(value: string) {
+  return encodeBase64(value).match(/.{1,76}/g)?.join("\r\n") ?? "";
+}
+
+function encodeMimeHeader(value: string) {
+  return `=?UTF-8?B?${encodeBase64(value.replace(/[\r\n]+/g, " "))}?=`;
+}
+
+function validateEmailAddress(value: string) {
+  const normalized = value.trim();
+
+  if (
+    normalized.length > 254 ||
+    /[\r\n]/.test(normalized) ||
+    !/^[^\s@<>]+@[^\s@<>]+\.[^\s@<>]+$/.test(normalized)
+  ) {
+    throw new Error("Email delivery address is invalid.");
+  }
+
+  return normalized;
+}
+
+async function writeSmtp(conn: Deno.TlsConn, value: string) {
+  const encoded = new TextEncoder().encode(value);
+  let written = 0;
+
+  while (written < encoded.length) {
+    written += await conn.write(encoded.subarray(written));
+  }
+}
+
+async function readSmtpResponse(conn: Deno.TlsConn) {
+  const decoder = new TextDecoder();
+  const buffer = new Uint8Array(4096);
+  let response = "";
+
+  while (response.length < 65536) {
+    const read = await conn.read(buffer);
+
+    if (read === null) {
+      throw new Error("SMTP server closed the connection unexpectedly.");
+    }
+
+    response += decoder.decode(buffer.subarray(0, read));
+    const lines = response.split(/\r?\n/).filter(Boolean);
+    const lastLine = lines.at(-1) ?? "";
+
+    if (/^\d{3} /.test(lastLine)) {
+      return {
+        code: Number(lastLine.slice(0, 3)),
+        response,
+      };
+    }
+  }
+
+  throw new Error("SMTP response exceeded the permitted size.");
+}
+
+async function smtpCommand(
+  conn: Deno.TlsConn,
+  command: string,
+  expectedCodes: number[],
+) {
+  await writeSmtp(conn, `${command}\r\n`);
+  const result = await readSmtpResponse(conn);
+
+  if (!expectedCodes.includes(result.code)) {
+    const safeMessage = result.response
+      .split(/\r?\n/)
+      .filter(Boolean)
+      .at(-1)
+      ?.replace(/[\r\n]+/g, " ") ?? "Unexpected SMTP response.";
+    throw new Error(`SMTP delivery failed: ${safeMessage}`);
+  }
+
+  return result;
+}
+
+function renderLayout(
+  title: string,
+  body: string,
+  actionUrl: string,
+  actionLabel: string,
+) {
   return `<!doctype html>
 <html lang="en">
   <head>
@@ -117,10 +220,16 @@ function renderLayout(title: string, body: string, actionUrl: string, actionLabe
             </tr>
             <tr>
               <td style="padding:30px 28px">
-                <h1 style="margin:0 0 18px;font-size:26px;line-height:1.2">${escapeHtml(title)}</h1>
+                <h1 style="margin:0 0 18px;font-size:26px;line-height:1.2">${
+    escapeHtml(title)
+  }</h1>
                 <div style="color:#e9d5ff;font-size:16px;line-height:1.7">${body}</div>
                 <div style="margin-top:28px">
-                  <a href="${escapeHtml(actionUrl)}" style="display:inline-block;background:#ffb000;color:#1a0b2e;text-decoration:none;font-weight:800;padding:13px 22px;border-radius:10px">${escapeHtml(actionLabel)}</a>
+                  <a href="${
+    escapeHtml(actionUrl)
+  }" style="display:inline-block;background:#ffb000;color:#1a0b2e;text-decoration:none;font-weight:800;padding:13px 22px;border-radius:10px">${
+    escapeHtml(actionLabel)
+  }</a>
                 </div>
               </td>
             </tr>
@@ -164,7 +273,9 @@ function renderEmail(job: NotificationJob): EmailContent {
         `Your MRC Racing account is suspended until ${suspensionUntil}. ${publicMessage}`;
       const html = renderLayout(
         "Your account is temporarily suspended",
-        `<p style="margin:0 0 14px">Access to your MRC Racing account is suspended until <strong>${escapeHtml(suspensionUntil)}</strong>.</p><p style="margin:0">${escapeHtml(publicMessage)}</p>`,
+        `<p style="margin:0 0 14px">Access to your MRC Racing account is suspended until <strong>${
+          escapeHtml(suspensionUntil)
+        }</strong>.</p><p style="margin:0">${escapeHtml(publicMessage)}</p>`,
         "https://www.mrcracing.co.za/login/",
         "Open MRC Racing",
       );
@@ -178,7 +289,9 @@ function renderEmail(job: NotificationJob): EmailContent {
         `Your MRC Racing account has been permanently restricted. ${publicMessage}`;
       const html = renderLayout(
         "Your account has been restricted",
-        `<p style="margin:0 0 14px">Access to your MRC Racing account has been permanently restricted.</p><p style="margin:0">${escapeHtml(publicMessage)}</p>`,
+        `<p style="margin:0 0 14px">Access to your MRC Racing account has been permanently restricted.</p><p style="margin:0">${
+          escapeHtml(publicMessage)
+        }</p>`,
         "https://www.mrcracing.co.za/",
         "Visit MRC Racing",
       );
@@ -187,10 +300,13 @@ function renderEmail(job: NotificationJob): EmailContent {
     }
 
     const subject = "Your MRC Racing account access has been restored";
-    const text = `Your MRC Racing account access has been restored. ${publicMessage}`;
+    const text =
+      `Your MRC Racing account access has been restored. ${publicMessage}`;
     const html = renderLayout(
       "Your account access is restored",
-      `<p style="margin:0 0 14px">Your MRC Racing account is active again and you can sign in normally.</p><p style="margin:0">${escapeHtml(publicMessage)}</p>`,
+      `<p style="margin:0 0 14px">Your MRC Racing account is active again and you can sign in normally.</p><p style="margin:0">${
+        escapeHtml(publicMessage)
+      }</p>`,
       "https://www.mrcracing.co.za/login/",
       "Log in to MRC Racing",
     );
@@ -202,10 +318,15 @@ function renderEmail(job: NotificationJob): EmailContent {
     const credits = Number(payload.coins ?? 0);
     const reason = String(payload.reason ?? "The purchase was refunded.");
     const subject = `${credits} MRC Credits returned to your wallet`;
-    const text = `${credits} MRC Credits were returned to your wallet. ${reason}`;
+    const text =
+      `${credits} MRC Credits were returned to your wallet. ${reason}`;
     const html = renderLayout(
       "Your Credits were refunded",
-      `<p style="margin:0 0 14px"><strong>${escapeHtml(credits)} MRC Credits</strong> were returned to your wallet.</p><p style="margin:0">${escapeHtml(reason)}</p>`,
+      `<p style="margin:0 0 14px"><strong>${
+        escapeHtml(credits)
+      } MRC Credits</strong> were returned to your wallet.</p><p style="margin:0">${
+        escapeHtml(reason)
+      }</p>`,
       clientUrl,
       "Open your dashboard",
     );
@@ -215,8 +336,12 @@ function renderEmail(job: NotificationJob): EmailContent {
 
   if (job.event_type === "tip_card_race_data_changed") {
     const venue = String(payload.meetingVenue ?? "the selected meeting");
-    const raceLabel = payload.raceNumber ? `Race ${payload.raceNumber}` : "meeting";
-    const summary = String(payload.changeSummary ?? "Official race information changed.");
+    const raceLabel = payload.raceNumber
+      ? `Race ${payload.raceNumber}`
+      : "meeting";
+    const summary = String(
+      payload.changeSummary ?? "Official race information changed.",
+    );
     const changedFields = Array.isArray(payload.changedFields)
       ? payload.changedFields.join(", ")
       : "race information";
@@ -226,8 +351,18 @@ function renderEmail(job: NotificationJob): EmailContent {
       ? `${summary} The affected tip was already locked and remains immutable.`
       : `${summary} Review the affected meeting card before its cutoff.`;
     const html = renderLayout(
-      isAfterLock ? "Race data changed after cutoff" : "Race data changed — review required",
-      `<p style="margin:0 0 14px">${escapeHtml(summary)}</p><p style="margin:0 0 14px">Changed fields: <strong>${escapeHtml(changedFields)}</strong>.</p><p style="margin:0">${isAfterLock ? "The affected tip remains locked. Clients are not notified." : "Review the affected selection. Clients are notified only if you publish a correction."}</p>`,
+      isAfterLock
+        ? "Race data changed after cutoff"
+        : "Race data changed — review required",
+      `<p style="margin:0 0 14px">${
+        escapeHtml(summary)
+      }</p><p style="margin:0 0 14px">Changed fields: <strong>${
+        escapeHtml(changedFields)
+      }</strong>.</p><p style="margin:0">${
+        isAfterLock
+          ? "The affected tip remains locked. Clients are not notified."
+          : "Review the affected selection. Clients are notified only if you publish a correction."
+      }</p>`,
       payload.tipsterUrl ?? "https://www.mrcracing.co.za/tipster/",
       "Review meeting card",
     );
@@ -243,13 +378,27 @@ function renderEmail(job: NotificationJob): EmailContent {
     ? `Correction published: ${venue} meeting tips`
     : `${tipsterName}'s ${venue} meeting tips are ready`;
   const text = isCorrection
-    ? `${tipsterName} published an audited correction for the ${venue} meeting card. Revision ${payload.revision ?? ""}.`
+    ? `${tipsterName} published an audited correction for the ${venue} meeting card. Revision ${
+      payload.revision ?? ""
+    }.`
     : `${tipsterName} published the ${venue} meeting card for ${meetingDate}.`;
   const body = isCorrection
-    ? `<p style="margin:0 0 14px"><strong>${escapeHtml(tipsterName)}</strong> published an audited correction for the <strong>${escapeHtml(venue)}</strong> meeting card.</p><p style="margin:0">Revision ${escapeHtml(payload.revision)} is now available in your dashboard. Selections whose cutoffs have passed remain locked.</p>`
-    : `<p style="margin:0 0 14px"><strong>${escapeHtml(tipsterName)}</strong> published tips for <strong>${escapeHtml(venue)}</strong>${meetingDate ? ` on ${escapeHtml(meetingDate)}` : ""}.</p><p style="margin:0">Your purchase or active subscription already grants access to the full meeting card.</p>`;
+    ? `<p style="margin:0 0 14px"><strong>${
+      escapeHtml(tipsterName)
+    }</strong> published an audited correction for the <strong>${
+      escapeHtml(venue)
+    }</strong> meeting card.</p><p style="margin:0">Revision ${
+      escapeHtml(payload.revision)
+    } is now available in your dashboard. Selections whose cutoffs have passed remain locked.</p>`
+    : `<p style="margin:0 0 14px"><strong>${
+      escapeHtml(tipsterName)
+    }</strong> published tips for <strong>${escapeHtml(venue)}</strong>${
+      meetingDate ? ` on ${escapeHtml(meetingDate)}` : ""
+    }.</p><p style="margin:0">Your purchase or active subscription already grants access to the full meeting card.</p>`;
   const html = renderLayout(
-    isCorrection ? "A meeting-card correction is available" : "Your meeting tips are ready",
+    isCorrection
+      ? "A meeting-card correction is available"
+      : "Your meeting tips are ready",
     body,
     clientUrl,
     "View meeting tips",
@@ -259,41 +408,76 @@ function renderEmail(job: NotificationJob): EmailContent {
 }
 
 async function deliverEmail(
-  resendApiKey: string,
+  smtp: SmtpConfig,
   recipientEmail: string,
   job: NotificationJob,
 ) {
   const content = renderEmail(job);
-  const response = await fetch("https://api.resend.com/emails", {
-    method: "POST",
-    headers: {
-      Authorization: `Bearer ${resendApiKey}`,
-      "Content-Type": "application/json",
-      "Idempotency-Key": job.dedupe_key,
-    },
-    body: JSON.stringify({
-      from: "MRC Racing Tips <no-reply@mrcracing.co.za>",
-      to: [recipientEmail],
-      subject: content.subject,
-      text: content.text,
-      html: content.html,
-    }),
-  });
-  const responseBody = await response.json().catch(() => ({})) as {
-    id?: string;
-    message?: string;
-    name?: string;
-  };
+  const recipient = validateEmailAddress(recipientEmail);
+  const fromEmail = validateEmailAddress(smtp.fromEmail);
+  const boundary = `mrc-${crypto.randomUUID()}`;
+  const messageToken = job.dedupe_key
+    .toLowerCase()
+    .replace(/[^a-z0-9._-]+/g, "-")
+    .slice(0, 120) || crypto.randomUUID();
+  const messageId = `${messageToken}@mrcracing.co.za`;
+  const message = [
+    `Date: ${new Date().toUTCString()}`,
+    `Message-ID: <${messageId}>`,
+    `From: ${encodeMimeHeader(smtp.senderName)} <${fromEmail}>`,
+    `To: <${recipient}>`,
+    `Subject: ${encodeMimeHeader(content.subject)}`,
+    "MIME-Version: 1.0",
+    "Auto-Submitted: auto-generated",
+    `Content-Type: multipart/alternative; boundary=\"${boundary}\"`,
+    "",
+    `--${boundary}`,
+    "Content-Type: text/plain; charset=UTF-8",
+    "Content-Transfer-Encoding: base64",
+    "",
+    wrapBase64(content.text),
+    `--${boundary}`,
+    "Content-Type: text/html; charset=UTF-8",
+    "Content-Transfer-Encoding: base64",
+    "",
+    wrapBase64(content.html),
+    `--${boundary}--`,
+    "",
+  ].join("\r\n");
+  const dotStuffedMessage = message.replace(/(^|\r\n)\./g, "$1..");
+  const conn = await Deno.connectTls({ hostname: smtp.host, port: smtp.port });
 
-  if (!response.ok) {
-    throw new Error(
-      responseBody.message ??
-        responseBody.name ??
-        `Resend returned HTTP ${response.status}.`,
-    );
+  try {
+    const greeting = await readSmtpResponse(conn);
+
+    if (greeting.code !== 220) {
+      throw new Error("SMTP server did not provide a valid greeting.");
+    }
+
+    await smtpCommand(conn, "EHLO mrcracing.co.za", [250]);
+    await smtpCommand(conn, "AUTH LOGIN", [334]);
+    await smtpCommand(conn, encodeBase64(smtp.username), [334]);
+    await smtpCommand(conn, encodeBase64(smtp.password), [235]);
+    await smtpCommand(conn, `MAIL FROM:<${fromEmail}>`, [250]);
+    await smtpCommand(conn, `RCPT TO:<${recipient}>`, [250, 251]);
+    await smtpCommand(conn, "DATA", [354]);
+    await writeSmtp(conn, `${dotStuffedMessage}.\r\n`);
+    const delivery = await readSmtpResponse(conn);
+
+    if (delivery.code !== 250) {
+      const safeMessage = delivery.response
+        .split(/\r?\n/)
+        .filter(Boolean)
+        .at(-1)
+        ?.replace(/[\r\n]+/g, " ") ?? "Message was rejected.";
+      throw new Error(`SMTP delivery failed: ${safeMessage}`);
+    }
+
+    await smtpCommand(conn, "QUIT", [221]).catch(() => undefined);
+    return messageId;
+  } finally {
+    conn.close();
   }
-
-  return responseBody.id ?? "";
 }
 
 Deno.serve(async (request: Request) => {
@@ -307,13 +491,22 @@ Deno.serve(async (request: Request) => {
 
   const supabaseUrl = Deno.env.get("SUPABASE_URL") ?? "";
   const serviceRoleKey = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY") ?? "";
-  const resendApiKey = Deno.env.get("RESEND_API_KEY") ?? "";
+  const smtp: SmtpConfig = {
+    host: Deno.env.get("MRC_SMTP_HOST") ?? "",
+    port: Number(Deno.env.get("MRC_SMTP_PORT") ?? "465"),
+    username: Deno.env.get("MRC_SMTP_USERNAME") ?? "",
+    password: Deno.env.get("MRC_SMTP_PASSWORD") ?? "",
+    fromEmail: Deno.env.get("MRC_SMTP_FROM_EMAIL") ?? "",
+    senderName: Deno.env.get("MRC_SMTP_SENDER_NAME") ?? "MRC Racing Tips",
+  };
   const authorization = request.headers.get("authorization") ?? "";
   const accessToken = authorization.replace(/^Bearer\s+/i, "");
   const workerToken = request.headers.get("x-mrc-notification-token") ?? "";
 
   if (!supabaseUrl || !serviceRoleKey) {
-    return jsonResponse(request, { error: "Supabase worker configuration is incomplete." }, 500);
+    return jsonResponse(request, {
+      error: "Supabase worker configuration is incomplete.",
+    }, 500);
   }
 
   if (!accessToken && !workerToken) {
@@ -327,13 +520,16 @@ Deno.serve(async (request: Request) => {
     },
   });
   if (workerToken) {
-    const { data: workerAuthorized, error: workerError } = await serviceClient.rpc(
-      "verify_tip_notification_worker_request",
-      { p_token: workerToken },
-    );
+    const { data: workerAuthorized, error: workerError } = await serviceClient
+      .rpc(
+        "verify_tip_notification_worker_request",
+        { p_token: workerToken },
+      );
 
     if (workerError || workerAuthorized !== true) {
-      return jsonResponse(request, { error: "Invalid notification worker token." }, 403);
+      return jsonResponse(request, {
+        error: "Invalid notification worker token.",
+      }, 403);
     }
   } else {
     const jwtPayload = decodeJwtPayload(accessToken);
@@ -341,10 +537,13 @@ Deno.serve(async (request: Request) => {
     if (jwtPayload?.role === "service_role") {
       // The platform service role is permitted to drain the queue.
     } else {
-      const { data: userData, error: userError } = await serviceClient.auth.getUser(accessToken);
+      const { data: userData, error: userError } = await serviceClient.auth
+        .getUser(accessToken);
 
       if (userError || !userData.user) {
-        return jsonResponse(request, { error: "Invalid authenticated session." }, 401);
+        return jsonResponse(request, {
+          error: "Invalid authenticated session.",
+        }, 401);
       }
 
       const { data: workerRoles, error: roleError } = await serviceClient
@@ -354,22 +553,32 @@ Deno.serve(async (request: Request) => {
         .in("role", ["tipster", "administrator"]);
 
       if (roleError || !workerRoles?.length) {
-        return jsonResponse(request, { error: "Tipster or administrator access required." }, 403);
+        return jsonResponse(request, {
+          error: "Tipster or administrator access required.",
+        }, 403);
       }
     }
   }
 
-  const { error: refundError } = await serviceClient.rpc("process_due_meeting_refunds");
+  const { error: refundError } = await serviceClient.rpc(
+    "process_due_meeting_refunds",
+  );
 
   if (refundError) {
     console.error("Due refund processing failed", refundError.message);
   }
 
-  if (!resendApiKey) {
+  if (
+    !smtp.host ||
+    smtp.port !== 465 ||
+    !smtp.username ||
+    !smtp.password ||
+    !smtp.fromEmail
+  ) {
     return jsonResponse(
       request,
       {
-        error: "RESEND_API_KEY is not configured.",
+        error: "The dedicated SMTPS mailbox is not configured.",
         refundsProcessed: !refundError,
       },
       503,
@@ -385,21 +594,25 @@ Deno.serve(async (request: Request) => {
     return jsonResponse(request, { error: claimError.message }, 500);
   }
 
-  const jobs = Array.isArray(claimedData) ? claimedData as NotificationJob[] : [];
+  const jobs = Array.isArray(claimedData)
+    ? claimedData as NotificationJob[]
+    : [];
   const completed: string[] = [];
   const failed: { id: string; error: string }[] = [];
 
   for (const job of jobs) {
     try {
-      const { data: recipient, error: recipientError } =
-        await serviceClient.auth.admin.getUserById(job.user_id);
+      const { data: recipient, error: recipientError } = await serviceClient
+        .auth.admin.getUserById(job.user_id);
 
       if (recipientError || !recipient.user?.email) {
-        throw new Error(recipientError?.message ?? "Recipient email address is unavailable.");
+        throw new Error(
+          recipientError?.message ?? "Recipient email address is unavailable.",
+        );
       }
 
       const providerMessageId = await deliverEmail(
-        resendApiKey,
+        smtp,
         recipient.user.email,
         job,
       );
@@ -418,7 +631,9 @@ Deno.serve(async (request: Request) => {
 
       completed.push(job.id);
     } catch (error) {
-      const message = error instanceof Error ? error.message : "Unknown delivery error.";
+      const message = error instanceof Error
+        ? error.message
+        : "Unknown delivery error.";
       const retrySeconds = Math.min(
         3600,
         60 * 2 ** Math.max(0, Number(job.attempt_count ?? 1) - 1),
