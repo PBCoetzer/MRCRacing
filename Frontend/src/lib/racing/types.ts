@@ -96,6 +96,7 @@ export type RaceTipSelection = {
   winner_entry_id: string | null;
   place_entry_id: string | null;
   comments: string | null;
+  selection_status: "tipped" | "skipped";
 };
 
 export type TipCardMultiple = {
@@ -163,6 +164,7 @@ export type TipsterPackage = {
 
 export type RaceSelectionDraft = {
   fixtureId: string;
+  selectionStatus: "tipped" | "skipped";
   winnerEntryId: string;
   placeEntryId: string;
   comments: string;

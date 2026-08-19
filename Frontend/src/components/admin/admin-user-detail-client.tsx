@@ -881,7 +881,7 @@ export function AdminUserDetailClient() {
               <CardHeader>
                 <CardTitle>Audited Credit adjustment</CardTitle>
                 <CardDescription>
-                  Duplicate requests are idempotent and the balance can never become negative.
+                  Positive administrator adjustments add promotional Reward Credits. They grant access but never create tipster earnings or an ECHCU contribution. Negative adjustments remove Reward Credits first, then Purchased Credits. Duplicate requests are idempotent and the balance can never become negative.
                 </CardDescription>
               </CardHeader>
               <CardContent className="grid gap-3 sm:grid-cols-[160px_1fr_auto]">

@@ -5,6 +5,8 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 import {
   AlertTriangle,
   Bell,
+  ChevronDown,
+  ChevronRight,
   CheckCircle2,
   Coins,
   CreditCard,
@@ -76,6 +78,13 @@ type DisputeRow = {
 
 type WalletRow = {
   balance: number;
+  purchased_balance: number;
+  reward_balance: number;
+};
+
+type ProfileNotificationRow = {
+  phone: string | null;
+  sms_notifications_enabled: boolean;
 };
 
 type CardOutcome = {
@@ -108,6 +117,11 @@ export function ClientDashboardClient() {
   const [error, setError] = useState("");
   const [message, setMessage] = useState("");
   const [walletBalance, setWalletBalance] = useState(0);
+  const [purchasedBalance, setPurchasedBalance] = useState(0);
+  const [rewardBalance, setRewardBalance] = useState(0);
+  const [phone, setPhone] = useState("");
+  const [smsNotificationsEnabled, setSmsNotificationsEnabled] = useState(false);
+  const [expandedCardId, setExpandedCardId] = useState("");
   const [cards, setCards] = useState<TipCard[]>([]);
   const [meetings, setMeetings] = useState<RaceMeeting[]>([]);
   const [tipsters, setTipsters] = useState<TipsterProfile[]>([]);
@@ -152,6 +166,7 @@ export function ClientDashboardClient() {
 
       const [
         walletResult,
+        profileResult,
         cardResult,
         meetingResult,
         tipsterResult,
@@ -163,7 +178,16 @@ export function ClientDashboardClient() {
         performanceResult,
         favouriteResult,
       ] = await Promise.all([
-        supabase.from("wallets").select("balance").eq("user_id", user.id).maybeSingle(),
+        supabase
+          .from("wallets")
+          .select("balance,purchased_balance,reward_balance")
+          .eq("user_id", user.id)
+          .maybeSingle(),
+        supabase
+          .from("profiles")
+          .select("phone,sms_notifications_enabled")
+          .eq("id", user.id)
+          .maybeSingle(),
         supabase
           .from("tip_cards")
           .select("id,tipster_id,meeting_id,title,summary,coin_price,status,revision,listed_at,published_at,voided_at,updated_at")
@@ -211,6 +235,7 @@ export function ClientDashboardClient() {
 
       const firstError =
         walletResult.error ??
+        profileResult.error ??
         cardResult.error ??
         meetingResult.error ??
         tipsterResult.error ??
@@ -262,7 +287,7 @@ export function ClientDashboardClient() {
         const [raceResult, multipleResult, optionResult, outcomeResult] = await Promise.all([
           supabase
             .from("race_tip_selections")
-            .select("id,tip_card_id,fixture_id,winner_entry_id,place_entry_id,comments")
+            .select("id,tip_card_id,fixture_id,winner_entry_id,place_entry_id,comments,selection_status")
             .in("tip_card_id", cardIds),
           supabase
             .from("tip_card_multiples")
@@ -315,7 +340,17 @@ export function ClientDashboardClient() {
         loadedMultipleSelections = (selectionData ?? []) as TipCardMultipleSelection[];
       }
 
-      setWalletBalance(Number((walletResult.data as WalletRow | null)?.balance ?? 0));
+      const loadedWallet = walletResult.data as WalletRow | null;
+      const loadedProfile = profileResult.data as ProfileNotificationRow | null;
+      setWalletBalance(Number(loadedWallet?.balance ?? 0));
+      setPurchasedBalance(Number(loadedWallet?.purchased_balance ?? 0));
+      setRewardBalance(Number(loadedWallet?.reward_balance ?? 0));
+      setPhone(loadedProfile?.phone ?? "");
+      setSmsNotificationsEnabled(Boolean(loadedProfile?.sms_notifications_enabled));
+      const requestedCardId = new URLSearchParams(window.location.search).get("card");
+      if (requestedCardId && accessibleCardIds.has(requestedCardId)) {
+        setExpandedCardId(requestedCardId);
+      }
       setCards(loadedCards);
       setMeetings(loadedMeetings);
       setTipsters((tipsterResult.data ?? []) as TipsterProfile[]);
@@ -496,6 +531,38 @@ export function ClientDashboardClient() {
     }
   }
 
+  async function toggleSmsNotifications() {
+    const supabase = createClient();
+    if (!supabase || !userId) return;
+    if (!smsNotificationsEnabled && !phone.trim()) {
+      setError("Add a South African cell number to your account before enabling SMS alerts.");
+      return;
+    }
+
+    const nextEnabled = !smsNotificationsEnabled;
+    setProcessingId("sms-preferences");
+    setError("");
+    setMessage("");
+    try {
+      const { error: preferenceError } = await supabase
+        .from("profiles")
+        .update({
+          sms_notifications_enabled: nextEnabled,
+          sms_notifications_consented_at: nextEnabled ? new Date().toISOString() : null,
+        })
+        .eq("id", userId);
+      if (preferenceError) throw preferenceError;
+      setSmsNotificationsEnabled(nextEnabled);
+      setMessage(nextEnabled
+        ? "SMS meeting-card alerts are enabled. Standard network rates may apply."
+        : "SMS meeting-card alerts are disabled.");
+    } catch (preferenceError) {
+      setError(messageFrom(preferenceError, "SMS preferences could not be updated."));
+    } finally {
+      setProcessingId("");
+    }
+  }
+
   if (loading) {
     return (
       <Card>
@@ -550,6 +617,66 @@ export function ClientDashboardClient() {
             </CardHeader>
           </Card>
         ))}
+      </div>
+
+      <div className="grid gap-4 lg:grid-cols-2">
+        <Card>
+          <CardHeader>
+            <CardTitle className="flex items-center gap-2">
+              <Coins className="size-5 text-primary" />
+              Credit balance breakdown
+            </CardTitle>
+            <CardDescription>
+              Purchased Credits and promotional Reward Credits are accounted for separately.
+            </CardDescription>
+          </CardHeader>
+          <CardContent className="grid gap-3 sm:grid-cols-2">
+            <div className="rounded-lg border bg-background/40 p-4">
+              <p className="text-sm text-muted-foreground">Purchased Credits</p>
+              <p className="mt-1 font-mono text-2xl font-semibold">{formatCredits(purchasedBalance)}</p>
+              <p className="mt-2 text-xs text-muted-foreground">
+                Used first and contributes to tipster earnings and the ECHCU pledge.
+              </p>
+            </div>
+            <div className="rounded-lg border bg-background/40 p-4">
+              <p className="text-sm text-muted-foreground">Reward Credits</p>
+              <p className="mt-1 font-mono text-2xl font-semibold">{formatCredits(rewardBalance)}</p>
+              <p className="mt-2 text-xs text-muted-foreground">
+                Promotional access only; no tipster payment or ECHCU contribution is created.
+              </p>
+            </div>
+          </CardContent>
+        </Card>
+
+        <Card>
+          <CardHeader>
+            <CardTitle className="flex items-center gap-2">
+              <Bell className="size-5 text-primary" />
+              Meeting-card SMS alerts
+            </CardTitle>
+            <CardDescription>
+              Receive transactional alerts when an entitled meeting card is published or corrected.
+            </CardDescription>
+          </CardHeader>
+          <CardContent className="space-y-4">
+            <div className="rounded-lg border bg-background/40 p-4 text-sm">
+              <p className="text-muted-foreground">Cell number</p>
+              <p className="mt-1 font-medium">{phone || "No cell number saved"}</p>
+            </div>
+            <Button
+              type="button"
+              variant={smsNotificationsEnabled ? "outline" : "default"}
+              disabled={processingId === "sms-preferences" || (!smsNotificationsEnabled && !phone.trim())}
+              onClick={() => void toggleSmsNotifications()}
+            >
+              {processingId === "sms-preferences" ? <Loader2 className="size-4 animate-spin" /> : <Bell className="size-4" />}
+              {smsNotificationsEnabled ? "Disable SMS alerts" : "Enable SMS alerts"}
+            </Button>
+            <p className="text-xs text-muted-foreground">
+              This consent covers service notifications only. Marketing SMS requires separate consent.
+            </p>
+          </CardContent>
+        </Card>
       </div>
 
       <Card id="subscriptions" className="scroll-mt-24">
@@ -613,48 +740,83 @@ export function ClientDashboardClient() {
       </Card>
 
       <div id="unlocked-tips" className="scroll-mt-24 space-y-4">
-        <div>
-          <h2 className="font-heading text-2xl text-white">My Meeting Cards &amp; History</h2>
-          <p className="text-sm text-muted-foreground">
-            Premium selections are returned by Supabase only when your entitlement is active.
-          </p>
+        <div className="flex flex-wrap items-end justify-between gap-3">
+          <div>
+            <h2 className="font-heading text-2xl text-white">My Meeting Cards &amp; History</h2>
+            <p className="text-sm text-muted-foreground">
+              Premium selections are returned by Supabase only when your entitlement is active.
+            </p>
+          </div>
+          <Badge variant="outline" className="px-3 py-1 text-sm">
+            {accessibleCards.length} {accessibleCards.length === 1 ? "card" : "cards"} available
+          </Badge>
         </div>
         {accessibleCards.map((tipCard) => {
           const meeting = meetingById.get(tipCard.meeting_id);
           const cardFixtures = fixtures.filter((fixture) => fixture.meeting_id === tipCard.meeting_id);
           const cardRaceSelections = raceSelections.filter((selection) => selection.tip_card_id === tipCard.id);
           const cardMultiples = multiples.filter((multiple) => multiple.tip_card_id === tipCard.id);
+          const isExpanded = expandedCardId === tipCard.id;
 
           return (
             <Card key={tipCard.id} className="border-brand-cyan/35">
-              <CardHeader>
-                <div className="flex flex-wrap items-center gap-2">
-                  <Badge>{tipCard.status === "settled" ? "Settled history" : "Published"}</Badge>
-                  <Badge variant="outline">Revision {tipCard.revision}</Badge>
-                </div>
-                <CardTitle className="font-heading text-2xl text-white">{tipCard.title}</CardTitle>
-                <CardDescription>
-                  {meeting ? `${meeting.venue} · ${formatRaceDateTime(meeting.first_race_at)}` : ""}
-                </CardDescription>
-              </CardHeader>
-              <CardContent className="space-y-6">
+              <button
+                type="button"
+                className="w-full rounded-t-xl text-left transition-colors hover:bg-white/[0.03] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+                aria-expanded={isExpanded}
+                aria-controls={`meeting-card-${tipCard.id}`}
+                onClick={() => setExpandedCardId(isExpanded ? "" : tipCard.id)}
+              >
+                <CardHeader className="flex-row items-center justify-between gap-4">
+                  <div className="min-w-0">
+                    <div className="flex flex-wrap items-center gap-2">
+                      <Badge>{tipCard.status === "settled" ? "Settled history" : "Published"}</Badge>
+                      <Badge variant="outline">Revision {tipCard.revision}</Badge>
+                    </div>
+                    <CardTitle className="mt-3 font-heading text-2xl text-white">{tipCard.title}</CardTitle>
+                    <CardDescription className="mt-1">
+                      {meeting ? `${meeting.venue} · ${formatRaceDateTime(meeting.first_race_at)}` : ""}
+                      {` · ${cardFixtures.length} races`}
+                    </CardDescription>
+                  </div>
+                  <span className="flex shrink-0 items-center gap-2 text-sm text-brand-cyan">
+                    {isExpanded ? "Hide full card" : "View full card"}
+                    {isExpanded ? <ChevronDown className="size-5" /> : <ChevronRight className="size-5" />}
+                  </span>
+                </CardHeader>
+              </button>
+              {isExpanded ? (
+              <CardContent id={`meeting-card-${tipCard.id}`} className="space-y-6 border-t pt-6">
                 <div className="grid gap-3 lg:grid-cols-2">
                   {cardFixtures.map((fixture) => {
                     const selection = cardRaceSelections.find((item) => item.fixture_id === fixture.id);
                     const winner = selection?.winner_entry_id ? entryById.get(selection.winner_entry_id) : null;
                     const place = selection?.place_entry_id ? entryById.get(selection.place_entry_id) : null;
                     const outcome = cardOutcomes.find((item) => item.tip_card_id === tipCard.id && item.fixture_id === fixture.id);
+                    const skipped = selection?.selection_status === "skipped";
 
                     return (
                       <div key={fixture.id} className="rounded-lg border bg-background/40 p-4">
-                        <p className="font-semibold">Race {fixture.race_number}: {fixture.title}</p>
-                        <p className="text-xs text-muted-foreground">{formatRaceDateTime(fixture.starts_at)}</p>
-                        <dl className="mt-3 grid gap-2 text-sm">
-                          <div><dt className="text-muted-foreground">Winner</dt><dd>{winner ? `${winner.saddle_number}. ${winner.horse_name}` : "No selection"}</dd></div>
-                          <div><dt className="text-muted-foreground">Best place</dt><dd>{place ? `${place.saddle_number}. ${place.horse_name}` : "No selection"}</dd></div>
-                          <div><dt className="text-muted-foreground">Comments</dt><dd>{selection?.comments || "No comments"}</dd></div>
-                          {outcome ? <><div><dt className="text-muted-foreground">Winner outcome</dt><dd>{outcome.selected_winner_position == null ? "No winner selection graded" : outcome.winner_hit ? `Correct — finished 1st` : `Missed — finished ${outcome.selected_winner_position}`}</dd></div><div><dt className="text-muted-foreground">Best-place finish</dt><dd>{outcome.selected_place_position ?? "No official finishing position"}</dd></div><div><dt className="text-muted-foreground">Official result</dt><dd>{outcome.result_summary ?? fixture.result_summary ?? "Recorded"}</dd></div></> : null}
-                        </dl>
+                        <div className="flex flex-wrap items-start justify-between gap-2">
+                          <div>
+                            <p className="font-semibold">Race {fixture.race_number}: {fixture.title}</p>
+                            <p className="text-xs text-muted-foreground">{formatRaceDateTime(fixture.starts_at)}</p>
+                          </div>
+                          {skipped ? <Badge variant="outline">No tip — race skipped</Badge> : null}
+                        </div>
+                        {skipped ? (
+                          <div className="mt-3 rounded-md border border-dashed p-3 text-sm text-muted-foreground">
+                            The tipster deliberately made no prediction for this race.
+                            {selection.comments ? <p className="mt-2 text-foreground">{selection.comments}</p> : null}
+                          </div>
+                        ) : (
+                          <dl className="mt-3 grid gap-2 text-sm">
+                            <div><dt className="text-muted-foreground">Winner</dt><dd>{winner ? `${winner.saddle_number}. ${winner.horse_name}` : "No selection"}</dd></div>
+                            <div><dt className="text-muted-foreground">Best place</dt><dd>{place ? `${place.saddle_number}. ${place.horse_name}` : "No selection"}</dd></div>
+                            <div><dt className="text-muted-foreground">Comments</dt><dd>{selection?.comments || "No comments"}</dd></div>
+                            {outcome ? <><div><dt className="text-muted-foreground">Winner outcome</dt><dd>{outcome.selected_winner_position == null ? "No winner selection graded" : outcome.winner_hit ? `Correct — finished 1st` : `Missed — finished ${outcome.selected_winner_position}`}</dd></div><div><dt className="text-muted-foreground">Best-place finish</dt><dd>{outcome.selected_place_position ?? "No official finishing position"}</dd></div><div><dt className="text-muted-foreground">Official result</dt><dd>{outcome.result_summary ?? fixture.result_summary ?? "Recorded"}</dd></div></> : null}
+                          </dl>
+                        )}
                       </div>
                     );
                   })}
@@ -703,6 +865,7 @@ export function ClientDashboardClient() {
                   </div>
                 </div>
               </CardContent>
+              ) : null}
             </Card>
           );
         })}

@@ -33,3 +33,9 @@ enabled = true
 verify_jwt = false
 import_map = "./functions/site-build-bridge/deno.json"
 entrypoint = "./functions/site-build-bridge/index.ts"
+
+[functions.deliver-sms-notifications]
+enabled = true
+verify_jwt = false
+import_map = "./functions/deliver-sms-notifications/deno.json"
+entrypoint = "./functions/deliver-sms-notifications/index.ts"
