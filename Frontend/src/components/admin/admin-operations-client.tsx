@@ -9,8 +9,11 @@ import {
   BellRing,
   CalendarClock,
   CheckCircle2,
+  Gift,
   Loader2,
+  PackagePlus,
   RefreshCw,
+  Search,
   Settings,
   Users,
 } from "lucide-react";
@@ -64,6 +67,29 @@ type UserSearchResult = {
   total: number;
 };
 
+type AdminCreditPackage = {
+  id: string;
+  name: string;
+  credits: number;
+  reward_credits: number;
+  price_cents: number;
+  promotion_label: string | null;
+  is_active: boolean;
+  sort_order: number;
+  updated_at: string;
+};
+
+type AccessTraceResult = {
+  accessCode: string;
+  userId: string;
+  email: string;
+  displayName: string | null;
+  tipCardId: string;
+  cardTitle: string;
+  accessedAt: string;
+  termsVersion: string;
+};
+
 function errorMessage(error: unknown, fallback: string) {
   if (error instanceof Error) {
     return error.message;
@@ -89,6 +115,19 @@ export function AdminOperationsClient() {
   const [disputeNotes, setDisputeNotes] = useState<Record<string, string>>({});
   const [outbox, setOutbox] = useState<OutboxRow[]>([]);
   const [testMeetings, setTestMeetings] = useState<TestMeeting[]>([]);
+  const [creditPackages, setCreditPackages] = useState<AdminCreditPackage[]>([]);
+  const [packageDrafts, setPackageDrafts] = useState<Record<string, AdminCreditPackage>>({});
+  const [newPackage, setNewPackage] = useState<Omit<AdminCreditPackage, "id" | "updated_at">>({
+    name: "",
+    credits: 100,
+    reward_credits: 0,
+    price_cents: 10000,
+    promotion_label: "",
+    is_active: true,
+    sort_order: 60,
+  });
+  const [accessCode, setAccessCode] = useState("");
+  const [accessTrace, setAccessTrace] = useState<AccessTraceResult | null>(null);
   const [rescheduleReason, setRescheduleReason] = useState(
     "Move unused private meeting for continued workflow testing",
   );
@@ -105,7 +144,7 @@ export function AdminOperationsClient() {
     setLoading(true);
     setError("");
 
-    const [usersResult, tipstersResult, settingsResult, disputeResult, outboxResult, meetingResult] =
+    const [usersResult, tipstersResult, settingsResult, disputeResult, outboxResult, meetingResult, packageResult] =
       await Promise.all([
         supabase.rpc("admin_search_users", {
           p_page: 1,
@@ -135,6 +174,10 @@ export function AdminOperationsClient() {
           .eq("is_test", true)
           .eq("status", "scheduled")
           .order("first_race_at"),
+        supabase
+          .from("credit_packages")
+          .select("id,name,credits,reward_credits,price_cents,promotion_label,is_active,sort_order,updated_at")
+          .order("sort_order"),
       ]);
 
     const firstError =
@@ -143,7 +186,8 @@ export function AdminOperationsClient() {
       settingsResult.error ??
       disputeResult.error ??
       outboxResult.error ??
-      meetingResult.error;
+      meetingResult.error ??
+      packageResult.error;
 
     if (firstError) {
       setError(firstError.message);
@@ -161,6 +205,9 @@ export function AdminOperationsClient() {
     setDisputes((disputeResult.data ?? []) as AdminDispute[]);
     setOutbox((outboxResult.data ?? []) as OutboxRow[]);
     setTestMeetings((meetingResult.data ?? []) as TestMeeting[]);
+    const loadedPackages = (packageResult.data ?? []) as AdminCreditPackage[];
+    setCreditPackages(loadedPackages);
+    setPackageDrafts(Object.fromEntries(loadedPackages.map((item) => [item.id, item])));
     setLoading(false);
   }, []);
 
@@ -290,6 +337,99 @@ export function AdminOperationsClient() {
     }
   }
 
+  function updatePackageDraft(
+    packageId: string,
+    changes: Partial<AdminCreditPackage>,
+  ) {
+    setPackageDrafts((current) => ({
+      ...current,
+      [packageId]: { ...current[packageId], ...changes },
+    }));
+  }
+
+  async function saveCreditPackage(
+    creditPackage: Omit<AdminCreditPackage, "updated_at" | "id"> & { id?: string },
+    isNew = false,
+  ) {
+    const supabase = createClient();
+    if (!supabase) return;
+
+    if (!creditPackage.name.trim()) {
+      setError("A Credit package name is required.");
+      return;
+    }
+    if (creditPackage.credits < 1 || creditPackage.reward_credits < 0) {
+      setError("Purchased and Reward Credit amounts must be valid positive values.");
+      return;
+    }
+
+    const processingKey = isNew ? "package-new" : `package-${creditPackage.id ?? "unknown"}`;
+    setProcessing(processingKey);
+    setError("");
+
+    try {
+      const { error: packageError } = await supabase.rpc(
+        "admin_upsert_credit_package",
+        {
+          p_package_id: isNew ? null : creditPackage.id,
+          p_name: creditPackage.name.trim(),
+          p_credits: Number(creditPackage.credits),
+          p_reward_credits: Number(creditPackage.reward_credits),
+          p_promotion_label: creditPackage.promotion_label?.trim() || null,
+          p_is_active: creditPackage.is_active,
+          p_sort_order: Number(creditPackage.sort_order),
+        },
+      );
+
+      if (packageError) throw packageError;
+
+      setMessage(
+        isNew
+          ? "Credit package created. Checkout will snapshot its current values."
+          : "Credit package updated. Existing payment snapshots were not changed.",
+      );
+      if (isNew) {
+        setNewPackage({
+          name: "",
+          credits: 100,
+          reward_credits: 0,
+          price_cents: 10000,
+          promotion_label: "",
+          is_active: true,
+          sort_order: 60,
+        });
+      }
+      await loadOperations();
+    } catch (caughtError) {
+      setError(errorMessage(caughtError, "Could not save the Credit package."));
+    } finally {
+      setProcessing("");
+    }
+  }
+
+  async function lookupAccessCode() {
+    const supabase = createClient();
+    if (!supabase) return;
+
+    setProcessing("access-trace");
+    setError("");
+    setAccessTrace(null);
+
+    try {
+      const { data, error: lookupError } = await supabase.rpc(
+        "admin_lookup_tip_card_access",
+        { p_access_code: accessCode.trim() },
+      );
+      if (lookupError) throw lookupError;
+      if (!data) throw new Error("No premium-content access record matches that code.");
+      setAccessTrace(data as AccessTraceResult);
+    } catch (caughtError) {
+      setError(errorMessage(caughtError, "Could not trace the access code."));
+    } finally {
+      setProcessing("");
+    }
+  }
+
   async function rescheduleMeeting(meetingId: string, daysAhead: 3 | 7 | 14) {
     const supabase = createClient();
 
@@ -391,6 +531,7 @@ export function AdminOperationsClient() {
           <TabsTrigger value="meetings"><CalendarClock className="size-4" />Test meetings</TabsTrigger>
           <TabsTrigger value="disputes"><Banknote className="size-4" />Disputes</TabsTrigger>
           <TabsTrigger value="notifications"><BellRing className="size-4" />Notifications</TabsTrigger>
+          <TabsTrigger value="packages"><Gift className="size-4" />Credit packages</TabsTrigger>
           <TabsTrigger value="system"><Settings className="size-4" />System</TabsTrigger>
         </TabsList>
 
@@ -562,7 +703,150 @@ export function AdminOperationsClient() {
           </Card>
         </TabsContent>
 
-        <TabsContent id="system" value="system">
+        <TabsContent id="packages" value="packages">
+          <div className="space-y-4">
+            <Card>
+              <CardHeader>
+                <CardTitle>Purchased and Reward Credit packages</CardTitle>
+                <CardDescription>
+                  Purchased Credits remain R1 each. Bonus Reward Credits are promotional,
+                  stay in the separate Reward wallet, and do not create tipster earnings or
+                  charity accrual. Existing checkouts retain their original snapshot.
+                </CardDescription>
+              </CardHeader>
+            </Card>
+
+            {creditPackages.map((creditPackage) => {
+              const draft = packageDrafts[creditPackage.id] ?? creditPackage;
+              return (
+                <Card key={creditPackage.id}>
+                  <CardHeader className="flex-row items-start justify-between gap-3">
+                    <div>
+                      <CardTitle>{draft.name}</CardTitle>
+                      <CardDescription>
+                        Updated {formatRaceDateTime(creditPackage.updated_at)}
+                      </CardDescription>
+                    </div>
+                    <Badge variant={draft.is_active ? "default" : "secondary"}>
+                      {draft.is_active ? "Active" : "Hidden"}
+                    </Badge>
+                  </CardHeader>
+                  <CardContent className="grid gap-4 md:grid-cols-2 xl:grid-cols-6">
+                    <div className="space-y-2 xl:col-span-2">
+                      <Label htmlFor={`package-name-${draft.id}`}>Package name</Label>
+                      <Input
+                        id={`package-name-${draft.id}`}
+                        value={draft.name}
+                        onChange={(event) => updatePackageDraft(draft.id, { name: event.target.value })}
+                      />
+                    </div>
+                    <div className="space-y-2">
+                      <Label htmlFor={`package-credits-${draft.id}`}>Purchased Credits</Label>
+                      <Input
+                        id={`package-credits-${draft.id}`}
+                        min="1"
+                        type="number"
+                        value={draft.credits}
+                        onChange={(event) => updatePackageDraft(draft.id, {
+                          credits: Number(event.target.value),
+                          price_cents: Number(event.target.value) * 100,
+                        })}
+                      />
+                    </div>
+                    <div className="space-y-2">
+                      <Label htmlFor={`package-reward-${draft.id}`}>Reward Credits</Label>
+                      <Input
+                        id={`package-reward-${draft.id}`}
+                        min="0"
+                        type="number"
+                        value={draft.reward_credits}
+                        onChange={(event) => updatePackageDraft(draft.id, { reward_credits: Number(event.target.value) })}
+                      />
+                    </div>
+                    <div className="space-y-2">
+                      <Label htmlFor={`package-order-${draft.id}`}>Display order</Label>
+                      <Input
+                        id={`package-order-${draft.id}`}
+                        min="0"
+                        type="number"
+                        value={draft.sort_order}
+                        onChange={(event) => updatePackageDraft(draft.id, { sort_order: Number(event.target.value) })}
+                      />
+                    </div>
+                    <label className="flex items-center gap-2 self-end rounded-lg border px-3 py-2 text-sm">
+                      <input
+                        type="checkbox"
+                        checked={draft.is_active}
+                        onChange={(event) => updatePackageDraft(draft.id, { is_active: event.target.checked })}
+                      />
+                      Available for sale
+                    </label>
+                    <div className="space-y-2 md:col-span-2 xl:col-span-4">
+                      <Label htmlFor={`package-promo-${draft.id}`}>Promotion label</Label>
+                      <Input
+                        id={`package-promo-${draft.id}`}
+                        maxLength={80}
+                        placeholder="Example: Best value — 125 Reward Credits"
+                        value={draft.promotion_label ?? ""}
+                        onChange={(event) => updatePackageDraft(draft.id, { promotion_label: event.target.value })}
+                      />
+                    </div>
+                    <div className="rounded-lg border bg-background/45 p-3 text-sm">
+                      Price: <strong>{new Intl.NumberFormat("en-ZA", { style: "currency", currency: "ZAR" }).format(draft.credits)}</strong>
+                    </div>
+                    <Button
+                      type="button"
+                      disabled={processing === `package-${draft.id}`}
+                      onClick={() => void saveCreditPackage(draft)}
+                    >
+                      {processing === `package-${draft.id}` ? <Loader2 className="size-4 animate-spin" /> : <Settings className="size-4" />}
+                      Save package
+                    </Button>
+                  </CardContent>
+                </Card>
+              );
+            })}
+
+            <Card>
+              <CardHeader>
+                <CardTitle className="flex items-center gap-2"><PackagePlus className="size-5 text-brand-cyan" />Add Credit package</CardTitle>
+                <CardDescription>Create another admin-controlled package without deleting historical packages.</CardDescription>
+              </CardHeader>
+              <CardContent className="grid gap-4 md:grid-cols-2 xl:grid-cols-6">
+                <div className="space-y-2 xl:col-span-2">
+                  <Label htmlFor="new-package-name">Package name</Label>
+                  <Input id="new-package-name" value={newPackage.name} onChange={(event) => setNewPackage((current) => ({ ...current, name: event.target.value }))} />
+                </div>
+                <div className="space-y-2">
+                  <Label htmlFor="new-package-credits">Purchased Credits</Label>
+                  <Input id="new-package-credits" min="1" type="number" value={newPackage.credits} onChange={(event) => setNewPackage((current) => ({ ...current, credits: Number(event.target.value), price_cents: Number(event.target.value) * 100 }))} />
+                </div>
+                <div className="space-y-2">
+                  <Label htmlFor="new-package-reward">Reward Credits</Label>
+                  <Input id="new-package-reward" min="0" type="number" value={newPackage.reward_credits} onChange={(event) => setNewPackage((current) => ({ ...current, reward_credits: Number(event.target.value) }))} />
+                </div>
+                <div className="space-y-2">
+                  <Label htmlFor="new-package-order">Display order</Label>
+                  <Input id="new-package-order" min="0" type="number" value={newPackage.sort_order} onChange={(event) => setNewPackage((current) => ({ ...current, sort_order: Number(event.target.value) }))} />
+                </div>
+                <label className="flex items-center gap-2 self-end rounded-lg border px-3 py-2 text-sm">
+                  <input type="checkbox" checked={newPackage.is_active} onChange={(event) => setNewPackage((current) => ({ ...current, is_active: event.target.checked }))} />
+                  Available for sale
+                </label>
+                <div className="space-y-2 md:col-span-2 xl:col-span-5">
+                  <Label htmlFor="new-package-promo">Promotion label</Label>
+                  <Input id="new-package-promo" maxLength={80} value={newPackage.promotion_label ?? ""} onChange={(event) => setNewPackage((current) => ({ ...current, promotion_label: event.target.value }))} />
+                </div>
+                <Button type="button" disabled={processing === "package-new"} onClick={() => void saveCreditPackage(newPackage, true)}>
+                  {processing === "package-new" ? <Loader2 className="size-4 animate-spin" /> : <PackagePlus className="size-4" />}
+                  Create package
+                </Button>
+              </CardContent>
+            </Card>
+          </div>
+        </TabsContent>
+
+        <TabsContent id="system" value="system" className="space-y-4">
           <Card>
             <CardHeader>
               <CardTitle>Credits and commission</CardTitle>
@@ -606,6 +890,43 @@ export function AdminOperationsClient() {
                   </p>
                 ) : null}
               </div>
+            </CardContent>
+          </Card>
+          <Card>
+            <CardHeader>
+              <CardTitle>Premium-content access trace</CardTitle>
+              <CardDescription>
+                Enter the visible MRC watermark code from a shared screenshot to identify
+                the licensed account and original card-access event.
+              </CardDescription>
+            </CardHeader>
+            <CardContent className="space-y-4">
+              <div className="flex flex-col gap-2 sm:flex-row">
+                <Input
+                  aria-label="Premium content access code"
+                  placeholder="MRC-XXXXXXXXXXXX"
+                  value={accessCode}
+                  onChange={(event) => setAccessCode(event.target.value.toUpperCase())}
+                />
+                <Button
+                  type="button"
+                  disabled={!accessCode.trim() || processing === "access-trace"}
+                  onClick={() => void lookupAccessCode()}
+                >
+                  {processing === "access-trace" ? <Loader2 className="size-4 animate-spin" /> : <Search className="size-4" />}
+                  Trace access
+                </Button>
+              </div>
+              {accessTrace ? (
+                <div className="grid gap-3 rounded-lg border border-brand-cyan/30 bg-brand-cyan/5 p-4 text-sm sm:grid-cols-2">
+                  <p><span className="text-muted-foreground">Account:</span> {accessTrace.displayName || "MRC Client"}</p>
+                  <p><span className="text-muted-foreground">Email:</span> {accessTrace.email}</p>
+                  <p><span className="text-muted-foreground">Card:</span> {accessTrace.cardTitle}</p>
+                  <p><span className="text-muted-foreground">Opened:</span> {formatRaceDateTime(accessTrace.accessedAt)}</p>
+                  <p><span className="text-muted-foreground">Code:</span> <span className="font-mono">{accessTrace.accessCode}</span></p>
+                  <p><span className="text-muted-foreground">Terms:</span> {accessTrace.termsVersion}</p>
+                </div>
+              ) : null}
             </CardContent>
           </Card>
         </TabsContent>

@@ -370,6 +370,33 @@ function renderEmail(job: NotificationJob): EmailContent {
     return { subject, text, html };
   }
 
+  if (job.event_type === "favourite_tipster_card_published") {
+    const tipsterName = String(payload.tipsterName ?? "A favourite tipster");
+    const venue = String(payload.meetingVenue ?? "a new race meeting");
+    const meetingDate = String(payload.meetingDate ?? "");
+    const tipsterUrl = String(
+      payload.tipsterUrl ?? "https://www.mrcracing.co.za/tipsters/",
+    );
+    const subject = `${tipsterName} published a new ${venue} meeting card`;
+    const dateText = meetingDate ? ` for ${meetingDate}` : "";
+    const text =
+      `${tipsterName}, one of your favourite tipsters, published a ${venue} meeting card${dateText}. ` +
+      "Visit the tipster profile to view its preview and available access options.";
+    const html = renderLayout(
+      "A favourite tipster published a new card",
+      `<p style="margin:0 0 14px"><strong>${
+        escapeHtml(tipsterName)
+      }</strong>, one of your favourite tipsters, published a meeting card for <strong>${
+        escapeHtml(venue)
+      }</strong>${meetingDate ? ` on ${escapeHtml(meetingDate)}` : ""}.</p>` +
+        '<p style="margin:0">Favouriting a tipster does not grant access by itself. Visit the tipster profile to view the preview and available purchase or subscription options.</p>',
+      tipsterUrl,
+      "View tipster profile",
+    );
+
+    return { subject, text, html };
+  }
+
   const tipsterName = String(payload.tipsterName ?? "Your tipster");
   const venue = String(payload.meetingVenue ?? "the selected meeting");
   const meetingDate = String(payload.meetingDate ?? "");

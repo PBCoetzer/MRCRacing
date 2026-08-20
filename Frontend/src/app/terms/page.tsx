@@ -7,7 +7,7 @@ export default function TermsPage() {
     <InfoPage
       badge="Terms"
       title="Terms and conditions"
-      description="Terms for accounts, Credits, digital racing content, and participation on MRC Racing Tips. Effective 18 August 2026."
+      description="Terms for accounts, Credits, digital racing content, and participation on MRC Racing Tips. Effective 20 August 2026."
       sections={[
         {
           title: "Website operator",
@@ -19,7 +19,7 @@ export default function TermsPage() {
         },
         {
           title: "Credits",
-          body: <p>Credits unlock eligible digital content. They have no cash value, cannot be withdrawn, transferred outside the platform, or used to place bets. Credits are issued only after a payment provider confirms payment.</p>,
+          body: <p>Purchased Credits and promotional Reward Credits unlock eligible digital content. They have no cash value, cannot be withdrawn, transferred outside the platform, or used to place bets. Purchased Credits are issued only after a payment provider confirms payment. Reward Credits may be issued through an advertised package or promotion, remain separately recorded, and do not create tipster earnings or horse-care contribution accrual.</p>,
         },
         {
           title: "No guarantee",
@@ -27,7 +27,11 @@ export default function TermsPage() {
         },
         {
           title: "Content availability and conduct",
-          body: <p>Meeting-card sales close 30 minutes before Race 1. Access to valid purchased and settled cards remains in Card History. Accounts may not scrape, resell, copy, manipulate, harass, impersonate, evade security controls, or publish unlawful material.</p>,
+          body: <p>Meeting-card sales close 30 minutes before Race 1. Access to valid purchased and settled cards remains in Card History. Accounts may not scrape, resell, manipulate, harass, impersonate, evade security controls, share credentials, or publish unlawful material.</p>,
+        },
+        {
+          title: "Personal premium-content licence",
+          body: <p>Paid meeting cards and selections are licensed to the entitled account for personal, non-transferable use. You may not copy, screenshot for distribution, republish, forward, upload, broadcast, resell, or give another person access to premium selections. Premium views may show a user-specific access code and watermark, and each opening may create an immutable security record. These controls deter and help trace unauthorised sharing; they do not guarantee that every recording method can be technically blocked. MRC may investigate misuse and, subject to applicable law and a fair review, suspend access, revoke affected content access, or pursue available remedies.</p>,
         },
         {
           title: "Payments, refunds, and cancellations",

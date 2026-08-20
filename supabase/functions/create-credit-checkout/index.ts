@@ -14,14 +14,32 @@ import {
 
 type CheckoutRequest = {
   packageId?: string;
+  items?: Array<{
+    packageId?: string;
+    quantity?: number;
+  }>;
   provider?: PaymentProvider;
 };
 
-type CreditPackage = {
+type CheckoutRecord = {
   id: string;
-  name: string;
+  userId: string;
+  provider: PaymentProvider;
+  amountCents: number;
+  purchasedCredits: number;
+  rewardCredits: number;
   credits: number;
-  price_cents: number;
+  status: "pending";
+  expiresAt: string;
+  cartFingerprint: string;
+  items: Array<{
+    packageId: string;
+    packageName: string;
+    quantity: number;
+    purchasedCreditsEach: number;
+    rewardCreditsEach: number;
+    unitPriceCents: number;
+  }>;
 };
 
 function checkoutConfiguration(provider: PaymentProvider) {
@@ -101,7 +119,11 @@ Deno.serve(async (request: Request) => {
     const user = await requireUser(request, serviceClient);
     const payload = await request.json() as CheckoutRequest;
     const provider = payload.provider;
-    const packageId = String(payload.packageId ?? "");
+    const requestedItems = Array.isArray(payload.items)
+      ? payload.items
+      : payload.packageId
+      ? [{ packageId: payload.packageId, quantity: 1 }]
+      : [];
     const idempotencyKey =
       (request.headers.get("x-idempotency-key") ?? "").trim();
 
@@ -109,82 +131,55 @@ Deno.serve(async (request: Request) => {
       return jsonResponse(request, { error: "Choose PayFast or Ozow." }, 400);
     }
 
-    if (!packageId || !idempotencyKey || idempotencyKey.length > 200) {
+    if (
+      !requestedItems.length ||
+      requestedItems.length > 20 ||
+      requestedItems.some((item) =>
+        !item.packageId ||
+        !Number.isInteger(item.quantity) ||
+        Number(item.quantity) < 1 ||
+        Number(item.quantity) > 20
+      ) ||
+      !idempotencyKey ||
+      idempotencyKey.length > 200
+    ) {
       return jsonResponse(
         request,
-        { error: "A valid package and idempotency key are required." },
+        { error: "A valid basket and idempotency key are required." },
         400,
       );
     }
 
-    const { data: packageData, error: packageError } = await serviceClient
-      .from("credit_packages")
-      .select("id, name, credits, price_cents")
-      .eq("id", packageId)
-      .eq("is_active", true)
-      .maybeSingle();
-
-    if (packageError || !packageData) {
-      return jsonResponse(request, { error: "Credit package not found." }, 404);
-    }
-
-    const creditPackage = packageData as CreditPackage;
-    const expiresAt = new Date(Date.now() + 30 * 60 * 1000).toISOString();
-    const paymentInsert = {
-      user_id: user.id,
-      provider,
-      amount_cents: creditPackage.price_cents,
-      currency: "ZAR",
-      credits: creditPackage.credits,
-      status: "pending",
-      idempotency_key: idempotencyKey,
-      credit_package_id: creditPackage.id,
-      checkout_expires_at: expiresAt,
-      raw_event: {
-        checkoutCreatedAt: new Date().toISOString(),
-        packageName: creditPackage.name,
+    const { data: paymentData, error: paymentError } = await serviceClient.rpc(
+      "create_credit_checkout_record",
+      {
+        p_user_id: user.id,
+        p_provider: provider,
+        p_items: requestedItems.map((item) => ({
+          packageId: String(item.packageId),
+          quantity: Number(item.quantity),
+        })),
+        p_idempotency_key: idempotencyKey,
       },
-    };
-    const { data: insertedPayment, error: insertError } = await serviceClient
-      .from("payments")
-      .insert(paymentInsert)
-      .select("id, user_id, provider, amount_cents, credits, status, credit_package_id")
-      .single();
-    let payment = insertedPayment;
+    );
 
-    if (insertError?.code === "23505") {
-      const { data: existingPayment, error: existingError } = await serviceClient
-        .from("payments")
-        .select("id, user_id, provider, amount_cents, credits, status, credit_package_id")
-        .eq("idempotency_key", idempotencyKey)
-        .maybeSingle();
-
-      if (existingError || !existingPayment) {
-        throw new Error("Unable to resume this checkout.");
-      }
-
-      payment = existingPayment;
-    } else if (insertError || !payment) {
-      throw new Error(insertError?.message ?? "Unable to create checkout.");
+    if (paymentError || !paymentData) {
+      throw new Error(paymentError?.message ?? "Unable to create checkout.");
     }
 
-    if (
-      payment.user_id !== user.id ||
-      payment.provider !== provider ||
-      payment.credit_package_id !== creditPackage.id ||
-      payment.amount_cents !== creditPackage.price_cents ||
-      payment.credits !== creditPackage.credits ||
-      payment.status !== "pending"
-    ) {
-      return jsonResponse(
-        request,
-        { error: "This checkout request cannot be reused." },
-        409,
-      );
-    }
+    const payment = paymentData as CheckoutRecord;
+    const expiresAt = payment.expiresAt;
 
     const configuration = checkoutConfiguration(provider as PaymentProvider);
-    const amount = safeMoney(creditPackage.price_cents);
+    const amount = safeMoney(payment.amountCents);
+    const packageQuantity = payment.items.reduce(
+      (total, item) => total + item.quantity,
+      0,
+    );
+    const cartDescription = payment.items
+      .map((item) => `${item.quantity}× ${item.packageName}`)
+      .join(", ")
+      .slice(0, 250);
     const userName = String(
       user.user_metadata?.display_name ??
         user.user_metadata?.full_name ??
@@ -220,10 +215,13 @@ Deno.serve(async (request: Request) => {
         ["email_address", user.email ?? ""],
         ["m_payment_id", payment.id],
         ["amount", amount],
-        ["item_name", `${creditPackage.credits} MRC Credits`],
+        [
+          "item_name",
+          `${payment.purchasedCredits} MRC Credits + ${payment.rewardCredits} Reward Credits`,
+        ],
         [
           "item_description",
-          `MRC Racing ${creditPackage.name} Credit package`,
+          `MRC Racing basket (${packageQuantity} package${packageQuantity === 1 ? "" : "s"}): ${cartDescription}`,
         ],
       ];
       const signature = signPayFast(
@@ -240,7 +238,7 @@ Deno.serve(async (request: Request) => {
         ["TransactionReference", payment.id],
         ["BankReference", `MRC-${payment.id.slice(0, 8)}`],
         ["Optional1", user.id],
-        ["Optional2", creditPackage.id],
+        ["Optional2", payment.cartFingerprint],
         ["Optional3", ""],
         ["Optional4", ""],
         ["Optional5", ""],
@@ -287,6 +285,10 @@ Deno.serve(async (request: Request) => {
       actionUrl,
       fields,
       expiresAt,
+      purchasedCredits: payment.purchasedCredits,
+      rewardCredits: payment.rewardCredits,
+      credits: payment.credits,
+      itemCount: packageQuantity,
       returnUrl: `${configuration.siteUrl}/payment-status/?payment=${payment.id}`,
     });
   } catch (error) {

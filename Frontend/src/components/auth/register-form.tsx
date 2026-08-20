@@ -26,6 +26,8 @@ type FormState = {
   message: string;
 };
 
+const currentTermsVersion = "2026-08-20-premium-content";
+
 export function RegisterForm() {
   const router = useRouter();
   const formRef = useRef<HTMLFormElement>(null);
@@ -114,6 +116,7 @@ export function RegisterForm() {
           captchaToken,
           data: {
             accepted_terms: acceptedTerms,
+            accepted_terms_version: currentTermsVersion,
             confirmed_over_18: confirmedOver18,
             first_name: firstName,
             last_name: lastName,
@@ -208,6 +211,8 @@ export function RegisterForm() {
             <Link href="/refund-policy/" className="text-brand-cyan underline">refund policy</Link>,{" "}
             <Link href="/cancellation-policy/" className="text-brand-cyan underline">cancellation policy</Link>, and{" "}
             <Link href="/responsible-gambling/" className="text-brand-cyan underline">responsible gambling guidance</Link>.
+            I understand that paid meeting-card content is licensed personally, may be
+            visibly watermarked, and may not be shared, republished, or resold.
           </span>
         </label>
         <CaptchaField

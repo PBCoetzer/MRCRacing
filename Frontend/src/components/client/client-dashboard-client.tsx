@@ -22,6 +22,14 @@ import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { createClient } from "@/lib/supabase/client";
@@ -83,8 +91,18 @@ type WalletRow = {
 };
 
 type ProfileNotificationRow = {
+  display_name: string | null;
   phone: string | null;
   sms_notifications_enabled: boolean;
+  accepted_terms_version: string | null;
+  premium_terms_accepted_at: string | null;
+};
+
+type CardAccessLicense = {
+  accessCode: string;
+  displayName: string;
+  accessedAt: string;
+  termsVersion: string;
 };
 
 type CardOutcome = {
@@ -97,6 +115,8 @@ type CardOutcome = {
   evidence_hash: string;
   settled_at: string;
 };
+
+const premiumTermsVersion = "2026-08-20-premium-content";
 
 function messageFrom(error: unknown, fallback: string) {
   if (error instanceof Error) {
@@ -122,6 +142,13 @@ export function ClientDashboardClient() {
   const [phone, setPhone] = useState("");
   const [smsNotificationsEnabled, setSmsNotificationsEnabled] = useState(false);
   const [expandedCardId, setExpandedCardId] = useState("");
+  const [requestedCardId, setRequestedCardId] = useState("");
+  const [pendingCardId, setPendingCardId] = useState("");
+  const [termsDialogOpen, setTermsDialogOpen] = useState(false);
+  const [termsConfirmed, setTermsConfirmed] = useState(false);
+  const [acceptedTermsVersion, setAcceptedTermsVersion] = useState("");
+  const [profileDisplayName, setProfileDisplayName] = useState("MRC Client");
+  const [cardAccessLicenses, setCardAccessLicenses] = useState<Record<string, CardAccessLicense>>({});
   const [cards, setCards] = useState<TipCard[]>([]);
   const [meetings, setMeetings] = useState<RaceMeeting[]>([]);
   const [tipsters, setTipsters] = useState<TipsterProfile[]>([]);
@@ -185,7 +212,7 @@ export function ClientDashboardClient() {
           .maybeSingle(),
         supabase
           .from("profiles")
-          .select("phone,sms_notifications_enabled")
+          .select("display_name,phone,sms_notifications_enabled,accepted_terms_version,premium_terms_accepted_at")
           .eq("id", user.id)
           .maybeSingle(),
         supabase
@@ -347,9 +374,11 @@ export function ClientDashboardClient() {
       setRewardBalance(Number(loadedWallet?.reward_balance ?? 0));
       setPhone(loadedProfile?.phone ?? "");
       setSmsNotificationsEnabled(Boolean(loadedProfile?.sms_notifications_enabled));
-      const requestedCardId = new URLSearchParams(window.location.search).get("card");
-      if (requestedCardId && accessibleCardIds.has(requestedCardId)) {
-        setExpandedCardId(requestedCardId);
+      setAcceptedTermsVersion(loadedProfile?.accepted_terms_version ?? "");
+      setProfileDisplayName(loadedProfile?.display_name?.trim() || "MRC Client");
+      const cardFromUrl = new URLSearchParams(window.location.search).get("card");
+      if (cardFromUrl && accessibleCardIds.has(cardFromUrl)) {
+        setRequestedCardId(cardFromUrl);
       }
       setCards(loadedCards);
       setMeetings(loadedMeetings);
@@ -563,6 +592,88 @@ export function ClientDashboardClient() {
     }
   }
 
+  const openPremiumCard = useCallback(async (
+    tipCardId: string,
+    acceptCurrentTerms = false,
+  ) => {
+    if (expandedCardId === tipCardId && !acceptCurrentTerms) {
+      setExpandedCardId("");
+      return;
+    }
+
+    if (acceptedTermsVersion !== premiumTermsVersion && !acceptCurrentTerms) {
+      setPendingCardId(tipCardId);
+      setTermsConfirmed(false);
+      setTermsDialogOpen(true);
+      return;
+    }
+
+    const supabase = createClient();
+    if (!supabase) {
+      setError("The secure meeting-card service is not configured.");
+      return;
+    }
+
+    setProcessingId(`access:${tipCardId}`);
+    setError("");
+    setMessage("");
+
+    try {
+      const { data, error: accessError } = await supabase.rpc(
+        "record_tip_card_access",
+        {
+          p_tip_card_id: tipCardId,
+          p_terms_version: acceptCurrentTerms ? premiumTermsVersion : null,
+          p_client_context: {
+            language: navigator.language,
+            screen: `${window.screen.width}x${window.screen.height}`,
+            timezone: Intl.DateTimeFormat().resolvedOptions().timeZone,
+          },
+        },
+      );
+
+      if (accessError) {
+        throw accessError;
+      }
+
+      const licence = data as CardAccessLicense | null;
+      if (!licence?.accessCode) {
+        throw new Error("The secure card access code could not be created.");
+      }
+
+      setCardAccessLicenses((current) => ({
+        ...current,
+        [tipCardId]: {
+          ...licence,
+          displayName: licence.displayName || profileDisplayName,
+        },
+      }));
+      setAcceptedTermsVersion(premiumTermsVersion);
+      setExpandedCardId(tipCardId);
+      setTermsDialogOpen(false);
+      setPendingCardId("");
+      setTermsConfirmed(false);
+    } catch (accessError) {
+      setError(messageFrom(accessError, "The meeting card could not be opened securely."));
+    } finally {
+      setProcessingId("");
+    }
+  }, [acceptedTermsVersion, expandedCardId, profileDisplayName]);
+
+  useEffect(() => {
+    if (loading || !requestedCardId) {
+      return;
+    }
+
+    const cardId = requestedCardId;
+    const timeoutId = window.setTimeout(() => {
+      setRequestedCardId("");
+      void openPremiumCard(cardId);
+    }, 0);
+
+    return () => window.clearTimeout(timeoutId);
+  }, [loading, openPremiumCard, requestedCardId]);
+
   if (loading) {
     return (
       <Card>
@@ -755,8 +866,13 @@ export function ClientDashboardClient() {
           const meeting = meetingById.get(tipCard.meeting_id);
           const cardFixtures = fixtures.filter((fixture) => fixture.meeting_id === tipCard.meeting_id);
           const cardRaceSelections = raceSelections.filter((selection) => selection.tip_card_id === tipCard.id);
+          const visibleCardFixtures = cardFixtures.filter((fixture) =>
+            cardRaceSelections.find((selection) => selection.fixture_id === fixture.id)?.selection_status !== "skipped"
+          );
           const cardMultiples = multiples.filter((multiple) => multiple.tip_card_id === tipCard.id);
           const isExpanded = expandedCardId === tipCard.id;
+          const accessLicence = cardAccessLicenses[tipCard.id];
+          const isOpening = processingId === `access:${tipCard.id}`;
 
           return (
             <Card key={tipCard.id} className="border-brand-cyan/35">
@@ -765,7 +881,8 @@ export function ClientDashboardClient() {
                 className="w-full rounded-t-xl text-left transition-colors hover:bg-white/[0.03] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
                 aria-expanded={isExpanded}
                 aria-controls={`meeting-card-${tipCard.id}`}
-                onClick={() => setExpandedCardId(isExpanded ? "" : tipCard.id)}
+                disabled={isOpening}
+                onClick={() => void openPremiumCard(tipCard.id)}
               >
                 <CardHeader className="flex-row items-center justify-between gap-4">
                   <div className="min-w-0">
@@ -776,52 +893,74 @@ export function ClientDashboardClient() {
                     <CardTitle className="mt-3 font-heading text-2xl text-white">{tipCard.title}</CardTitle>
                     <CardDescription className="mt-1">
                       {meeting ? `${meeting.venue} · ${formatRaceDateTime(meeting.first_race_at)}` : ""}
-                      {` · ${cardFixtures.length} races`}
+                      {` · ${visibleCardFixtures.length} tipped races`}
                     </CardDescription>
                   </div>
                   <span className="flex shrink-0 items-center gap-2 text-sm text-brand-cyan">
-                    {isExpanded ? "Hide full card" : "View full card"}
-                    {isExpanded ? <ChevronDown className="size-5" /> : <ChevronRight className="size-5" />}
+                    {isOpening ? (
+                      <><Loader2 className="size-5 animate-spin" />Securing card</>
+                    ) : isExpanded ? (
+                      <>Hide full card<ChevronDown className="size-5" /></>
+                    ) : (
+                      <>View full card<ChevronRight className="size-5" /></>
+                    )}
                   </span>
                 </CardHeader>
               </button>
-              {isExpanded ? (
-              <CardContent id={`meeting-card-${tipCard.id}`} className="space-y-6 border-t pt-6">
+              {isExpanded && accessLicence ? (
+              <CardContent
+                id={`meeting-card-${tipCard.id}`}
+                className="relative space-y-6 overflow-hidden border-t pt-6 print:hidden"
+                onCopy={(event) => event.preventDefault()}
+              >
+                <div
+                  aria-hidden="true"
+                  className="pointer-events-none absolute inset-0 z-20 grid select-none grid-cols-2 content-around gap-16 overflow-hidden p-4 opacity-[0.075] sm:grid-cols-3"
+                >
+                  {Array.from({ length: 18 }, (_, index) => (
+                    <p
+                      key={index}
+                      className="-rotate-12 whitespace-nowrap text-center font-mono text-xs font-bold text-white"
+                    >
+                      {accessLicence.displayName} · {accessLicence.accessCode}
+                    </p>
+                  ))}
+                </div>
+                <Alert className="relative z-30 border-brand-gold/35 bg-brand-gold/8">
+                  <ShieldCheck className="size-4" />
+                  <AlertTitle>Personal licensed access</AlertTitle>
+                  <AlertDescription>
+                    This card is licensed to {accessLicence.displayName}. Visible code{" "}
+                    <span className="font-mono font-semibold">{accessLicence.accessCode}</span>. Sharing,
+                    republishing, or reselling premium selections is prohibited by the accepted terms.
+                  </AlertDescription>
+                </Alert>
                 <div className="grid gap-3 lg:grid-cols-2">
-                  {cardFixtures.map((fixture) => {
+                  {visibleCardFixtures.map((fixture) => {
                     const selection = cardRaceSelections.find((item) => item.fixture_id === fixture.id);
                     const winner = selection?.winner_entry_id ? entryById.get(selection.winner_entry_id) : null;
                     const place = selection?.place_entry_id ? entryById.get(selection.place_entry_id) : null;
                     const outcome = cardOutcomes.find((item) => item.tip_card_id === tipCard.id && item.fixture_id === fixture.id);
-                    const skipped = selection?.selection_status === "skipped";
 
                     return (
-                      <div key={fixture.id} className="rounded-lg border bg-background/40 p-4">
+                      <div key={fixture.id} className="relative z-10 rounded-lg border bg-background/80 p-4">
                         <div className="flex flex-wrap items-start justify-between gap-2">
                           <div>
                             <p className="font-semibold">Race {fixture.race_number}: {fixture.title}</p>
                             <p className="text-xs text-muted-foreground">{formatRaceDateTime(fixture.starts_at)}</p>
                           </div>
-                          {skipped ? <Badge variant="outline">No tip — race skipped</Badge> : null}
                         </div>
-                        {skipped ? (
-                          <div className="mt-3 rounded-md border border-dashed p-3 text-sm text-muted-foreground">
-                            The tipster deliberately made no prediction for this race.
-                            {selection.comments ? <p className="mt-2 text-foreground">{selection.comments}</p> : null}
-                          </div>
-                        ) : (
-                          <dl className="mt-3 grid gap-2 text-sm">
-                            <div><dt className="text-muted-foreground">Winner</dt><dd>{winner ? `${winner.saddle_number}. ${winner.horse_name}` : "No selection"}</dd></div>
-                            <div><dt className="text-muted-foreground">Best place</dt><dd>{place ? `${place.saddle_number}. ${place.horse_name}` : "No selection"}</dd></div>
-                            <div><dt className="text-muted-foreground">Comments</dt><dd>{selection?.comments || "No comments"}</dd></div>
-                            {outcome ? <><div><dt className="text-muted-foreground">Winner outcome</dt><dd>{outcome.selected_winner_position == null ? "No winner selection graded" : outcome.winner_hit ? `Correct — finished 1st` : `Missed — finished ${outcome.selected_winner_position}`}</dd></div><div><dt className="text-muted-foreground">Best-place finish</dt><dd>{outcome.selected_place_position ?? "No official finishing position"}</dd></div><div><dt className="text-muted-foreground">Official result</dt><dd>{outcome.result_summary ?? fixture.result_summary ?? "Recorded"}</dd></div></> : null}
-                          </dl>
-                        )}
+                        <dl className="mt-3 grid gap-2 text-sm">
+                          <div><dt className="text-muted-foreground">Winner</dt><dd>{winner ? `${winner.saddle_number}. ${winner.horse_name}` : "No selection"}</dd></div>
+                          <div><dt className="text-muted-foreground">Best place</dt><dd>{place ? `${place.saddle_number}. ${place.horse_name}` : "No selection"}</dd></div>
+                          <div><dt className="text-muted-foreground">Comments</dt><dd>{selection?.comments || "No comments"}</dd></div>
+                          {outcome ? <><div><dt className="text-muted-foreground">Winner outcome</dt><dd>{outcome.selected_winner_position == null ? "No winner selection graded" : outcome.winner_hit ? `Correct — finished 1st` : `Missed — finished ${outcome.selected_winner_position}`}</dd></div><div><dt className="text-muted-foreground">Best-place finish</dt><dd>{outcome.selected_place_position ?? "No official finishing position"}</dd></div><div><dt className="text-muted-foreground">Official result</dt><dd>{outcome.result_summary ?? fixture.result_summary ?? "Recorded"}</dd></div></> : null}
+                        </dl>
                       </div>
                     );
                   })}
                 </div>
-                <div>
+                <div className="relative z-10">
                   <h3 className="font-heading text-xl text-white">Exotic&apos;s and Multiples</h3>
                   <div className="mt-3 grid gap-3 lg:grid-cols-2">
                     {cardMultiples.map((multiple) => {
@@ -1111,6 +1250,73 @@ export function ClientDashboardClient() {
           </Table>
         </CardContent>
       </Card>
+
+      <Dialog
+        open={termsDialogOpen}
+        onOpenChange={(open) => {
+          if (processingId !== `access:${pendingCardId}`) {
+            setTermsDialogOpen(open);
+          }
+        }}
+      >
+        <DialogContent className="sm:max-w-lg">
+          <DialogHeader>
+            <DialogTitle>Accept the premium-content licence</DialogTitle>
+            <DialogDescription>
+              Meeting-card selections are licensed for your personal, non-transferable use.
+              Each opening receives a visible trace code linked to your account-access record.
+            </DialogDescription>
+          </DialogHeader>
+          <div className="space-y-3 text-sm text-muted-foreground">
+            <p>
+              You may not share screenshots, copy, republish, resell, or provide another
+              person access to paid selections. This does not prevent ordinary personal use
+              of the card from your own account.
+            </p>
+            <p>
+              Read the <Link href="/terms/" className="text-brand-cyan underline">terms</Link>{" "}
+              and <Link href="/privacy/" className="text-brand-cyan underline">privacy policy</Link>{" "}
+              for the licence, audit, and personal-information details.
+            </p>
+            <label className="flex items-start gap-3 rounded-lg border p-3 text-foreground">
+              <input
+                type="checkbox"
+                className="mt-1 accent-primary"
+                checked={termsConfirmed}
+                onChange={(event) => setTermsConfirmed(event.target.checked)}
+              />
+              I accept the current premium-content terms and understand that this view will
+              be watermarked and logged for security.
+            </label>
+          </div>
+          <DialogFooter>
+            <Button
+              type="button"
+              variant="outline"
+              disabled={processingId === `access:${pendingCardId}`}
+              onClick={() => {
+                setTermsDialogOpen(false);
+                setPendingCardId("");
+                setTermsConfirmed(false);
+              }}
+            >
+              Cancel
+            </Button>
+            <Button
+              type="button"
+              disabled={!termsConfirmed || processingId === `access:${pendingCardId}`}
+              onClick={() => void openPremiumCard(pendingCardId, true)}
+            >
+              {processingId === `access:${pendingCardId}` ? (
+                <Loader2 className="size-4 animate-spin" />
+              ) : (
+                <ShieldCheck className="size-4" />
+              )}
+              Accept and open card
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }

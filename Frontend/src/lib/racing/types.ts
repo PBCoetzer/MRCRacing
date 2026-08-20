@@ -147,7 +147,9 @@ export type CreditPackage = {
   id: string;
   name: string;
   credits: number;
+  reward_credits: number;
   price_cents: number;
+  promotion_label: string | null;
   is_active: boolean;
   sort_order: number;
 };

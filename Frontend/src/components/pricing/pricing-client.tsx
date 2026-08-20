@@ -9,10 +9,15 @@ import {
   Building2,
   CheckCircle2,
   CreditCard,
+  Gift,
   Loader2,
   LockKeyhole,
+  Minus,
+  Plus,
+  ShoppingCart,
   Store,
   Ticket,
+  Trash2,
   WalletCards,
 } from "lucide-react";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
@@ -35,6 +40,26 @@ type CheckoutResponse = {
   fields: Record<string, string>;
   paymentId: string;
 };
+
+type CartState = Record<string, number>;
+
+const cartStorageKey = "mrc-credit-cart-v1";
+
+function parseStoredCart(value: string): CartState {
+  const parsed = JSON.parse(value) as unknown;
+
+  if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) {
+    return {};
+  }
+
+  return Object.fromEntries(
+    Object.entries(parsed).filter((entry): entry is [string, number] => {
+      const [packageId, quantity] = entry;
+      return packageId.length <= 80 && Number.isInteger(quantity) &&
+        Number(quantity) >= 1 && Number(quantity) <= 20;
+    }),
+  );
+}
 
 const paymentsEnabled =
   process.env.NEXT_PUBLIC_PAYMENTS_ENABLED?.toLowerCase() === "true";
@@ -71,6 +96,8 @@ export function PricingClient() {
   const [loading, setLoading] = useState(true);
   const [processing, setProcessing] = useState("");
   const [error, setError] = useState("");
+  const [cart, setCart] = useState<CartState>({});
+  const [cartLoaded, setCartLoaded] = useState(false);
 
   useEffect(() => {
     let isActive = true;
@@ -86,7 +113,7 @@ export function PricingClient() {
 
       const { data, error: packageError } = await supabase
         .from("credit_packages")
-        .select("id,name,credits,price_cents,is_active,sort_order")
+        .select("id,name,credits,reward_credits,price_cents,promotion_label,is_active,sort_order")
         .eq("is_active", true)
         .order("sort_order");
 
@@ -109,10 +136,67 @@ export function PricingClient() {
     };
   }, []);
 
-  async function startCheckout(
-    creditPackage: CreditPackage,
-    provider: Provider,
-  ) {
+  useEffect(() => {
+    const timeoutId = window.setTimeout(() => {
+      try {
+        const storedCart = window.localStorage.getItem(cartStorageKey);
+        if (storedCart) {
+          setCart(parseStoredCart(storedCart));
+        }
+      } catch {
+        window.localStorage.removeItem(cartStorageKey);
+      } finally {
+        setCartLoaded(true);
+      }
+    }, 0);
+
+    return () => window.clearTimeout(timeoutId);
+  }, []);
+
+  useEffect(() => {
+    if (!cartLoaded) {
+      return;
+    }
+
+    window.localStorage.setItem(cartStorageKey, JSON.stringify(cart));
+  }, [cart, cartLoaded]);
+
+  function setCartQuantity(packageId: string, quantity: number) {
+    setCart((current) => {
+      if (quantity <= 0) {
+        const next = { ...current };
+        delete next[packageId];
+        return next;
+      }
+
+      return { ...current, [packageId]: Math.min(20, quantity) };
+    });
+  }
+
+  const cartItems = packages
+    .filter((creditPackage) => (cart[creditPackage.id] ?? 0) > 0)
+    .map((creditPackage) => ({
+      creditPackage,
+      quantity: cart[creditPackage.id] ?? 0,
+    }));
+  const cartPackageQuantity = cartItems.reduce(
+    (total, item) => total + item.quantity,
+    0,
+  );
+  const cartPriceCents = cartItems.reduce(
+    (total, item) => total + item.creditPackage.price_cents * item.quantity,
+    0,
+  );
+  const cartPurchasedCredits = cartItems.reduce(
+    (total, item) => total + item.creditPackage.credits * item.quantity,
+    0,
+  );
+  const cartRewardCredits = cartItems.reduce(
+    (total, item) => total + item.creditPackage.reward_credits * item.quantity,
+    0,
+  );
+
+  async function startCheckout(provider: Provider) {
     const supabase = createClient();
 
     if (!supabase) {
@@ -128,7 +212,12 @@ export function PricingClient() {
     }
 
     setError("");
-    setProcessing(`${creditPackage.id}:${provider}`);
+    if (!cartItems.length) {
+      setError("Add at least one Credit package to your basket.");
+      return;
+    }
+
+    setProcessing(provider);
 
     try {
       const {
@@ -136,7 +225,7 @@ export function PricingClient() {
       } = await supabase.auth.getUser();
 
       if (!user) {
-        const next = `/pricing/?package=${creditPackage.id}&provider=${provider}`;
+        const next = "/pricing/#checkout";
         router.push(`/login/?next=${encodeURIComponent(next)}`);
         return;
       }
@@ -145,7 +234,10 @@ export function PricingClient() {
         "create-credit-checkout",
         {
           body: {
-            packageId: creditPackage.id,
+            items: cartItems.map((item) => ({
+              packageId: item.creditPackage.id,
+              quantity: item.quantity,
+            })),
             provider,
           },
           headers: {
@@ -237,7 +329,8 @@ export function PricingClient() {
         <div className="mb-7">
           <h2 className="font-heading text-3xl text-white">Credit packages</h2>
           <p className="mt-2 text-muted-foreground">
-            Every package keeps the same transparent one-to-one value.
+            Purchased Credits remain R1 each. Larger packages may include separate
+            promotional Reward Credits configured by MRC administration.
           </p>
         </div>
 
@@ -255,47 +348,41 @@ export function PricingClient() {
                 <CardHeader>
                   <CardDescription>Credit package</CardDescription>
                   <CardTitle className="font-heading text-2xl">
-                    {creditPackage.credits.toLocaleString("en-ZA")} Credits
+                    {creditPackage.credits.toLocaleString("en-ZA")} Purchased Credits
                   </CardTitle>
+                  {creditPackage.reward_credits > 0 ? (
+                    <Badge className="w-fit bg-brand-cyan text-brand-purple-deep">
+                      <Gift className="size-3" />
+                      +{creditPackage.reward_credits.toLocaleString("en-ZA")} Reward Credits
+                    </Badge>
+                  ) : null}
                 </CardHeader>
                 <CardContent className="flex flex-1 flex-col">
                   <p className="font-mono text-3xl font-bold">
                     {formatRand(creditPackage.price_cents)}
                   </p>
                   <p className="mt-1 text-sm text-muted-foreground">
-                    R1 per Credit
+                    R1 per purchased Credit
                   </p>
-                  <div className="mt-auto grid gap-2 pt-6">
+                  {creditPackage.promotion_label ? (
+                    <p className="mt-3 text-sm font-medium text-brand-cyan">
+                      {creditPackage.promotion_label}
+                    </p>
+                  ) : null}
+                  <div className="mt-auto pt-6">
                     <Button
+                      className="w-full"
                       type="button"
-                      disabled={
-                        !paymentsEnabled ||
-                        processing === `${creditPackage.id}:payfast`
+                      disabled={!paymentsEnabled}
+                      onClick={() =>
+                        setCartQuantity(
+                          creditPackage.id,
+                          (cart[creditPackage.id] ?? 0) + 1,
+                        )
                       }
-                      onClick={() => void startCheckout(creditPackage, "payfast")}
                     >
-                      {processing === `${creditPackage.id}:payfast` ? (
-                        <Loader2 className="size-4 animate-spin" />
-                      ) : (
-                        <CreditCard className="size-4" />
-                      )}
-                      PayFast
-                    </Button>
-                    <Button
-                      type="button"
-                      variant="outline"
-                      disabled={
-                        !paymentsEnabled ||
-                        processing === `${creditPackage.id}:ozow`
-                      }
-                      onClick={() => void startCheckout(creditPackage, "ozow")}
-                    >
-                      {processing === `${creditPackage.id}:ozow` ? (
-                        <Loader2 className="size-4 animate-spin" />
-                      ) : (
-                        <Building2 className="size-4" />
-                      )}
-                      Ozow
+                      <ShoppingCart className="size-4" />
+                      Add to basket
                     </Button>
                   </div>
                 </CardContent>
@@ -303,6 +390,121 @@ export function PricingClient() {
             ))}
           </div>
         )}
+
+        <Card id="checkout" className="mt-8 scroll-mt-24 border-brand-gold/40">
+          <CardHeader>
+            <div className="flex flex-wrap items-start justify-between gap-3">
+              <div>
+                <CardTitle className="flex items-center gap-2">
+                  <ShoppingCart className="size-5 text-brand-gold" />
+                  Your Credit basket
+                </CardTitle>
+                <CardDescription>
+                  Stack packages, then choose one payment provider for the complete order.
+                </CardDescription>
+              </div>
+              <Badge variant="outline">
+                {cartPackageQuantity} {cartPackageQuantity === 1 ? "package" : "packages"}
+              </Badge>
+            </div>
+          </CardHeader>
+          <CardContent className="space-y-5">
+            {cartItems.length ? (
+              <div className="space-y-3">
+                {cartItems.map(({ creditPackage, quantity }) => (
+                  <div
+                    key={creditPackage.id}
+                    className="flex flex-col gap-3 rounded-lg border bg-background/45 p-4 sm:flex-row sm:items-center sm:justify-between"
+                  >
+                    <div>
+                      <p className="font-semibold">{creditPackage.name}</p>
+                      <p className="text-sm text-muted-foreground">
+                        {creditPackage.credits.toLocaleString("en-ZA")} purchased
+                        {creditPackage.reward_credits
+                          ? ` + ${creditPackage.reward_credits.toLocaleString("en-ZA")} Reward Credits`
+                          : ""}
+                        {` · ${formatRand(creditPackage.price_cents)} each`}
+                      </p>
+                    </div>
+                    <div className="flex items-center gap-2">
+                      <Button
+                        type="button"
+                        size="icon-sm"
+                        variant="outline"
+                        aria-label={`Reduce ${creditPackage.name} quantity`}
+                        onClick={() => setCartQuantity(creditPackage.id, quantity - 1)}
+                      >
+                        <Minus className="size-4" />
+                      </Button>
+                      <span className="min-w-8 text-center font-mono font-bold">{quantity}</span>
+                      <Button
+                        type="button"
+                        size="icon-sm"
+                        variant="outline"
+                        aria-label={`Increase ${creditPackage.name} quantity`}
+                        onClick={() => setCartQuantity(creditPackage.id, quantity + 1)}
+                      >
+                        <Plus className="size-4" />
+                      </Button>
+                      <Button
+                        type="button"
+                        size="icon-sm"
+                        variant="ghost"
+                        aria-label={`Remove ${creditPackage.name} from basket`}
+                        onClick={() => setCartQuantity(creditPackage.id, 0)}
+                      >
+                        <Trash2 className="size-4" />
+                      </Button>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            ) : (
+              <div className="rounded-lg border border-dashed p-6 text-center text-sm text-muted-foreground">
+                Your basket is empty. Add one or more Credit packages above.
+              </div>
+            )}
+
+            <div className="grid gap-4 rounded-lg border border-brand-cyan/25 bg-brand-cyan/5 p-4 sm:grid-cols-3">
+              <div>
+                <p className="text-xs uppercase tracking-wide text-muted-foreground">Purchased</p>
+                <p className="font-mono text-xl font-bold">{cartPurchasedCredits.toLocaleString("en-ZA")}</p>
+              </div>
+              <div>
+                <p className="text-xs uppercase tracking-wide text-muted-foreground">Reward bonus</p>
+                <p className="font-mono text-xl font-bold text-brand-cyan">+{cartRewardCredits.toLocaleString("en-ZA")}</p>
+              </div>
+              <div>
+                <p className="text-xs uppercase tracking-wide text-muted-foreground">Order total</p>
+                <p className="font-mono text-xl font-bold">{formatRand(cartPriceCents)}</p>
+              </div>
+            </div>
+
+            <div className="grid gap-3 sm:grid-cols-2">
+              <Button
+                type="button"
+                disabled={!paymentsEnabled || !cartItems.length || Boolean(processing)}
+                onClick={() => void startCheckout("payfast")}
+              >
+                {processing === "payfast" ? <Loader2 className="size-4 animate-spin" /> : <CreditCard className="size-4" />}
+                Checkout with PayFast
+              </Button>
+              <Button
+                type="button"
+                variant="outline"
+                disabled={!paymentsEnabled || !cartItems.length || Boolean(processing)}
+                onClick={() => void startCheckout("ozow")}
+              >
+                {processing === "ozow" ? <Loader2 className="size-4 animate-spin" /> : <Building2 className="size-4" />}
+                Checkout with Ozow
+              </Button>
+            </div>
+            <p className="text-xs text-muted-foreground">
+              Reward Credits are promotional and are kept separate from purchased Credits.
+              They do not create tipster earnings or ECHCU contribution accrual.
+            </p>
+          </CardContent>
+        </Card>
 
         <div className="mt-10 grid gap-4 md:grid-cols-3">
           {[
