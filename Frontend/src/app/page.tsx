@@ -6,7 +6,6 @@ import {
   BadgeCheck,
   CalendarDays,
   ChevronRight,
-  CircleDollarSign,
   ExternalLink,
   LockKeyhole,
   Sparkles,
@@ -14,6 +13,7 @@ import {
   Users,
   Wallet,
 } from "lucide-react";
+import { HomeCreditPackages } from "@/components/pricing/home-credit-packages";
 import { UpcomingMeetingBoard } from "@/components/racing/race-data-board";
 import { SiteFooter } from "@/components/site-footer";
 import { SiteHeader } from "@/components/site-header";
@@ -26,7 +26,7 @@ import {
   CardHeader,
   CardTitle,
 } from "@/components/ui/card";
-import { affiliatePartners, creditPackages } from "@/lib/mock-data";
+import { affiliatePartners } from "@/lib/mock-data";
 import { publicMetadata } from "@/lib/metadata";
 
 export const metadata: Metadata = publicMetadata({
@@ -245,25 +245,7 @@ export default function Home() {
               <Link href="/pricing/">View checkout options</Link>
             </Button>
           </div>
-          <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-5">
-            {creditPackages.map((pack) => (
-              <Card key={pack.name}>
-                <CardHeader>
-                  <CardTitle>{pack.name}</CardTitle>
-                  <CardDescription>{pack.value}</CardDescription>
-                </CardHeader>
-                <CardContent>
-                  <p className="font-mono text-3xl font-bold">{pack.price}</p>
-                  <Button asChild className="mt-5 w-full">
-                    <Link href="/pricing/">
-                      <CircleDollarSign className="size-4" />
-                      View package
-                    </Link>
-                  </Button>
-                </CardContent>
-              </Card>
-            ))}
-          </div>
+          <HomeCreditPackages />
         </section>
 
         <section className="mx-auto w-full max-w-7xl px-4 pb-12 sm:px-6 lg:px-8">

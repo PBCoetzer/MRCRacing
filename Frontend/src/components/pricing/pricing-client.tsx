@@ -9,7 +9,6 @@ import {
   Building2,
   CheckCircle2,
   CreditCard,
-  Gift,
   Loader2,
   LockKeyhole,
   Minus,
@@ -20,6 +19,10 @@ import {
   Trash2,
   WalletCards,
 } from "lucide-react";
+import {
+  CreditPackageCatalog,
+  useActiveCreditPackages,
+} from "@/components/pricing/credit-package-catalog";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -30,7 +33,13 @@ import {
   CardHeader,
   CardTitle,
 } from "@/components/ui/card";
-import type { CreditPackage } from "@/lib/racing/types";
+import {
+  creditCartStorageKey,
+  formatRand,
+  parseCreditCart,
+  paymentsEnabled,
+  type CreditCartState,
+} from "@/lib/credit-commerce";
 import { createClient } from "@/lib/supabase/client";
 
 type Provider = "payfast" | "ozow";
@@ -40,37 +49,6 @@ type CheckoutResponse = {
   fields: Record<string, string>;
   paymentId: string;
 };
-
-type CartState = Record<string, number>;
-
-const cartStorageKey = "mrc-credit-cart-v1";
-
-function parseStoredCart(value: string): CartState {
-  const parsed = JSON.parse(value) as unknown;
-
-  if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) {
-    return {};
-  }
-
-  return Object.fromEntries(
-    Object.entries(parsed).filter((entry): entry is [string, number] => {
-      const [packageId, quantity] = entry;
-      return packageId.length <= 80 && Number.isInteger(quantity) &&
-        Number(quantity) >= 1 && Number(quantity) <= 20;
-    }),
-  );
-}
-
-const paymentsEnabled =
-  process.env.NEXT_PUBLIC_PAYMENTS_ENABLED?.toLowerCase() === "true";
-
-function formatRand(cents: number) {
-  return new Intl.NumberFormat("en-ZA", {
-    style: "currency",
-    currency: "ZAR",
-    maximumFractionDigits: 0,
-  }).format(cents / 100);
-}
 
 function submitProviderForm(actionUrl: string, fields: Record<string, string>) {
   const form = document.createElement("form");
@@ -92,59 +70,21 @@ function submitProviderForm(actionUrl: string, fields: Record<string, string>) {
 
 export function PricingClient() {
   const router = useRouter();
-  const [packages, setPackages] = useState<CreditPackage[]>([]);
-  const [loading, setLoading] = useState(true);
+  const { packages, loading, error: packageError } = useActiveCreditPackages();
   const [processing, setProcessing] = useState("");
   const [error, setError] = useState("");
-  const [cart, setCart] = useState<CartState>({});
+  const [cart, setCart] = useState<CreditCartState>({});
   const [cartLoaded, setCartLoaded] = useState(false);
-
-  useEffect(() => {
-    let isActive = true;
-
-    async function loadPackages() {
-      const supabase = createClient();
-
-      if (!supabase) {
-        setLoading(false);
-        setError("The Credit package database is not configured for this build.");
-        return;
-      }
-
-      const { data, error: packageError } = await supabase
-        .from("credit_packages")
-        .select("id,name,credits,reward_credits,price_cents,promotion_label,is_active,sort_order")
-        .eq("is_active", true)
-        .order("sort_order");
-
-      if (!isActive) {
-        return;
-      }
-
-      setPackages((data ?? []) as CreditPackage[]);
-      setError(packageError?.message ?? "");
-      setLoading(false);
-    }
-
-    const timeoutId = window.setTimeout(() => {
-      void loadPackages();
-    }, 0);
-
-    return () => {
-      isActive = false;
-      window.clearTimeout(timeoutId);
-    };
-  }, []);
 
   useEffect(() => {
     const timeoutId = window.setTimeout(() => {
       try {
-        const storedCart = window.localStorage.getItem(cartStorageKey);
+        const storedCart = window.localStorage.getItem(creditCartStorageKey);
         if (storedCart) {
-          setCart(parseStoredCart(storedCart));
+          setCart(parseCreditCart(storedCart));
         }
       } catch {
-        window.localStorage.removeItem(cartStorageKey);
+        window.localStorage.removeItem(creditCartStorageKey);
       } finally {
         setCartLoaded(true);
       }
@@ -158,7 +98,7 @@ export function PricingClient() {
       return;
     }
 
-    window.localStorage.setItem(cartStorageKey, JSON.stringify(cart));
+    window.localStorage.setItem(creditCartStorageKey, JSON.stringify(cart));
   }, [cart, cartLoaded]);
 
   function setCartQuantity(packageId: string, quantity: number) {
@@ -318,11 +258,11 @@ export function PricingClient() {
             </AlertDescription>
           </Alert>
         ) : null}
-        {error ? (
+        {error || packageError ? (
           <Alert variant="destructive" className="mb-8">
             <AlertTriangle className="size-4" />
             <AlertTitle>Checkout unavailable</AlertTitle>
-            <AlertDescription>{error}</AlertDescription>
+            <AlertDescription>{error || packageError}</AlertDescription>
           </Alert>
         ) : null}
 
@@ -334,62 +274,16 @@ export function PricingClient() {
           </p>
         </div>
 
-        {loading ? (
-          <Card>
-            <CardContent className="flex min-h-44 items-center justify-center gap-2">
-              <Loader2 className="size-5 animate-spin text-primary" />
-              Loading Credit packages…
-            </CardContent>
-          </Card>
-        ) : (
-          <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-5">
-            {packages.map((creditPackage) => (
-              <Card key={creditPackage.id} className="flex flex-col">
-                <CardHeader>
-                  <CardDescription>Credit package</CardDescription>
-                  <CardTitle className="font-heading text-2xl">
-                    {creditPackage.credits.toLocaleString("en-ZA")} Purchased Credits
-                  </CardTitle>
-                  {creditPackage.reward_credits > 0 ? (
-                    <Badge className="w-fit bg-brand-cyan text-brand-purple-deep">
-                      <Gift className="size-3" />
-                      +{creditPackage.reward_credits.toLocaleString("en-ZA")} Reward Credits
-                    </Badge>
-                  ) : null}
-                </CardHeader>
-                <CardContent className="flex flex-1 flex-col">
-                  <p className="font-mono text-3xl font-bold">
-                    {formatRand(creditPackage.price_cents)}
-                  </p>
-                  <p className="mt-1 text-sm text-muted-foreground">
-                    R1 per purchased Credit
-                  </p>
-                  {creditPackage.promotion_label ? (
-                    <p className="mt-3 text-sm font-medium text-brand-cyan">
-                      {creditPackage.promotion_label}
-                    </p>
-                  ) : null}
-                  <div className="mt-auto pt-6">
-                    <Button
-                      className="w-full"
-                      type="button"
-                      disabled={!paymentsEnabled}
-                      onClick={() =>
-                        setCartQuantity(
-                          creditPackage.id,
-                          (cart[creditPackage.id] ?? 0) + 1,
-                        )
-                      }
-                    >
-                      <ShoppingCart className="size-4" />
-                      Add to basket
-                    </Button>
-                  </div>
-                </CardContent>
-              </Card>
-            ))}
-          </div>
-        )}
+        <CreditPackageCatalog
+          packages={packages}
+          loading={loading}
+          onAdd={(creditPackage) =>
+            setCartQuantity(
+              creditPackage.id,
+              (cart[creditPackage.id] ?? 0) + 1,
+            )
+          }
+        />
 
         <Card id="checkout" className="mt-8 scroll-mt-24 border-brand-gold/40">
           <CardHeader>

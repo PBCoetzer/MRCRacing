@@ -1,11 +1,3 @@
-export const creditPackages = [
-  { name: "50 Credits", credits: 50, price: "R50", value: "R1 = 1 Credit" },
-  { name: "100 Credits", credits: 100, price: "R100", value: "R1 = 1 Credit" },
-  { name: "250 Credits", credits: 250, price: "R250", value: "R1 = 1 Credit" },
-  { name: "500 Credits", credits: 500, price: "R500", value: "R1 = 1 Credit" },
-  { name: "1,000 Credits", credits: 1000, price: "R1,000", value: "R1 = 1 Credit" },
-];
-
 export const adminMetrics = [
   { label: "Active users", value: "1,284", change: "+12%" },
   { label: "Credits issued", value: "48,920", change: "+8%" },
