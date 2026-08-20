@@ -146,6 +146,7 @@ export function ClientDashboardClient() {
   const [pendingCardId, setPendingCardId] = useState("");
   const [termsDialogOpen, setTermsDialogOpen] = useState(false);
   const [termsConfirmed, setTermsConfirmed] = useState(false);
+  const [termsDialogError, setTermsDialogError] = useState("");
   const [acceptedTermsVersion, setAcceptedTermsVersion] = useState("");
   const [profileDisplayName, setProfileDisplayName] = useState("MRC Client");
   const [cardAccessLicenses, setCardAccessLicenses] = useState<Record<string, CardAccessLicense>>({});
@@ -604,6 +605,7 @@ export function ClientDashboardClient() {
     if (acceptedTermsVersion !== premiumTermsVersion && !acceptCurrentTerms) {
       setPendingCardId(tipCardId);
       setTermsConfirmed(false);
+      setTermsDialogError("");
       setTermsDialogOpen(true);
       return;
     }
@@ -653,8 +655,17 @@ export function ClientDashboardClient() {
       setTermsDialogOpen(false);
       setPendingCardId("");
       setTermsConfirmed(false);
+      setTermsDialogError("");
     } catch (accessError) {
-      setError(messageFrom(accessError, "The meeting card could not be opened securely."));
+      const accessMessage = messageFrom(
+        accessError,
+        "The meeting card could not be opened securely.",
+      );
+      if (acceptCurrentTerms) {
+        setTermsDialogError(accessMessage);
+      } else {
+        setError(accessMessage);
+      }
     } finally {
       setProcessingId("");
     }
@@ -1283,11 +1294,21 @@ export function ClientDashboardClient() {
                 type="checkbox"
                 className="mt-1 accent-primary"
                 checked={termsConfirmed}
-                onChange={(event) => setTermsConfirmed(event.target.checked)}
+                onChange={(event) => {
+                  setTermsConfirmed(event.target.checked);
+                  setTermsDialogError("");
+                }}
               />
-              I accept the current premium-content terms and understand that this view will
-              be watermarked and logged for security.
+              I accept the current Terms, including the personal premium-content licence,
+              and understand that this view will be watermarked and logged for security.
             </label>
+            {termsDialogError ? (
+              <Alert variant="destructive">
+                <AlertTriangle className="size-4" />
+                <AlertTitle>Card could not be opened</AlertTitle>
+                <AlertDescription>{termsDialogError}</AlertDescription>
+              </Alert>
+            ) : null}
           </div>
           <DialogFooter>
             <Button
@@ -1298,14 +1319,23 @@ export function ClientDashboardClient() {
                 setTermsDialogOpen(false);
                 setPendingCardId("");
                 setTermsConfirmed(false);
+                setTermsDialogError("");
               }}
             >
               Cancel
             </Button>
             <Button
               type="button"
-              disabled={!termsConfirmed || processingId === `access:${pendingCardId}`}
-              onClick={() => void openPremiumCard(pendingCardId, true)}
+              disabled={processingId === `access:${pendingCardId}`}
+              onClick={() => {
+                if (!termsConfirmed) {
+                  setTermsDialogError(
+                    "Tick the acceptance box before opening the meeting card.",
+                  );
+                  return;
+                }
+                void openPremiumCard(pendingCardId, true);
+              }}
             >
               {processingId === `access:${pendingCardId}` ? (
                 <Loader2 className="size-4 animate-spin" />
