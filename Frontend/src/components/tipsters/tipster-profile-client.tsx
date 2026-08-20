@@ -22,6 +22,10 @@ import {
   CardHeader,
   CardTitle,
 } from "@/components/ui/card";
+import {
+  PurchaseConfirmationDialog,
+  type PurchaseConfirmation,
+} from "@/components/purchases/purchase-confirmation-dialog";
 import { formatCredits, formatRaceDateTime } from "@/lib/racing/format";
 import { meetingCardSalesOpen } from "@/lib/racing/availability";
 import type {
@@ -46,6 +50,9 @@ export function TipsterProfileClient() {
   const [meetings, setMeetings] = useState<RaceMeeting[]>([]);
   const [userId, setUserId] = useState("");
   const [favourite, setFavourite] = useState(false);
+  const [ownedCardIds, setOwnedCardIds] = useState<string[]>([]);
+  const [activeSubscriptionEndsAt, setActiveSubscriptionEndsAt] = useState<string | null>(null);
+  const [pendingPurchase, setPendingPurchase] = useState<PurchaseConfirmation | null>(null);
 
   const loadProfile = useCallback(async () => {
     const searchParams = new URLSearchParams(window.location.search);
@@ -83,7 +90,14 @@ export function TipsterProfileClient() {
     const {
       data: { user },
     } = await supabase.auth.getUser();
-    const [statsResult, packageResult, cardResult, favouriteResult] =
+    const [
+      statsResult,
+      packageResult,
+      cardResult,
+      favouriteResult,
+      purchaseResult,
+      subscriptionResult,
+    ] =
       await Promise.all([
         supabase
           .from("tipster_performance_stats")
@@ -116,12 +130,32 @@ export function TipsterProfileClient() {
               .eq("tipster_id", resolvedTipsterId)
               .maybeSingle()
           : Promise.resolve({ data: null, error: null }),
+        user
+          ? supabase
+              .from("content_purchases")
+              .select("tip_card_id,status")
+              .eq("user_id", user.id)
+              .eq("purchase_type", "meeting")
+              .in("status", ["active", "disputed"])
+          : Promise.resolve({ data: [], error: null }),
+        user
+          ? supabase
+              .from("tipster_subscriptions")
+              .select("ends_at,status")
+              .eq("user_id", user.id)
+              .eq("tipster_id", resolvedTipsterId)
+              .eq("status", "active")
+              .gt("ends_at", new Date().toISOString())
+              .order("ends_at", { ascending: false })
+          : Promise.resolve({ data: [], error: null }),
       ]);
     const firstError =
       statsResult.error ??
       packageResult.error ??
       cardResult.error ??
-      favouriteResult.error;
+      favouriteResult.error ??
+      purchaseResult.error ??
+      subscriptionResult.error;
     const loadedCards = (cardResult.data ?? []) as TipCard[];
     let loadedMeetings: RaceMeeting[] = [];
     let loadError = firstError?.message ?? "";
@@ -150,6 +184,12 @@ export function TipsterProfileClient() {
     setCards(loadedCards);
     setMeetings(loadedMeetings);
     setFavourite(Boolean(favouriteResult.data));
+    setOwnedCardIds(
+      ((purchaseResult.data ?? []) as Array<{ tip_card_id: string | null }>)
+        .map((purchase) => purchase.tip_card_id)
+        .filter((cardId): cardId is string => Boolean(cardId)),
+    );
+    setActiveSubscriptionEndsAt(subscriptionResult.data?.[0]?.ends_at ?? null);
     setError(loadError);
     setLoading(false);
   }, []);
@@ -170,6 +210,7 @@ export function TipsterProfileClient() {
     const meeting = meetingById.get(card.meeting_id);
     return meetingCardSalesOpen(meeting, loadedAt);
   });
+  const ownedCardIdSet = useMemo(() => new Set(ownedCardIds), [ownedCardIds]);
 
   function requireClient(action: string) {
     if (userId) {
@@ -209,56 +250,80 @@ export function TipsterProfileClient() {
     setProcessing("");
   }
 
-  async function purchaseMeeting(card: TipCard) {
-    const supabase = createClient();
-
-    if (!supabase || !requireClient("meeting")) {
+  function requestMeetingPurchase(card: TipCard) {
+    if (!requireClient("meeting")) {
       return;
     }
 
-    setProcessing(card.id);
     setError("");
-    const { error: purchaseError } = await supabase.rpc(
-      "purchase_meeting_card",
-      {
-        p_tip_card_id: card.id,
-        p_idempotency_key: crypto.randomUUID(),
-      },
-    );
-
-    setProcessing("");
-    if (purchaseError) {
-      setError(purchaseError.message);
-    } else {
-      setMessage("The full meeting card is now available in your client dashboard.");
-    }
+    setMessage("");
+    setPendingPurchase({
+      kind: "meeting",
+      id: card.id,
+      title: card.title,
+      seller: tipster?.display_name ?? "Verified tipster",
+      credits: card.coin_price,
+      alreadyOwned: ownedCardIdSet.has(card.id),
+    });
   }
 
-  async function purchaseSubscription(tipsterPackage: TipsterPackage) {
-    const supabase = createClient();
-
-    if (!supabase || !requireClient("subscription")) {
+  function requestSubscriptionPurchase(tipsterPackage: TipsterPackage) {
+    if (!requireClient("subscription")) {
       return;
     }
 
-    setProcessing(tipsterPackage.id);
     setError("");
-    const { error: purchaseError } = await supabase.rpc(
-      "purchase_tipster_subscription",
-      {
-        p_package_id: tipsterPackage.id,
-        p_idempotency_key: crypto.randomUUID(),
-      },
-    );
+    setMessage("");
+    setPendingPurchase({
+      kind: "subscription",
+      id: tipsterPackage.id,
+      title: tipsterPackage.name,
+      seller: tipster?.display_name ?? "Verified tipster",
+      credits: tipsterPackage.coin_price,
+      durationMonths: tipsterPackage.duration_months,
+      activeUntil: activeSubscriptionEndsAt,
+    });
+  }
+
+  async function completePendingPurchase() {
+    const supabase = createClient();
+
+    if (!supabase || !pendingPurchase) {
+      return;
+    }
+
+    const purchase = pendingPurchase;
+    setProcessing(purchase.id);
+    setError("");
+    const response =
+      purchase.kind === "meeting"
+        ? await supabase.rpc("purchase_meeting_card", {
+            p_tip_card_id: purchase.id,
+            p_idempotency_key: crypto.randomUUID(),
+            p_purchase_confirmed: true,
+          })
+        : await supabase.rpc("purchase_tipster_subscription", {
+            p_package_id: purchase.id,
+            p_idempotency_key: crypto.randomUUID(),
+            p_purchase_confirmed: true,
+            p_confirm_extension: Boolean(purchase.activeUntil),
+          });
 
     setProcessing("");
-    if (purchaseError) {
-      setError(purchaseError.message);
-    } else {
-      setMessage(
-        "Your subscription starts immediately and will not auto-renew.",
-      );
+    if (response.error) {
+      setError(response.error.message);
+      return;
     }
+
+    setPendingPurchase(null);
+    setMessage(
+      purchase.kind === "meeting"
+        ? "The full meeting card is now available in your client dashboard."
+        : purchase.activeUntil
+          ? "Your subscription has been extended from its current expiry date."
+          : "Your subscription starts immediately and will not auto-renew.",
+    );
+    await loadProfile();
   }
 
   if (loading) {
@@ -383,14 +448,14 @@ export function TipsterProfileClient() {
                   <Button
                     className="mt-5"
                     disabled={processing === card.id}
-                    onClick={() => void purchaseMeeting(card)}
+                    onClick={() => requestMeetingPurchase(card)}
                   >
                     {processing === card.id ? (
                       <Loader2 className="size-4 animate-spin" />
                     ) : (
                       <CreditCard className="size-4" />
                     )}
-                    Unlock full meeting
+                    {ownedCardIdSet.has(card.id) ? "Already unlocked" : "Unlock full meeting"}
                   </Button>
                 </CardContent>
               </Card>
@@ -430,14 +495,14 @@ export function TipsterProfileClient() {
                 <Button
                   className="w-full"
                   disabled={processing === tipsterPackage.id}
-                  onClick={() => void purchaseSubscription(tipsterPackage)}
+                  onClick={() => requestSubscriptionPurchase(tipsterPackage)}
                 >
                   {processing === tipsterPackage.id ? (
                     <Loader2 className="size-4 animate-spin" />
                   ) : (
                     <ShieldCheck className="size-4" />
                   )}
-                  Subscribe
+                  {activeSubscriptionEndsAt ? "Extend subscription" : "Subscribe"}
                 </Button>
               </CardContent>
             </Card>
@@ -453,6 +518,17 @@ export function TipsterProfileClient() {
       <Button asChild variant="outline">
         <Link href="/tipsters/">Back to all tipsters</Link>
       </Button>
+
+      <PurchaseConfirmationDialog
+        request={pendingPurchase}
+        busy={Boolean(pendingPurchase && processing === pendingPurchase.id)}
+        onOpenChange={(open) => {
+          if (!open && !processing) {
+            setPendingPurchase(null);
+          }
+        }}
+        onConfirm={() => void completePendingPurchase()}
+      />
     </main>
   );
 }

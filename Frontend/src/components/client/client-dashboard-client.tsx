@@ -23,6 +23,10 @@ import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import {
+  PurchaseConfirmationDialog,
+  type PurchaseConfirmation,
+} from "@/components/purchases/purchase-confirmation-dialog";
+import {
   Dialog,
   DialogContent,
   DialogDescription,
@@ -147,6 +151,7 @@ export function ClientDashboardClient() {
   const [termsDialogOpen, setTermsDialogOpen] = useState(false);
   const [termsConfirmed, setTermsConfirmed] = useState(false);
   const [termsDialogError, setTermsDialogError] = useState("");
+  const [pendingPurchase, setPendingPurchase] = useState<PurchaseConfirmation | null>(null);
   const [acceptedTermsVersion, setAcceptedTermsVersion] = useState("");
   const [profileDisplayName, setProfileDisplayName] = useState("MRC Client");
   const [cardAccessLicenses, setCardAccessLicenses] = useState<Record<string, CardAccessLicense>>({});
@@ -474,6 +479,7 @@ export function ClientDashboardClient() {
       const { error: purchaseError } = await supabase.rpc("purchase_meeting_card", {
         p_tip_card_id: tipCard.id,
         p_idempotency_key: crypto.randomUUID(),
+        p_purchase_confirmed: true,
       });
 
       if (purchaseError) {
@@ -481,6 +487,7 @@ export function ClientDashboardClient() {
       }
 
       setMessage(`The complete ${tipCard.title} card is now linked to your account.`);
+      setPendingPurchase(null);
       await loadDashboard();
     } catch (purchaseError) {
       setError(messageFrom(purchaseError, "The meeting card could not be purchased."));
@@ -1169,7 +1176,16 @@ export function ClientDashboardClient() {
                     <Button
                       disabled={processingId === tipCard.id}
                       type="button"
-                      onClick={() => void purchaseMeeting(tipCard)}
+                      onClick={() =>
+                        setPendingPurchase({
+                          kind: "meeting",
+                          id: tipCard.id,
+                          title: tipCard.title,
+                          seller: tipster?.display_name ?? "Verified tipster",
+                          credits: tipCard.coin_price,
+                          alreadyOwned: entitlementIds.has(tipCard.id),
+                        })
+                      }
                     >
                       {processingId === tipCard.id ? (
                         <Loader2 className="size-4 animate-spin" />
@@ -1261,6 +1277,24 @@ export function ClientDashboardClient() {
           </Table>
         </CardContent>
       </Card>
+
+      <PurchaseConfirmationDialog
+        request={pendingPurchase}
+        busy={Boolean(pendingPurchase && processingId === pendingPurchase.id)}
+        onOpenChange={(open) => {
+          if (!open && !processingId) {
+            setPendingPurchase(null);
+          }
+        }}
+        onConfirm={() => {
+          if (pendingPurchase?.kind === "meeting") {
+            const card = cards.find((item) => item.id === pendingPurchase.id);
+            if (card) {
+              void purchaseMeeting(card);
+            }
+          }
+        }}
+      />
 
       <Dialog
         open={termsDialogOpen}
