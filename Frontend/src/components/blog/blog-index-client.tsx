@@ -3,7 +3,7 @@
 import Image from "next/image";
 import Link from "next/link";
 import { useCallback, useEffect, useState } from "react";
-import { CalendarDays, Loader2, MessageCircle, Newspaper } from "lucide-react";
+import { CalendarDays, Loader2, MessageCircle, Newspaper, PlayCircle } from "lucide-react";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -17,6 +17,7 @@ type PublicPost = {
   title: string;
   excerpt: string;
   coverImagePath: string | null;
+  videoUrl: string | null;
   publishedAt: string;
   author: string;
   commentCount: number;
@@ -90,6 +91,7 @@ export function BlogIndexClient() {
             <div className="flex flex-wrap gap-4 text-xs text-muted-foreground">
               <span className="flex items-center gap-1"><CalendarDays className="size-3" />{formatDate(post.publishedAt)}</span>
               <span className="flex items-center gap-1"><MessageCircle className="size-3" />{post.commentCount}</span>
+              {post.videoUrl ? <span className="flex items-center gap-1 text-brand-cyan"><PlayCircle className="size-3" />Video</span> : null}
             </div>
             <Button asChild className="mt-5 bg-brand-gold text-brand-purple-deep hover:bg-brand-gold/90">
               <Link href={`/blog/post/?slug=${encodeURIComponent(post.slug)}`}>Read article</Link>

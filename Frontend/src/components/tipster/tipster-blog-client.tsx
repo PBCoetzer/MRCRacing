@@ -2,7 +2,8 @@
 
 import Image from "next/image";
 import { useCallback, useEffect, useState } from "react";
-import { Archive, FileImage, Loader2, Newspaper, Plus, Save, Send } from "lucide-react";
+import { Archive, FileImage, Loader2, Newspaper, Plus, Save, Send, Video } from "lucide-react";
+import { BlogVideo } from "@/components/blog/blog-video";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -19,13 +20,14 @@ type BlogPost = {
   excerpt: string;
   body_markdown: string;
   cover_image_path: string | null;
+  video_url: string | null;
   slug: string | null;
   status: "draft" | "published" | "hidden" | "archived";
   published_at: string | null;
   updated_at: string;
 };
 
-const emptyDraft = { title: "", excerpt: "", body: "", coverPath: "" };
+const emptyDraft = { title: "", excerpt: "", body: "", coverPath: "", videoUrl: "" };
 const supportedCoverTypes = new Set(["image/jpeg", "image/png", "image/webp"]);
 const maxSourceCoverBytes = 20 * 1024 * 1024;
 
@@ -92,7 +94,7 @@ export function TipsterBlogClient() {
     }
     const [permissionResult, postResult] = await Promise.all([
       supabase.from("tipster_blog_permissions").select("can_publish").eq("tipster_id", tipster.id).maybeSingle(),
-      supabase.from("blog_posts").select("id,title,excerpt,body_markdown,cover_image_path,slug,status,published_at,updated_at").eq("tipster_id", tipster.id).order("updated_at", { ascending: false }),
+      supabase.from("blog_posts").select("id,title,excerpt,body_markdown,cover_image_path,video_url,slug,status,published_at,updated_at").eq("tipster_id", tipster.id).order("updated_at", { ascending: false }),
     ]);
     if (permissionResult.error || postResult.error) setError(permissionResult.error?.message ?? postResult.error?.message ?? "Could not load blog workspace.");
     setTipsterId(tipster.id);
@@ -108,7 +110,7 @@ export function TipsterBlogClient() {
 
   function selectPost(post: BlogPost) {
     setSelectedId(post.id);
-    setDraft({ title: post.title, excerpt: post.excerpt, body: post.body_markdown, coverPath: post.cover_image_path ?? "" });
+    setDraft({ title: post.title, excerpt: post.excerpt, body: post.body_markdown, coverPath: post.cover_image_path ?? "", videoUrl: post.video_url ?? "" });
     setMessage(""); setError("");
   }
 
@@ -123,6 +125,7 @@ export function TipsterBlogClient() {
       p_excerpt: draft.excerpt,
       p_body_markdown: draft.body,
       p_cover_image_path: draft.coverPath || null,
+      p_video_url: draft.videoUrl || null,
     });
     if (saveError) throw saveError;
     const saved = data as BlogPost;
@@ -157,6 +160,7 @@ export function TipsterBlogClient() {
         p_excerpt: draft.excerpt,
         p_body_markdown: draft.body,
         p_cover_image_path: data.path,
+        p_video_url: draft.videoUrl || null,
       });
       if (attachError) throw attachError;
       setMessage("Cover image optimized, versioned, and attached.");
@@ -206,12 +210,21 @@ export function TipsterBlogClient() {
         </Card>
 
         <Card>
-          <CardHeader><CardTitle>{selectedId ? "Edit article" : "New article"}</CardTitle><CardDescription>Safe Markdown supports headings, paragraphs, lists, and HTTP/HTTPS links. Raw HTML and embedded media are blocked.</CardDescription></CardHeader>
+          <CardHeader><CardTitle>{selectedId ? "Edit article" : "New article"}</CardTitle><CardDescription>Safe Markdown supports headings, paragraphs, lists, and HTTP/HTTPS links. Add one approved YouTube or Vimeo video using its public link; raw HTML remains blocked.</CardDescription></CardHeader>
           <CardContent className="space-y-5">
             <div><Label htmlFor="post-title">Title</Label><Input id="post-title" maxLength={160} value={draft.title} disabled={!canPublish} onChange={(event) => setDraft((current) => ({ ...current, title: event.target.value }))} /></div>
             <div><Label htmlFor="post-excerpt">Public summary</Label><Textarea id="post-excerpt" maxLength={400} value={draft.excerpt} disabled={!canPublish} onChange={(event) => setDraft((current) => ({ ...current, excerpt: event.target.value }))} /></div>
             <div><Label htmlFor="post-body">Article (Markdown)</Label><Textarea id="post-body" maxLength={30000} className="min-h-80 font-mono" value={draft.body} disabled={!canPublish} onChange={(event) => setDraft((current) => ({ ...current, body: event.target.value }))} /></div>
+            <div>
+              <Label htmlFor="post-video">Video link (optional)</Label>
+              <div className="relative mt-2">
+                <Video className="pointer-events-none absolute left-3 top-2.5 size-4 text-muted-foreground" />
+                <Input id="post-video" type="url" inputMode="url" maxLength={500} className="pl-9" placeholder="https://www.youtube.com/watch?v=… or https://vimeo.com/…" value={draft.videoUrl} disabled={!canPublish} onChange={(event) => setDraft((current) => ({ ...current, videoUrl: event.target.value }))} />
+              </div>
+              <p className="mt-2 text-xs text-muted-foreground">Only HTTPS YouTube, YouTube Shorts, and Vimeo links are accepted.</p>
+            </div>
             {draft.coverPath ? <div className="relative aspect-[16/9] overflow-hidden rounded-lg border"><Image src={`${supabaseUrl}/storage/v1/object/public/blog-media/${draft.coverPath}`} alt="Current article cover" fill sizes="800px" className="object-cover" /></div> : null}
+            {draft.videoUrl ? <BlogVideo title={draft.title || "Article preview"} url={draft.videoUrl} /> : null}
             <div className="flex flex-wrap gap-3">
               <Button variant="outline" disabled={!canPublish || busy === "cover"}>
                 <label className="flex cursor-pointer items-center gap-2">

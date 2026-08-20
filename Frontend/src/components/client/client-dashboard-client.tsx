@@ -926,12 +926,12 @@ export function ClientDashboardClient() {
               >
                 <div
                   aria-hidden="true"
-                  className="pointer-events-none absolute inset-0 z-20 grid select-none grid-cols-2 content-around gap-16 overflow-hidden p-4 opacity-[0.075] sm:grid-cols-3"
+                  className="pointer-events-none absolute inset-0 z-20 grid select-none grid-cols-2 content-around gap-x-5 gap-y-10 overflow-hidden p-2 opacity-[0.13] sm:grid-cols-3"
                 >
-                  {Array.from({ length: 18 }, (_, index) => (
+                  {Array.from({ length: 36 }, (_, index) => (
                     <p
                       key={index}
-                      className="-rotate-12 whitespace-nowrap text-center font-mono text-xs font-bold text-white"
+                      className="-rotate-12 whitespace-nowrap text-center font-mono text-[0.82rem] font-black text-white sm:text-sm"
                     >
                       {accessLicence.displayName} · {accessLicence.accessCode}
                     </p>

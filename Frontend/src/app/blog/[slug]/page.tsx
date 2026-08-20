@@ -4,6 +4,7 @@ import Link from "next/link";
 import { notFound } from "next/navigation";
 import { Undo2 } from "lucide-react";
 import { BlogCommentsClient } from "@/components/blog/blog-comments-client";
+import { BlogVideo } from "@/components/blog/blog-video";
 import { SafeMarkdown } from "@/components/blog/safe-markdown";
 import { SiteFooter } from "@/components/site-footer";
 import { SiteHeader } from "@/components/site-header";
@@ -58,6 +59,7 @@ export default async function BlogArticlePage({ params }: PageProps) {
             <h1 className="mt-4 font-heading text-4xl leading-tight text-white sm:text-5xl">{post.title}</h1>
             <p className="mt-4 text-lg leading-8 text-muted-foreground">{post.excerpt}</p>
             <p className="mt-4 font-mono text-xs text-brand-cyan">Published {formatDate(post.publishedAt)}{post.updatedAt !== post.publishedAt ? ` · Updated ${formatDate(post.updatedAt)}` : ""}</p>
+            {post.videoUrl ? <BlogVideo title={post.title} url={post.videoUrl} className="mt-8" /> : null}
             <div className="mt-10 border-t border-border/70 pt-4"><SafeMarkdown value={post.bodyMarkdown} /></div>
           </div>
         </article>

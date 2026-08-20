@@ -1,7 +1,7 @@
 import type { Metadata } from "next";
 import Image from "next/image";
 import Link from "next/link";
-import { CalendarDays, MessageCircle, Newspaper } from "lucide-react";
+import { CalendarDays, MessageCircle, Newspaper, PlayCircle } from "lucide-react";
 import { SiteFooter } from "@/components/site-footer";
 import { SiteHeader } from "@/components/site-header";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
@@ -13,7 +13,7 @@ import { publicRpc, publicStorageUrl } from "@/lib/public-content";
 
 export const metadata: Metadata = publicMetadata({ title: "South African Horse Racing Blog", description: "Race analysis, form notes, educational articles, and stories published by approved MRC tipsters.", path: "/blog" });
 
-type PublicPost = { id: string; slug: string; title: string; excerpt: string; coverImagePath: string | null; publishedAt: string; author: string; commentCount: number };
+type PublicPost = { id: string; slug: string; title: string; excerpt: string; coverImagePath: string | null; videoUrl: string | null; publishedAt: string; author: string; commentCount: number };
 
 function formatDate(value: string) { return new Intl.DateTimeFormat("en-ZA", { dateStyle: "long", timeZone: "Africa/Johannesburg" }).format(new Date(value)); }
 
@@ -33,7 +33,7 @@ export default async function BlogPage() {
               return <Card key={post.id} className="border-brand-gold/25 bg-card/85">
                 {cover ? <div className="relative aspect-[16/9] overflow-hidden"><Image src={cover} alt={`Cover image for ${post.title}`} fill sizes="(max-width: 768px) 100vw, 33vw" className="object-cover" /></div> : null}
                 <CardHeader><Badge className="w-fit">{post.author}</Badge><CardTitle className="mt-2 text-2xl text-white">{post.title}</CardTitle><CardDescription>{post.excerpt}</CardDescription></CardHeader>
-                <CardContent><div className="flex flex-wrap gap-4 text-xs text-muted-foreground"><span className="flex items-center gap-1"><CalendarDays className="size-3" />{formatDate(post.publishedAt)}</span><span className="flex items-center gap-1"><MessageCircle className="size-3" />{post.commentCount}</span></div><Button asChild className="mt-5 bg-brand-gold text-brand-purple-deep hover:bg-brand-gold/90"><Link href={`/blog/${post.slug}/`}>Read article</Link></Button></CardContent>
+                <CardContent><div className="flex flex-wrap gap-4 text-xs text-muted-foreground"><span className="flex items-center gap-1"><CalendarDays className="size-3" />{formatDate(post.publishedAt)}</span><span className="flex items-center gap-1"><MessageCircle className="size-3" />{post.commentCount}</span>{post.videoUrl ? <span className="flex items-center gap-1 text-brand-cyan"><PlayCircle className="size-3" />Video</span> : null}</div><Button asChild className="mt-5 bg-brand-gold text-brand-purple-deep hover:bg-brand-gold/90"><Link href={`/blog/${post.slug}/`}>Read article</Link></Button></CardContent>
               </Card>;
             })}</div>
           )}

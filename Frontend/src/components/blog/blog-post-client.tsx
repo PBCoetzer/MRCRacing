@@ -6,6 +6,7 @@ import { useCallback, useEffect, useState } from "react";
 import { useSearchParams } from "next/navigation";
 import { AlertTriangle, Flag, Loader2, MessageCircle, Send, Undo2 } from "lucide-react";
 import { SafeMarkdown } from "@/components/blog/safe-markdown";
+import { BlogVideo } from "@/components/blog/blog-video";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -23,6 +24,7 @@ type PublicPost = {
   excerpt: string;
   bodyMarkdown: string;
   coverImagePath: string | null;
+  videoUrl: string | null;
   publishedAt: string;
   updatedAt: string;
   author: string;
@@ -125,6 +127,7 @@ export function BlogPostClient() {
           <h1 className="mt-4 font-heading text-4xl leading-tight text-white sm:text-5xl">{post.title}</h1>
           <p className="mt-4 text-lg leading-8 text-muted-foreground">{post.excerpt}</p>
           <p className="mt-4 font-mono text-xs text-brand-cyan">Published {formatDate(post.publishedAt)}</p>
+          {post.videoUrl ? <BlogVideo title={post.title} url={post.videoUrl} className="mt-8" /> : null}
           <div className="mt-10 border-t border-border/70 pt-4"><SafeMarkdown value={post.bodyMarkdown} /></div>
         </div>
       </article>

@@ -21,6 +21,7 @@ export type PublicBlogArticle = {
   excerpt: string;
   bodyMarkdown: string;
   coverImagePath: string | null;
+  videoUrl: string | null;
   publishedAt: string;
   updatedAt: string;
   author: string;
