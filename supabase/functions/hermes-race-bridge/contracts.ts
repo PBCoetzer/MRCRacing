@@ -48,6 +48,13 @@ export type HermesRaceResult = {
   completed_at: string;
 };
 
+export function confidencePercent(confidence: number) {
+  if (!Number.isFinite(confidence) || confidence < 0 || confidence > 1) {
+    throw new Error("confidence must be between 0 and 1.");
+  }
+  return Math.round(confidence * 10_000) / 100;
+}
+
 function optionalRecord(value: unknown): JsonRecord | null {
   return value && typeof value === "object" && !Array.isArray(value)
     ? value as JsonRecord

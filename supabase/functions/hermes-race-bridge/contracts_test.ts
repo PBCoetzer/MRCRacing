@@ -1,4 +1,5 @@
 import {
+  confidencePercent,
   constantTimeEqual,
   evidenceHash,
   proposalSnapshotForResult,
@@ -7,6 +8,11 @@ import {
   validateJobRequest,
   validateResult,
 } from "./contracts.ts";
+
+Deno.test("confidence is converted from the worker ratio to a proposal percentage", () => {
+  assert(confidencePercent(0.905) === 90.5, "Confidence percentage was not preserved.");
+  assert(confidencePercent(1) === 100, "Full confidence did not become 100 percent.");
+});
 
 function assert(condition: unknown, message: string) {
   if (!condition) throw new Error(message);

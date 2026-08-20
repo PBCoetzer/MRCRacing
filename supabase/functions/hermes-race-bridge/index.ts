@@ -1,6 +1,7 @@
 import "jsr:@supabase/functions-js/edge-runtime.d.ts";
 import { createClient, type SupabaseClient } from "@supabase/supabase-js";
 import {
+  confidencePercent,
   constantTimeEqual,
   type HermesRaceResult,
   type JsonRecord,
@@ -251,8 +252,8 @@ async function handoffResult(
       factScope: "meeting",
       contentHash: source.content_hash ?? null,
     })),
-    p_completeness_score: result.confidence,
-    p_agreement_score: result.confidence,
+    p_completeness_score: confidencePercent(result.confidence),
+    p_agreement_score: confidencePercent(result.confidence),
     p_has_critical_conflict: hasCriticalConflict(result.conflicts),
     p_conflict_summary: hasCriticalConflict(result.conflicts)
       ? "Hermes reported one or more material source conflicts."
