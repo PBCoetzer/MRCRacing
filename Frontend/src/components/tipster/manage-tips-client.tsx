@@ -735,8 +735,10 @@ export function ManageTipsClient() {
           </div>
           <CardTitle className="font-heading text-2xl text-white">Meeting card setup</CardTitle>
           <CardDescription>
-            First publication must happen before Race 1. Race tips and Exotic&apos;s and
-            Multiples lock at their official cutoffs.
+            This is {tipster?.display_name ?? "your Tipster account"}&apos;s independent version of the meeting card. The factual
+            runners and race times are shared, but these tips, comments, price, and revisions belong
+            only to this Tipster account. First publication must happen before Race 1; tips and
+            Exotic&apos;s and Multiples lock at their official cutoffs.
           </CardDescription>
         </CardHeader>
         <CardContent className="grid gap-4 md:grid-cols-2">

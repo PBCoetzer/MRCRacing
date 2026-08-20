@@ -421,7 +421,8 @@ export function TipsterDashboardClient() {
           <div>
             <CardTitle>Upcoming horse-racing meetings</CardTitle>
             <CardDescription>
-              Create one meeting card per venue/date. Private test meetings remain hidden from public users.
+              Create your own independent Tipster version for each venue/date. Race facts are shared,
+              but your selections, comments, price, revisions, and clients remain attached only to your card.
             </CardDescription>
           </div>
           <Button type="button" variant="outline" disabled={refreshing} onClick={() => void loadDashboard(true)}>
@@ -442,7 +443,7 @@ export function TipsterDashboardClient() {
                 </p>
                 <Button asChild className="mt-4">
                   <Link href={`/tipster/manage-tips/?meeting=${encodeURIComponent(meeting.id)}`}>
-                    Create meeting card
+                    Create my version
                   </Link>
                 </Button>
               </div>
@@ -473,7 +474,10 @@ export function TipsterDashboardClient() {
       <Card>
         <CardHeader>
           <CardTitle>Your meeting cards</CardTitle>
-          <CardDescription>Draft, pre-sale, publication, and revision status from Supabase.</CardDescription>
+          <CardDescription>
+            Only cards owned by your Tipster account appear here. Another Tipster can create a separate
+            version for the same factual race meeting.
+          </CardDescription>
         </CardHeader>
         <CardContent>
           <Table>
