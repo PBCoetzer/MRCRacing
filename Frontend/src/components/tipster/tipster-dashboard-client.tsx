@@ -1,10 +1,11 @@
 "use client";
 
 import Link from "next/link";
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   CalendarDays,
   Coins,
+  Database,
   FilePenLine,
   Loader2,
   PackageCheck,
@@ -60,6 +61,7 @@ type CardOutcome = {
 
 const packageDurations = [1, 3, 6, 12] as const;
 const emptyPackageDraft: PackageDraft = { 1: "", 3: "", 6: "", 12: "" };
+const liveRefreshMs = 60_000;
 
 function meetingLabel(meeting: RaceMeeting | undefined) {
   if (!meeting) {
@@ -70,8 +72,10 @@ function meetingLabel(meeting: RaceMeeting | undefined) {
 }
 
 export function TipsterDashboardClient() {
-  const [loadedAt] = useState(() => Date.now());
   const [loading, setLoading] = useState(true);
+  const [refreshing, setRefreshing] = useState(false);
+  const [lastCheckedAt, setLastCheckedAt] = useState<string | null>(null);
+  const [checkedAt, setCheckedAt] = useState(() => Date.now());
   const [savingPackages, setSavingPackages] = useState(false);
   const [message, setMessage] = useState("");
   const [error, setError] = useState("");
@@ -82,9 +86,11 @@ export function TipsterDashboardClient() {
   const [earnings, setEarnings] = useState<EarningRow[]>([]);
   const [cardFixtures, setCardFixtures] = useState<CardFixture[]>([]);
   const [cardOutcomes, setCardOutcomes] = useState<CardOutcome[]>([]);
+  const [recordedEarnings, setRecordedEarnings] = useState(0);
   const [packageDraft, setPackageDraft] = useState<PackageDraft>(emptyPackageDraft);
+  const loadInFlight = useRef(false);
 
-  const loadDashboard = useCallback(async () => {
+  const loadDashboard = useCallback(async (silent = false) => {
     const supabase = createClient();
 
     if (!supabase) {
@@ -93,7 +99,16 @@ export function TipsterDashboardClient() {
       return;
     }
 
-    setLoading(true);
+    if (loadInFlight.current) {
+      return;
+    }
+
+    loadInFlight.current = true;
+    if (silent) {
+      setRefreshing(true);
+    } else {
+      setLoading(true);
+    }
     setError("");
 
     try {
@@ -121,7 +136,13 @@ export function TipsterDashboardClient() {
       }
 
       const verifiedTipster = tipsterData as TipsterProfile;
-      const [meetingResult, cardResult, packageResult, earningResult] = await Promise.all([
+      const [
+        meetingResult,
+        cardResult,
+        packageResult,
+        earningResult,
+        earningTotalResult,
+      ] = await Promise.all([
         supabase
           .from("race_meetings")
           .select("id,venue,country_code,meeting_date,first_race_at,last_race_at,status,is_test,source_name,source_url")
@@ -142,10 +163,15 @@ export function TipsterDashboardClient() {
           .eq("tipster_id", verifiedTipster.id)
           .order("created_at", { ascending: false })
           .limit(20),
+        supabase.rpc("get_my_tipster_recorded_earnings"),
       ]);
 
       const firstError =
-        meetingResult.error ?? cardResult.error ?? packageResult.error ?? earningResult.error;
+        meetingResult.error ??
+        cardResult.error ??
+        packageResult.error ??
+        earningResult.error ??
+        earningTotalResult.error;
 
       if (firstError) {
         throw firstError;
@@ -190,11 +216,17 @@ export function TipsterDashboardClient() {
       setEarnings((earningResult.data ?? []) as EarningRow[]);
       setCardFixtures(loadedCardFixtures);
       setCardOutcomes(loadedCardOutcomes);
+      setRecordedEarnings(Number(earningTotalResult.data ?? 0));
       setPackageDraft(nextDraft);
     } catch (loadError) {
       setError(loadError instanceof Error ? loadError.message : "Could not load tipster data.");
     } finally {
+      const completedAt = new Date();
+      loadInFlight.current = false;
+      setLastCheckedAt(completedAt.toISOString());
+      setCheckedAt(completedAt.getTime());
       setLoading(false);
+      setRefreshing(false);
     }
   }, []);
 
@@ -202,8 +234,25 @@ export function TipsterDashboardClient() {
     const timeoutId = window.setTimeout(() => {
       void loadDashboard();
     }, 0);
+    const intervalId = window.setInterval(() => {
+      void loadDashboard(true);
+    }, liveRefreshMs);
+    const handleFocus = () => void loadDashboard(true);
+    const handleVisibilityChange = () => {
+      if (document.visibilityState === "visible") {
+        void loadDashboard(true);
+      }
+    };
 
-    return () => window.clearTimeout(timeoutId);
+    window.addEventListener("focus", handleFocus);
+    document.addEventListener("visibilitychange", handleVisibilityChange);
+
+    return () => {
+      window.clearTimeout(timeoutId);
+      window.clearInterval(intervalId);
+      window.removeEventListener("focus", handleFocus);
+      document.removeEventListener("visibilitychange", handleVisibilityChange);
+    };
   }, [loadDashboard]);
 
   const meetingById = useMemo(
@@ -211,12 +260,21 @@ export function TipsterDashboardClient() {
     [meetings],
   );
   const cardMeetingIds = useMemo(() => new Set(cards.map((card) => card.meeting_id)), [cards]);
-  const availableMeetings = meetings.filter(
+  const upcomingMeetings = meetings.filter((meeting) =>
+    meetingCardSalesOpen(meeting, checkedAt),
+  );
+  const availableMeetings = upcomingMeetings.filter(
     (meeting) =>
-      meetingCardSalesOpen(meeting, loadedAt) &&
       !cardMeetingIds.has(meeting.id),
   );
-  const netEarnings = earnings.reduce((total, entry) => total + Number(entry.net_coins), 0);
+  const currentCards = cards.filter((card) => {
+    const meeting = meetingById.get(card.meeting_id);
+    return (
+      !["settled", "void"].includes(card.status) &&
+      Boolean(meeting && !["completed", "cancelled"].includes(meeting.status))
+    );
+  });
+  const activePackageCount = packages.filter((item) => item.is_active).length;
 
   async function savePackages() {
     const supabase = createClient();
@@ -259,7 +317,7 @@ export function TipsterDashboardClient() {
       }
 
       setMessage("Subscription packages saved.");
-      await loadDashboard();
+      await loadDashboard(true);
     } catch (saveError) {
       setError(saveError instanceof Error ? saveError.message : "Could not save packages.");
     } finally {
@@ -295,12 +353,44 @@ export function TipsterDashboardClient() {
         </Alert>
       ) : null}
 
+      <div className="flex flex-wrap items-center justify-between gap-3 rounded-lg border bg-card/45 px-4 py-3 text-sm">
+        <span className="inline-flex items-center gap-2 text-brand-cyan" aria-live="polite">
+          {refreshing ? <RefreshCw className="size-4 animate-spin" /> : <Database className="size-4" />}
+          {refreshing
+            ? "Refreshing live dashboard data"
+            : lastCheckedAt
+              ? `Live database checked ${formatRaceDateTime(lastCheckedAt)}`
+              : "Connecting to the live database"}
+        </span>
+        <span className="text-xs text-muted-foreground">Automatically refreshes every minute</span>
+      </div>
+
       <div className="grid gap-4 md:grid-cols-4">
         {[
-          { label: "Upcoming meetings", value: meetings.length, icon: CalendarDays },
-          { label: "Meeting cards", value: cards.length, icon: FilePenLine },
-          { label: "Active packages", value: packages.filter((item) => item.is_active).length, icon: PackageCheck },
-          { label: "Recorded earnings", value: formatCredits(netEarnings), icon: Coins },
+          {
+            label: "Upcoming meetings",
+            value: upcomingMeetings.length,
+            detail: `${availableMeetings.length} still need a card`,
+            icon: CalendarDays,
+          },
+          {
+            label: "Current meeting cards",
+            value: currentCards.length,
+            detail: `${cards.length} total including history`,
+            icon: FilePenLine,
+          },
+          {
+            label: "Active packages",
+            value: activePackageCount,
+            detail: "Live subscription offers",
+            icon: PackageCheck,
+          },
+          {
+            label: "Recorded earnings",
+            value: formatCredits(recordedEarnings),
+            detail: "All sales and refund reversals",
+            icon: Coins,
+          },
         ].map((stat) => (
           <Card key={stat.label}>
             <CardHeader className="space-y-1">
@@ -309,6 +399,7 @@ export function TipsterDashboardClient() {
                 <stat.icon className="size-5 text-primary" />
                 {stat.value}
               </CardTitle>
+              <p className="text-xs text-muted-foreground">{stat.detail}</p>
             </CardHeader>
           </Card>
         ))}
@@ -322,8 +413,8 @@ export function TipsterDashboardClient() {
               Create one meeting card per venue/date. Private test meetings remain hidden from public users.
             </CardDescription>
           </div>
-          <Button type="button" variant="outline" onClick={() => void loadDashboard()}>
-            <RefreshCw className="size-4" />
+          <Button type="button" variant="outline" disabled={refreshing} onClick={() => void loadDashboard(true)}>
+            <RefreshCw className={refreshing ? "size-4 animate-spin" : "size-4"} />
             Refresh
           </Button>
         </CardHeader>
@@ -377,7 +468,7 @@ export function TipsterDashboardClient() {
                   (fixture) => fixture.result_summary || fixture.status === "resulted",
                 ).length;
                 const openCount = fixtures.filter(
-                  (fixture) => new Date(fixture.starts_at).getTime() > loadedAt,
+                  (fixture) => new Date(fixture.starts_at).getTime() > checkedAt,
                 ).length;
                 const outcomes = cardOutcomes.filter((outcome) => outcome.tip_card_id === card.id);
                 const graded = outcomes.filter((outcome) => outcome.selected_winner_position != null);
