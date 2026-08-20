@@ -4,6 +4,8 @@ import Link from "next/link";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   CalendarDays,
+  ChevronLeft,
+  ChevronRight,
   Coins,
   Database,
   FilePenLine,
@@ -88,6 +90,7 @@ export function TipsterDashboardClient() {
   const [cardOutcomes, setCardOutcomes] = useState<CardOutcome[]>([]);
   const [recordedEarnings, setRecordedEarnings] = useState(0);
   const [packageDraft, setPackageDraft] = useState<PackageDraft>(emptyPackageDraft);
+  const [meetingPageIndex, setMeetingPageIndex] = useState(0);
   const loadInFlight = useRef(false);
 
   const loadDashboard = useCallback(async (silent = false) => {
@@ -146,7 +149,7 @@ export function TipsterDashboardClient() {
         supabase
           .from("race_meetings")
           .select("id,venue,country_code,meeting_date,first_race_at,last_race_at,status,is_test,source_name,source_url")
-          .order("first_race_at", { ascending: false }),
+          .order("first_race_at", { ascending: true }),
         supabase
           .from("tip_cards")
           .select("id,tipster_id,meeting_id,title,summary,coin_price,status,revision,listed_at,published_at,voided_at,updated_at")
@@ -263,9 +266,17 @@ export function TipsterDashboardClient() {
   const upcomingMeetings = meetings.filter((meeting) =>
     meetingCardSalesOpen(meeting, checkedAt),
   );
-  const availableMeetings = upcomingMeetings.filter(
-    (meeting) =>
-      !cardMeetingIds.has(meeting.id),
+  const availableMeetings = upcomingMeetings
+    .filter((meeting) => !cardMeetingIds.has(meeting.id))
+    .toSorted(
+      (left, right) =>
+        new Date(left.first_race_at).getTime() - new Date(right.first_race_at).getTime(),
+    );
+  const meetingPageCount = Math.max(1, Math.ceil(availableMeetings.length / 4));
+  const activeMeetingPage = Math.min(meetingPageIndex, meetingPageCount - 1);
+  const visibleAvailableMeetings = availableMeetings.slice(
+    activeMeetingPage * 4,
+    activeMeetingPage * 4 + 4,
   );
   const currentCards = cards.filter((card) => {
     const meeting = meetingById.get(card.meeting_id);
@@ -418,27 +429,44 @@ export function TipsterDashboardClient() {
             Refresh
           </Button>
         </CardHeader>
-        <CardContent className="grid gap-3 md:grid-cols-2">
-          {availableMeetings.length ? availableMeetings.map((meeting) => (
-            <div key={meeting.id} className="rounded-lg border bg-background/45 p-4">
-              <div className="flex flex-wrap items-center gap-2">
-                <p className="font-heading text-lg text-white">{meeting.venue}</p>
-                {meeting.is_test ? <Badge variant="secondary">Private test</Badge> : null}
+        <CardContent className="space-y-4">
+          <div className="grid gap-3 md:grid-cols-2">
+            {visibleAvailableMeetings.length ? visibleAvailableMeetings.map((meeting) => (
+              <div key={meeting.id} className="rounded-lg border bg-background/45 p-4">
+                <div className="flex flex-wrap items-center gap-2">
+                  <p className="font-heading text-lg text-white">{meeting.venue}</p>
+                  {meeting.is_test ? <Badge variant="secondary">Private test</Badge> : null}
+                </div>
+                <p className="mt-2 text-sm text-muted-foreground">
+                  First race {formatRaceDateTime(meeting.first_race_at)}
+                </p>
+                <Button asChild className="mt-4">
+                  <Link href={`/tipster/manage-tips/?meeting=${encodeURIComponent(meeting.id)}`}>
+                    Create meeting card
+                  </Link>
+                </Button>
               </div>
-              <p className="mt-2 text-sm text-muted-foreground">
-                First race {formatRaceDateTime(meeting.first_race_at)}
+            )) : (
+              <p className="text-sm text-muted-foreground">
+                Every visible upcoming meeting already has a card.
               </p>
-              <Button asChild className="mt-4">
-                <Link href={`/tipster/manage-tips/?meeting=${encodeURIComponent(meeting.id)}`}>
-                  Create meeting card
-                </Link>
-              </Button>
+            )}
+          </div>
+          {meetingPageCount > 1 ? (
+            <div className="flex flex-wrap items-center justify-between gap-3 border-t pt-4">
+              <p className="text-sm text-muted-foreground">
+                Showing {activeMeetingPage * 4 + 1}–{Math.min((activeMeetingPage + 1) * 4, availableMeetings.length)} of {availableMeetings.length}, soonest first
+              </p>
+              <div className="flex gap-2">
+                <Button type="button" size="sm" variant="outline" disabled={activeMeetingPage === 0} onClick={() => setMeetingPageIndex(Math.max(0, activeMeetingPage - 1))}>
+                  <ChevronLeft className="size-4" />Previous
+                </Button>
+                <Button type="button" size="sm" variant="outline" disabled={activeMeetingPage >= meetingPageCount - 1} onClick={() => setMeetingPageIndex(Math.min(meetingPageCount - 1, activeMeetingPage + 1))}>
+                  Next meetings<ChevronRight className="size-4" />
+                </Button>
+              </div>
             </div>
-          )) : (
-            <p className="text-sm text-muted-foreground">
-              Every visible upcoming meeting already has a card.
-            </p>
-          )}
+          ) : null}
         </CardContent>
       </Card>
 

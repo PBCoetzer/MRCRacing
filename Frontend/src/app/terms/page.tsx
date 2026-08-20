@@ -30,6 +30,10 @@ export default function TermsPage() {
           body: <p>Meeting-card sales close 30 minutes before Race 1. Access to valid purchased and settled cards remains in Card History. Accounts may not scrape, resell, manipulate, harass, impersonate, evade security controls, share credentials, or publish unlawful material.</p>,
         },
         {
+          title: "Becoming an MRC Tipster",
+          body: <p>A Client does not become a Tipster merely by creating an account. The Client must submit the dedicated Tipster application, provide the required identity and address documents, accept and electronically sign the current Tipster Platform Agreement, and receive administrator approval. The agreement records the applicable MRC platform commission, Horse Care contribution structure, treatment of Purchased and Reward Credits, refunds, content duties, and termination rules. MRC may request corrections, reject an incomplete application, or revoke Tipster access in accordance with the agreement and applicable law.</p>,
+        },
+        {
           title: "Personal premium-content licence",
           body: <p>Paid meeting cards and selections are licensed to the entitled account for personal, non-transferable use. You may not copy, screenshot for distribution, republish, forward, upload, broadcast, resell, or give another person access to premium selections. Premium views may show a user-specific access code and watermark, and each opening may create an immutable security record. These controls deter and help trace unauthorised sharing; they do not guarantee that every recording method can be technically blocked. MRC may investigate misuse and, subject to applicable law and a fair review, suspend access, revoke affected content access, or pursue available remedies.</p>,
         },

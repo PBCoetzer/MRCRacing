@@ -15,7 +15,7 @@ export default function PrivacyPage() {
         },
         {
           title: "Information we collect",
-          body: <p>We collect information you provide, including your name, display name, email address, telephone number, account role, profile content, comments, support messages, transaction references, Credit ledger entries, purchases, subscriptions, favourites, disputes, terms acceptance, and audit events. When entitled users open premium meeting cards, we record a pseudonymous visible access code, account and card identifiers, access time, accepted terms version, and limited context such as language, screen dimensions, and time zone.</p>,
+          body: <p>We collect information you provide, including your name, display name, email address, telephone number, account role, profile content, comments, support messages, transaction references, Credit ledger entries, purchases, subscriptions, favourites, disputes, terms acceptance, and audit events. A person applying to become a Tipster also provides their legal name, racing experience, identity document, proof of address, electronic signature, and contract acceptance record. When entitled users open premium meeting cards, we record a pseudonymous visible access code, account and card identifiers, access time, accepted terms version, and limited context such as language, screen dimensions, and time zone.</p>,
         },
         {
           title: "Why we use it",
@@ -27,7 +27,7 @@ export default function PrivacyPage() {
         },
         {
           title: "Retention and security",
-          body: <p>Records are retained for as long as needed to provide the service, maintain accurate financial and audit records, resolve disputes, prevent fraud or unauthorised content sharing, and comply with law. Access is role-restricted, protected routes are not indexed, sensitive credentials are kept out of the browser, and payment confirmation is accepted only from verified provider notifications. Premium-card access records are immutable security records and are not displayed publicly.</p>,
+          body: <p>Records are retained for as long as needed to provide the service, assess Tipster applications, maintain accurate financial and audit records, resolve disputes, prevent fraud or unauthorised content sharing, and comply with law. Tipster identity and address documents are stored in a private application vault and are available only to the applicant and authorised administrators; they are never published as part of a Tipster profile. Access is role-restricted, protected routes are not indexed, sensitive credentials are kept out of the browser, and payment confirmation is accepted only from verified provider notifications. Premium-card access records are immutable security records and are not displayed publicly.</p>,
         },
         {
           title: "Your choices and rights",

@@ -11,6 +11,8 @@ import {
   CircleUserRound,
   ClipboardList,
   Coins,
+  Download,
+  FileCheck2,
   FileWarning,
   Flag,
   History,
@@ -46,6 +48,11 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Textarea } from "@/components/ui/textarea";
 import { formatCredits, formatRaceDateTime } from "@/lib/racing/format";
+import {
+  tipsterApplicationStatusLabel,
+  type TipsterApplication,
+  type TipsterApplicationDocument,
+} from "@/lib/tipster-application";
 import { createClient } from "@/lib/supabase/client";
 
 type AppRole = "client" | "tipster" | "administrator";
@@ -262,6 +269,8 @@ export function AdminUserDetailClient() {
     confirmation: "",
   });
   const [largeCreditDialogOpen, setLargeCreditDialogOpen] = useState(false);
+  const [tipsterApplication, setTipsterApplication] = useState<TipsterApplication | null>(null);
+  const [tipsterApplicationDocuments, setTipsterApplicationDocuments] = useState<TipsterApplicationDocument[]>([]);
 
   const loadDetail = useCallback(async () => {
     const userId = new URLSearchParams(window.location.search).get("user");
@@ -287,7 +296,13 @@ export function AdminUserDetailClient() {
       return;
     }
 
-    const [detailResult, ownerResult, blogPermissionResult] = await Promise.all([
+    const [
+      detailResult,
+      ownerResult,
+      blogPermissionResult,
+      tipsterApplicationResult,
+      tipsterDocumentResult,
+    ] = await Promise.all([
       supabase.rpc("admin_get_user_detail", { p_user_id: userId }),
       supabase
         .from("platform_owners")
@@ -299,6 +314,16 @@ export function AdminUserDetailClient() {
         .select("tipster_blog_permissions(can_publish)")
         .eq("user_id", userId)
         .maybeSingle(),
+      supabase
+        .from("tipster_applications")
+        .select("id,user_id,status,legal_name,display_name,phone,experience_summary,biography,contract_version,contract_content_hash,signature_name,acceptance_confirmations,contract_accepted_at,submitted_at,reviewed_at,reviewed_by,review_reason,approved_commission_rate,created_at,updated_at")
+        .eq("user_id", userId)
+        .maybeSingle(),
+      supabase
+        .from("tipster_application_documents")
+        .select("id,application_id,user_id,document_type,storage_path,original_file_name,mime_type,size_bytes,sha256,created_at")
+        .eq("user_id", userId)
+        .order("created_at"),
     ]);
 
     if (detailResult.error || !detailResult.data) {
@@ -307,14 +332,27 @@ export function AdminUserDetailClient() {
       return;
     }
 
-    if (ownerResult.error || blogPermissionResult.error) {
-      setError(ownerResult.error?.message ?? blogPermissionResult.error?.message ?? "Could not load access controls.");
+    if (
+      ownerResult.error ||
+      blogPermissionResult.error ||
+      tipsterApplicationResult.error ||
+      tipsterDocumentResult.error
+    ) {
+      setError(
+        ownerResult.error?.message ??
+          blogPermissionResult.error?.message ??
+          tipsterApplicationResult.error?.message ??
+          tipsterDocumentResult.error?.message ??
+          "Could not load access controls.",
+      );
       setLoading(false);
       return;
     }
 
     const loadedDetail = detailResult.data as UserDetail;
     setDetail(loadedDetail);
+    setTipsterApplication((tipsterApplicationResult.data as TipsterApplication | null) ?? null);
+    setTipsterApplicationDocuments((tipsterDocumentResult.data ?? []) as TipsterApplicationDocument[]);
     setActorId(user.id);
     setActorIsOwner(Boolean(ownerResult.data));
     setProfileDraft({
@@ -450,6 +488,55 @@ export function AdminUserDetailClient() {
       await loadDetail();
     } catch (caughtError) {
       setError(errorMessage(caughtError, "Could not update user access."));
+    } finally {
+      setProcessing("");
+    }
+  }
+
+  async function reviewTipsterApplication(
+    action: "start_review" | "request_changes" | "approve" | "reject" | "revoke",
+  ) {
+    const supabase = createClient();
+    if (!supabase || !tipsterApplication) return;
+
+    setProcessing(`tipster:${action}`);
+    setError("");
+    setMessage("");
+    try {
+      const { error: reviewError } = await supabase.rpc("admin_review_tipster_application", {
+        p_application_id: tipsterApplication.id,
+        p_action: action,
+        p_reason: accessDraft.reason,
+      });
+      if (reviewError) throw reviewError;
+      setMessage(`Tipster application ${action.replaceAll("_", " ")} completed and audit logged.`);
+      await loadDetail();
+    } catch (caughtError) {
+      setError(errorMessage(caughtError, "Could not review the tipster application."));
+    } finally {
+      setProcessing("");
+    }
+  }
+
+  async function downloadTipsterDocument(document: TipsterApplicationDocument) {
+    const supabase = createClient();
+    if (!supabase) return;
+
+    setProcessing(`tipster-document:${document.id}`);
+    setError("");
+    try {
+      const { data, error: downloadError } = await supabase.storage
+        .from("tipster-applications")
+        .download(document.storage_path);
+      if (downloadError || !data) throw downloadError ?? new Error("Document could not be downloaded.");
+      const url = URL.createObjectURL(data);
+      const anchor = window.document.createElement("a");
+      anchor.href = url;
+      anchor.download = document.original_file_name;
+      anchor.click();
+      URL.revokeObjectURL(url);
+    } catch (caughtError) {
+      setError(errorMessage(caughtError, "Could not download the application document."));
     } finally {
       setProcessing("");
     }
@@ -772,25 +859,68 @@ export function AdminUserDetailClient() {
         <TabsContent value="access">
           <Card>
             <CardHeader>
-              <CardTitle>Roles and tipster access</CardTitle>
+              <CardTitle>Roles and approved tipster access</CardTitle>
               <CardDescription>
-                Only the platform owner can grant or remove administrator access.
+                Tipster workspace access and public verification are granted together only through the reviewed application below. Only the platform owner can grant or remove administrator access.
               </CardDescription>
             </CardHeader>
             <CardContent className="space-y-5">
+              <div className="rounded-lg border border-brand-cyan/25 bg-background/35 p-4">
+                <div className="flex flex-wrap items-start justify-between gap-3">
+                  <div>
+                    <p className="flex items-center gap-2 font-semibold text-white">
+                      <FileCheck2 className="size-4 text-brand-cyan" />
+                      Tipster application
+                    </p>
+                    <p className="mt-1 text-sm text-muted-foreground">
+                      Identity documents, signed agreement, racing experience, and approval history.
+                    </p>
+                  </div>
+                  <Badge variant={tipsterApplication?.status === "approved" ? "default" : "outline"}>
+                    {tipsterApplication
+                      ? tipsterApplicationStatusLabel(tipsterApplication.status)
+                      : "No application"}
+                  </Badge>
+                </div>
+
+                {tipsterApplication ? (
+                  <div className="mt-4 space-y-4">
+                    <div className="grid gap-3 text-sm sm:grid-cols-2">
+                      <p><span className="text-muted-foreground">Legal name:</span> {tipsterApplication.legal_name || "Not provided"}</p>
+                      <p><span className="text-muted-foreground">Public name:</span> {tipsterApplication.display_name || "Not provided"}</p>
+                      <p><span className="text-muted-foreground">Contact:</span> {tipsterApplication.phone || "Not provided"}</p>
+                      <p><span className="text-muted-foreground">Commission:</span> {tipsterApplication.approved_commission_rate == null ? "Not accepted" : `${Number(tipsterApplication.approved_commission_rate).toLocaleString("en-ZA")}%`}</p>
+                      <p><span className="text-muted-foreground">Contract:</span> {tipsterApplication.contract_version || "Legacy approval"}</p>
+                      <p><span className="text-muted-foreground">Signed:</span> {tipsterApplication.contract_accepted_at ? formatRaceDateTime(tipsterApplication.contract_accepted_at) : "Legacy approval"}</p>
+                    </div>
+                    {tipsterApplication.experience_summary ? <div><p className="text-xs font-semibold uppercase text-muted-foreground">Experience</p><p className="mt-1 whitespace-pre-wrap text-sm">{tipsterApplication.experience_summary}</p></div> : null}
+                    {tipsterApplication.review_reason ? <Alert><FileWarning className="size-4" /><AlertTitle>Review record</AlertTitle><AlertDescription>{tipsterApplication.review_reason}</AlertDescription></Alert> : null}
+                    <div className="grid gap-2 sm:grid-cols-2">
+                      {tipsterApplicationDocuments.map((document) => (
+                        <div key={document.id} className="flex items-center justify-between gap-3 rounded-lg border p-3 text-sm">
+                          <div className="min-w-0"><p className="font-medium capitalize">{document.document_type.replaceAll("_", " ")}</p><p className="truncate text-xs text-muted-foreground">{document.original_file_name}</p></div>
+                          <Button type="button" size="sm" variant="outline" disabled={processing === `tipster-document:${document.id}`} onClick={() => void downloadTipsterDocument(document)}><Download className="size-4" />Download</Button>
+                        </div>
+                      ))}
+                    </div>
+                    {!tipsterApplicationDocuments.length && tipsterApplication.contract_version ? <p className="text-sm text-destructive">No supporting documents are attached.</p> : null}
+                    <div className="flex flex-wrap gap-2">
+                      {tipsterApplication.status === "submitted" ? <Button type="button" variant="outline" disabled={processing.startsWith("tipster:")} onClick={() => void reviewTipsterApplication("start_review")}>Start review</Button> : null}
+                      {["submitted", "under_review"].includes(tipsterApplication.status) ? <><Button type="button" disabled={processing.startsWith("tipster:")} onClick={() => void reviewTipsterApplication("approve")}><ShieldCheck className="size-4" />Approve as Tipster</Button><Button type="button" variant="outline" disabled={processing.startsWith("tipster:")} onClick={() => void reviewTipsterApplication("request_changes")}>Request changes</Button><Button type="button" variant="destructive" disabled={processing.startsWith("tipster:")} onClick={() => void reviewTipsterApplication("reject")}>Reject</Button></> : null}
+                      {tipsterApplication.status === "approved" ? <Button type="button" variant="destructive" disabled={processing.startsWith("tipster:")} onClick={() => void reviewTipsterApplication("revoke")}>Revoke Tipster approval</Button> : null}
+                    </div>
+                  </div>
+                ) : (
+                  <p className="mt-4 text-sm text-muted-foreground">This user has not started a Tipster application.</p>
+                )}
+              </div>
+
               <div className="flex flex-wrap gap-4">
                 <CheckboxField
                   label="Client"
                   checked={accessDraft.client}
                   onChange={(checked) =>
                     setAccessDraft((current) => ({ ...current, client: checked }))
-                  }
-                />
-                <CheckboxField
-                  label="Tipster"
-                  checked={accessDraft.tipster}
-                  onChange={(checked) =>
-                    setAccessDraft((current) => ({ ...current, tipster: checked }))
                   }
                 />
                 <CheckboxField
@@ -808,18 +938,13 @@ export function AdminUserDetailClient() {
                     setAccessDraft((current) => ({ ...current, testAccess: checked }))
                   }
                 />
-                <CheckboxField
-                  label="Verified tipster"
-                  checked={accessDraft.tipsterVerified}
-                  disabled={!accessDraft.tipster}
-                  onChange={(checked) =>
-                    setAccessDraft((current) => ({ ...current, tipsterVerified: checked }))
-                  }
-                />
+                {accessDraft.tipster && accessDraft.tipsterVerified ? (
+                  <Badge className="h-6 self-center">Approved Tipster</Badge>
+                ) : null}
                 <CheckboxField
                   label="May publish blog posts"
                   checked={accessDraft.blogPublish}
-                  disabled={!accessDraft.tipster || !accessDraft.tipsterVerified}
+                  disabled={tipsterApplication?.status !== "approved"}
                   onChange={(checked) =>
                     setAccessDraft((current) => ({ ...current, blogPublish: checked }))
                   }
@@ -828,7 +953,7 @@ export function AdminUserDetailClient() {
               <div className="grid gap-4 sm:grid-cols-2">
                 <Field label="Tipster display name">
                   <Input
-                    disabled={!accessDraft.tipster}
+                    disabled={tipsterApplication?.status !== "approved"}
                     value={accessDraft.tipsterDisplayName}
                     onChange={(event) =>
                       setAccessDraft((current) => ({
@@ -848,7 +973,7 @@ export function AdminUserDetailClient() {
                 </Field>
                 <Field label="Tipster biography" className="sm:col-span-2">
                   <Textarea
-                    disabled={!accessDraft.tipster}
+                    disabled={tipsterApplication?.status !== "approved"}
                     value={accessDraft.tipsterBiography}
                     onChange={(event) =>
                       setAccessDraft((current) => ({
@@ -869,7 +994,7 @@ export function AdminUserDetailClient() {
                 ) : (
                   <ShieldCheck className="size-4" />
                 )}
-                Save access
+                Save account access and approved profile
               </Button>
             </CardContent>
           </Card>

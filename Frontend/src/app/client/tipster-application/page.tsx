@@ -1,26 +1,25 @@
-import { ClientDashboardClient } from "@/components/client/client-dashboard-client";
 import { DashboardShell } from "@/components/dashboard-shell";
+import { TipsterApplicationClient } from "@/components/tipster/tipster-application-client";
 
 const clientNav = [
+  { label: "Client dashboard", href: "/client/" },
   { label: "Subscriptions", href: "/client/#subscriptions" },
   { label: "Meeting Cards", href: "/client/#unlocked-tips" },
   { label: "Discover Tipsters", href: "/client/#discover-tipsters" },
-  { label: "Marketplace", href: "/client/#marketplace" },
-  { label: "Purchases", href: "/client/#purchases" },
   { label: "Become a Tipster", href: "/client/tipster-application/" },
 ];
 
-export default function ClientPage() {
+export default function TipsterApplicationPage() {
   return (
     <DashboardShell
       allowedRoles={["client", "administrator"]}
-      accessDescription="the client dashboard"
+      accessDescription="the tipster application workspace"
       accessTitle="Client access required"
-      title="Client dashboard"
-      description="Your Credit balance, subscribed tipsters, unlocked meeting cards, verified tipster discovery, and purchase history."
+      title="Become an MRC Tipster"
+      description="Submit your experience, private verification documents, and electronically signed platform agreement for administrator review."
       nav={clientNav}
     >
-      <ClientDashboardClient />
+      <TipsterApplicationClient />
     </DashboardShell>
   );
 }
