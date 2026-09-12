@@ -46,7 +46,7 @@ AUTH_EMAIL_REPLY_TO=support@mrcracing.co.za
 
 ## Deploy in Safe Order
 
-1. Apply `supabase/migrations/20260907140000_auth_email_delivery_tracking.sql`.
+1. Apply `supabase/migrations/20260907123922_auth_email_delivery_tracking.sql`.
 2. Deploy `auth-send-email` with JWT verification disabled. The function verifies the Supabase Auth hook signature itself.
 3. Deploy `auth-email-webhook` with JWT verification disabled. The function verifies the Resend/Svix signature itself.
 4. In Resend, add this production webhook URL:

@@ -30,9 +30,39 @@ entrypoint = "./functions/race-lifecycle/index.ts"
 
 [functions.blog-media-upload]
 enabled = true
-verify_jwt = false
+verify_jwt = true
 import_map = "./functions/blog-media-upload/deno.json"
 entrypoint = "./functions/blog-media-upload/index.ts"
+
+[functions.create-credit-checkout]
+enabled = true
+verify_jwt = false
+import_map = "./functions/create-credit-checkout/deno.json"
+entrypoint = "./functions/create-credit-checkout/index.ts"
+
+[functions.payment-return]
+enabled = true
+verify_jwt = false
+import_map = "./functions/payment-return/deno.json"
+entrypoint = "./functions/payment-return/index.ts"
+
+[functions.ozow-notification]
+enabled = true
+verify_jwt = false
+import_map = "./functions/ozow-notification/deno.json"
+entrypoint = "./functions/ozow-notification/index.ts"
+
+[functions.payfast-itn]
+enabled = true
+verify_jwt = false
+import_map = "./functions/payfast-itn/deno.json"
+entrypoint = "./functions/payfast-itn/index.ts"
+
+[functions.admin-user-control]
+enabled = true
+verify_jwt = true
+import_map = "./functions/admin-user-control/deno.json"
+entrypoint = "./functions/admin-user-control/index.ts"
 
 [functions.site-build-bridge]
 enabled = true

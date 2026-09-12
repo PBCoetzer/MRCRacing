@@ -162,7 +162,7 @@ const migrationPath = path.join(
   workspaceDirectory,
   "supabase",
   "migrations",
-  "20260903125615_restrict_published_content_terminology.sql",
+  "20260903164324_restrict_published_content_terminology.sql",
 );
 const forbiddenMigrationSnippets = [
   "create or replace function public.save_tip_card",
@@ -176,13 +176,13 @@ const registrationDiagnosticsMigrationPath = path.join(
   workspaceDirectory,
   "supabase",
   "migrations",
-  "20260903143000_admin_registration_diagnostics.sql",
+  "20260903164335_admin_registration_diagnostics.sql",
 );
 const premiumTermsMigrationPath = path.join(
   workspaceDirectory,
   "supabase",
   "migrations",
-  "20260904080219_align_premium_terms_access.sql",
+  "20260908072620_persist_versioned_client_terms_acceptance.sql",
 );
 const requiredRegistrationDiagnosticsSnippets = [
   "create table if not exists public.auth_user_diagnostic_events",
@@ -310,20 +310,19 @@ const clientDashboardContent = await readFile(
   "utf8",
 );
 const premiumTermsMigrationContent = await readFile(premiumTermsMigrationPath, "utf8");
-const registerTermsVersion = registerFormContent.match(
-  /const currentTermsVersion = "([^"]+)"/,
-)?.[1];
-const clientTermsVersion = clientDashboardContent.match(
-  /const premiumTermsVersion = "([^"]+)"/,
-)?.[1];
 const migrationTermsVersions = new Set(
   premiumTermsMigrationContent.match(/\d{4}-\d{2}-\d{2}-premium-content/g) ?? [],
 );
 if (
-  !registerTermsVersion ||
-  registerTermsVersion !== clientTermsVersion ||
-  migrationTermsVersions.size !== 1 ||
-  !migrationTermsVersions.has(registerTermsVersion)
+  !registerFormContent.includes('supabase.rpc(\n        "get_current_premium_terms_version"') ||
+  !clientDashboardContent.includes('supabase.rpc("get_premium_terms_status")') ||
+  !premiumTermsMigrationContent.includes(
+    "create or replace function public.get_current_premium_terms_version()",
+  ) ||
+  !premiumTermsMigrationContent.includes(
+    "create or replace function public.get_premium_terms_status()",
+  ) ||
+  migrationTermsVersions.size !== 1
 ) {
   violations.push({
     file: path.relative(workspaceDirectory, premiumTermsMigrationPath),
