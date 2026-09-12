@@ -1,0 +1,86 @@
+name: Production readiness
+
+on:
+  pull_request:
+  push:
+    branches:
+      - main
+      - codex/production-readiness-audit
+
+permissions:
+  contents: read
+
+concurrency:
+  group: production-readiness-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  database-contracts:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+
+    steps:
+      - name: Check out source
+        uses: actions/checkout@v4
+
+      - name: Set up Supabase CLI
+        uses: supabase/setup-cli@v1
+        with:
+          version: 2.117.0
+
+      - name: Start isolated local Supabase
+        run: supabase start --exclude studio,imgproxy,edge-runtime,logflare,vector,supavisor
+
+      - name: Run database contract tests
+        run: supabase test db
+
+      - name: Stop isolated local Supabase
+        if: always()
+        run: supabase stop --no-backup
+
+  verify:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    defaults:
+      run:
+        working-directory: Frontend
+    env:
+      NEXT_PUBLIC_SITE_URL: https://mrcracing.co.za
+      NEXT_PUBLIC_SUPABASE_URL: ${{ secrets.NEXT_PUBLIC_SUPABASE_URL }}
+      NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY: ${{ secrets.NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY }}
+      NEXT_PUBLIC_TURNSTILE_SITE_KEY: ${{ secrets.NEXT_PUBLIC_TURNSTILE_SITE_KEY }}
+      NEXT_PUBLIC_PAYMENTS_ENABLED: "false"
+
+    steps:
+      - name: Check out source
+        uses: actions/checkout@v4
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: npm
+          cache-dependency-path: Frontend/package-lock.json
+
+      - name: Require public build configuration
+        shell: bash
+        run: |
+          test -n "$NEXT_PUBLIC_SUPABASE_URL"
+          test -n "$NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY"
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Audit production dependencies
+        run: npm audit --omit=dev --audit-level=high
+
+      - name: Run complete verification
+        run: npm run verify:local
+
+      - name: Upload verified static export
+        uses: actions/upload-artifact@v4
+        with:
+          name: mrc-static-export-${{ github.sha }}
+          path: Frontend/out
+          if-no-files-found: error
+          retention-days: 14
