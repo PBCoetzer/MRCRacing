@@ -122,7 +122,7 @@ export default function Home() {
                   </p>
                 </div>
                 <div className="flex flex-wrap items-center gap-2">
-                  <Badge className="bg-brand-red text-white">Live database</Badge>
+                  <Badge className="bg-red-800 text-white">Live database</Badge>
                   <Button asChild size="sm" variant="outline" className="border-brand-cyan/40 text-brand-cyan">
                     <Link href="/horse-racing/">Racecards &amp; results</Link>
                   </Button>

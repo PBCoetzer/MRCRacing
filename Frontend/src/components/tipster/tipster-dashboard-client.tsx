@@ -626,7 +626,80 @@ export function TipsterDashboardClient() {
           </CardDescription>
         </CardHeader>
         <CardContent>
-          <Table>
+          <div className="space-y-3 md:hidden">
+            {cards.map((card) => {
+              const fixtures = cardFixtures.filter(
+                (fixture) => fixture.meeting_id === card.meeting_id,
+              );
+              const resultCount = fixtures.filter(
+                (fixture) => fixture.result_summary || fixture.status === "resulted",
+              ).length;
+              const openCount = fixtures.filter(
+                (fixture) => new Date(fixture.starts_at).getTime() > checkedAt,
+              ).length;
+              const outcomes = cardOutcomes.filter((outcome) => outcome.tip_card_id === card.id);
+              const selectionWinRecord = cardSelectionWinRecord(outcomes);
+              const actionLabel =
+                openCount === 0 || (fixtures.length > 0 && resultCount === fixtures.length)
+                  ? "View results"
+                  : card.status === "published"
+                    ? "Review / correct"
+                    : "Edit tips";
+
+              return (
+                <article key={card.id} className="rounded-xl border bg-background/40 p-4">
+                  <div className="flex items-start justify-between gap-3">
+                    <div>
+                      <h3 className="font-semibold text-white">{card.title}</h3>
+                      <p className="mt-1 text-xs text-muted-foreground">
+                        {meetingLabel(meetingById.get(card.meeting_id))}
+                      </p>
+                    </div>
+                    <Badge variant={["published", "settled"].includes(card.status) ? "default" : "secondary"}>
+                      {card.status.replace("_", " ")}
+                    </Badge>
+                  </div>
+                  <dl className="mt-4 grid grid-cols-2 gap-3 text-sm">
+                    <div>
+                      <dt className="text-muted-foreground">Revision</dt>
+                      <dd className="font-mono">{card.revision}</dd>
+                    </div>
+                    <div>
+                      <dt className="text-muted-foreground">Price</dt>
+                      <dd className="font-mono">{formatMeetingCardPrice(card.coin_price)}</dd>
+                    </div>
+                    <div className="col-span-2">
+                      <dt className="text-muted-foreground">Selections won</dt>
+                      <dd className="font-mono">
+                        {card.status === "settled"
+                          ? `${selectionWinRecord.wins}/${selectionWinRecord.graded} wins`
+                          : `${resultCount}/${fixtures.length} results`}
+                      </dd>
+                    </div>
+                  </dl>
+                  <p className="mt-3 text-xs text-brand-cyan">
+                    {resultCount
+                      ? `${resultCount}/${fixtures.length} results available`
+                      : openCount
+                        ? `${openCount}/${fixtures.length} races still open`
+                        : "Meeting locked"}
+                  </p>
+                  <Button asChild variant="outline" className="mt-4 min-h-11 w-full">
+                    <Link href={`/tipster/manage-tips/?card=${encodeURIComponent(card.id)}`}>
+                      {actionLabel}
+                    </Link>
+                  </Button>
+                </article>
+              );
+            })}
+            {!cards.length ? (
+              <p className="rounded-xl border bg-background/40 p-4 text-center text-sm text-muted-foreground">
+                No meeting cards yet.
+              </p>
+            ) : null}
+          </div>
+          <div className="hidden md:block">
+            <Table>
             <TableHeader>
               <TableRow>
                 <TableHead>Meeting</TableHead>
@@ -702,7 +775,8 @@ export function TipsterDashboardClient() {
                 </TableRow>
               ) : null}
             </TableBody>
-          </Table>
+            </Table>
+          </div>
         </CardContent>
       </Card>
 

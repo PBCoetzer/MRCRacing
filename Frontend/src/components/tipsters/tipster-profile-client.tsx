@@ -1,6 +1,7 @@
 "use client";
 
 import Link from "next/link";
+import { useRouter } from "next/navigation";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import {
   AlertTriangle,
@@ -87,6 +88,7 @@ export function TipsterProfileClient({
   initialProfile,
   tipsterSlug: suppliedTipsterSlug,
 }: TipsterProfileClientProps = {}) {
+  const router = useRouter();
   const [loadedAt] = useState(() => Date.now());
   const [loading, setLoading] = useState(!initialProfile);
   const [processing, setProcessing] = useState("");
@@ -287,7 +289,7 @@ export function TipsterProfileClient({
     }
 
     const currentPath = `${window.location.pathname}${window.location.search}`;
-    window.location.assign(
+    router.push(
       `/login/?next=${encodeURIComponent(currentPath)}&action=${action}`,
     );
     return false;

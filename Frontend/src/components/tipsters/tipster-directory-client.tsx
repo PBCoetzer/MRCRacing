@@ -1,5 +1,6 @@
 "use client";
 
+import { useRouter } from "next/navigation";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import {
   AlertTriangle,
@@ -110,6 +111,7 @@ function TipsterCard({
 }
 
 export function TipsterDirectoryClient() {
+  const router = useRouter();
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
   const [tipsters, setTipsters] = useState<TipsterProfile[]>([]);
@@ -203,7 +205,7 @@ export function TipsterDirectoryClient() {
     }
 
     if (!userId) {
-      window.location.assign(
+      router.push(
         `/login/?next=${encodeURIComponent("/tipsters/")}`,
       );
       return;
