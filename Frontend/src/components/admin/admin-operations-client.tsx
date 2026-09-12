@@ -9,12 +9,16 @@ import {
   BellRing,
   CalendarClock,
   CheckCircle2,
+  CreditCard,
   Gift,
   Loader2,
+  MailPlus,
   PackagePlus,
+  ReceiptText,
   RefreshCw,
   Search,
   Settings,
+  UserPlus,
   Users,
 } from "lucide-react";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
@@ -67,6 +71,68 @@ type UserSearchResult = {
   total: number;
 };
 
+type RegistrationDeliveryState =
+  | "manually_verified"
+  | "confirmed"
+  | "dispatched_unverified"
+  | "not_dispatched";
+
+type RegistrationDiagnostic = {
+  userId: string;
+  email: string;
+  displayName: string | null;
+  phone: string | null;
+  createdAt: string;
+  confirmationSentAt: string | null;
+  emailConfirmedAt: string | null;
+  lastSignInAt: string | null;
+  confirmedOver18At: string | null;
+  acceptedTermsAt: string | null;
+  acceptedTermsVersion: string | null;
+  providers: string[];
+  deliveryState: RegistrationDeliveryState;
+  latestAdminEmailActionAt: string | null;
+};
+
+type RegistrationDiagnosticResult = {
+  items: RegistrationDiagnostic[];
+  total: number;
+  limit: number;
+  offset: number;
+};
+
+type AuthEmailProviderStatus =
+  | "pending"
+  | "accepted"
+  | "sent"
+  | "delivery_delayed"
+  | "delivered"
+  | "bounced"
+  | "complained"
+  | "suppressed"
+  | "failed";
+
+type AuthEmailDeliverySummary = {
+  userId: string;
+  provider: string;
+  providerMessageId: string | null;
+  status: AuthEmailProviderStatus;
+  emailActionType: string;
+  acceptedAt: string | null;
+  latestEventAt: string | null;
+  deliveredAt: string | null;
+  bouncedAt: string | null;
+  complainedAt: string | null;
+  suppressedAt: string | null;
+  failedAt: string | null;
+  lastErrorCode: string | null;
+  lastErrorMessage: string | null;
+};
+
+type AuthEmailDeliverySummaryResult = {
+  items: AuthEmailDeliverySummary[];
+};
+
 type AdminCreditPackage = {
   id: string;
   name: string;
@@ -77,6 +143,71 @@ type AdminCreditPackage = {
   is_active: boolean;
   sort_order: number;
   updated_at: string;
+};
+
+type GatewayPayment = {
+  id: string;
+  createdAt: string;
+  accountEmail: string | null;
+  accountName: string | null;
+  amountCents: number;
+  currency: string;
+  provider: string;
+  status: "pending" | "paid" | "failed" | "cancelled" | "refunded";
+};
+
+type GatewayPaymentResult = {
+  items: GatewayPayment[];
+  total: number;
+  page: number;
+  pageSize: number;
+};
+
+type InternalLedgerEntry = {
+  id: string;
+  purchaseId: string;
+  createdAt: string;
+  purchaseCreatedAt: string;
+  purchaseType: "meeting" | "subscription";
+  purchaseStatus: "active" | "disputed" | "refunded" | "cancelled";
+  sourceLabel: string;
+  entryType: "sale" | "refund";
+  refundOrigin:
+    | "admin_approved"
+    | "legacy_automatic"
+    | "legacy_manual"
+    | "legacy_refund_correction"
+    | null;
+  clientEmail: string | null;
+  clientName: string | null;
+  tipsterEmail: string | null;
+  tipsterName: string;
+  grossCredits: number;
+  purchasedCredits: number;
+  rewardCredits: number;
+  earningGrossCredits: number;
+  commissionRate: number;
+  platformFeeCredits: number;
+  tipsterNetCredits: number;
+};
+
+type AdminTipsterPackage = {
+  id: string;
+  tipsterId: string;
+  tipsterName: string;
+  tipsterEmail: string | null;
+  packageName: string;
+  durationMonths: number;
+  priceCredits: number;
+  active: boolean;
+  updatedAt: string;
+};
+
+type InternalLedgerResult = {
+  items: InternalLedgerEntry[];
+  total: number;
+  page: number;
+  pageSize: number;
 };
 
 type AccessTraceResult = {
@@ -102,6 +233,57 @@ function errorMessage(error: unknown, fallback: string) {
   return fallback;
 }
 
+function formatPaymentAmount(amountCents: number, currency: string) {
+  return new Intl.NumberFormat("en-ZA", {
+    style: "currency",
+    currency: currency || "ZAR",
+  }).format(amountCents / 100);
+}
+
+function paymentStatusVariant(status: GatewayPayment["status"]) {
+  if (status === "paid") {
+    return "default" as const;
+  }
+
+  if (status === "failed" || status === "cancelled") {
+    return "destructive" as const;
+  }
+
+  return status === "refunded" ? ("secondary" as const) : ("outline" as const);
+}
+
+function registrationStatusLabel(state: RegistrationDeliveryState) {
+  if (state === "manually_verified") return "Manually verified";
+  if (state === "confirmed") return "Email confirmed";
+  if (state === "dispatched_unverified") return "Dispatch recorded";
+  return "No dispatch recorded";
+}
+
+function registrationStatusVariant(state: RegistrationDeliveryState) {
+  if (state === "confirmed" || state === "manually_verified") {
+    return "default" as const;
+  }
+
+  if (state === "not_dispatched") {
+    return "destructive" as const;
+  }
+
+  return "outline" as const;
+}
+
+function providerDeliveryLabel(status: AuthEmailProviderStatus) {
+  if (status === "delivery_delayed") return "Delivery delayed";
+  return status.charAt(0).toUpperCase() + status.slice(1);
+}
+
+function providerDeliveryVariant(status: AuthEmailProviderStatus) {
+  if (["bounced", "complained", "suppressed", "failed"].includes(status)) {
+    return "destructive" as const;
+  }
+  if (status === "delivered") return "default" as const;
+  return "outline" as const;
+}
+
 export function AdminOperationsClient() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
@@ -115,6 +297,22 @@ export function AdminOperationsClient() {
   const [disputeNotes, setDisputeNotes] = useState<Record<string, string>>({});
   const [outbox, setOutbox] = useState<OutboxRow[]>([]);
   const [testMeetings, setTestMeetings] = useState<TestMeeting[]>([]);
+  const [registrationDiagnostics, setRegistrationDiagnostics] = useState<
+    RegistrationDiagnostic[]
+  >([]);
+  const [registrationTotal, setRegistrationTotal] = useState(0);
+  const [registrationDiagnosticsError, setRegistrationDiagnosticsError] = useState("");
+  const [emailDeliveryByUser, setEmailDeliveryByUser] = useState<
+    Record<string, AuthEmailDeliverySummary>
+  >({});
+  const [emailDeliveryError, setEmailDeliveryError] = useState("");
+  const [gatewayPayments, setGatewayPayments] = useState<GatewayPayment[]>([]);
+  const [paymentTotal, setPaymentTotal] = useState(0);
+  const [paymentPage, setPaymentPage] = useState(1);
+  const [internalLedger, setInternalLedger] = useState<InternalLedgerEntry[]>([]);
+  const [internalLedgerTotal, setInternalLedgerTotal] = useState(0);
+  const [internalLedgerPage, setInternalLedgerPage] = useState(1);
+  const [tipsterPackages, setTipsterPackages] = useState<AdminTipsterPackage[]>([]);
   const [creditPackages, setCreditPackages] = useState<AdminCreditPackage[]>([]);
   const [packageDrafts, setPackageDrafts] = useState<Record<string, AdminCreditPackage>>({});
   const [newPackage, setNewPackage] = useState<Omit<AdminCreditPackage, "id" | "updated_at">>({
@@ -144,7 +342,7 @@ export function AdminOperationsClient() {
     setLoading(true);
     setError("");
 
-    const [usersResult, tipstersResult, settingsResult, disputeResult, outboxResult, meetingResult, packageResult] =
+    const [usersResult, tipstersResult, settingsResult, disputeResult, outboxResult, meetingResult, packageResult, paymentResult, internalLedgerResult, tipsterPackageResult, registrationResult, emailDeliveryResult] =
       await Promise.all([
         supabase.rpc("admin_search_users", {
           p_page: 1,
@@ -178,6 +376,22 @@ export function AdminOperationsClient() {
           .from("credit_packages")
           .select("id,name,credits,reward_credits,price_cents,promotion_label,is_active,sort_order,updated_at")
           .order("sort_order"),
+        supabase.rpc("admin_list_gateway_payments", {
+          p_page: paymentPage,
+          p_page_size: 25,
+        }),
+        supabase.rpc("admin_list_internal_tipster_ledger", {
+          p_page: internalLedgerPage,
+          p_page_size: 25,
+        }),
+        supabase.rpc("admin_list_tipster_packages"),
+        supabase.rpc("admin_list_registration_diagnostics", {
+          p_limit: 100,
+          p_offset: 0,
+        }),
+        supabase.rpc("admin_list_auth_email_delivery_summary", {
+          p_limit: 200,
+        }),
       ]);
 
     const firstError =
@@ -187,7 +401,10 @@ export function AdminOperationsClient() {
       disputeResult.error ??
       outboxResult.error ??
       meetingResult.error ??
-      packageResult.error;
+      packageResult.error ??
+      paymentResult.error ??
+      internalLedgerResult.error ??
+      tipsterPackageResult.error;
 
     if (firstError) {
       setError(firstError.message);
@@ -205,11 +422,44 @@ export function AdminOperationsClient() {
     setDisputes((disputeResult.data ?? []) as AdminDispute[]);
     setOutbox((outboxResult.data ?? []) as OutboxRow[]);
     setTestMeetings((meetingResult.data ?? []) as TestMeeting[]);
+    const loadedPayments = paymentResult.data as GatewayPaymentResult | null;
+    setGatewayPayments(loadedPayments?.items ?? []);
+    setPaymentTotal(loadedPayments?.total ?? 0);
+    const loadedInternalLedger = internalLedgerResult.data as InternalLedgerResult | null;
+    setInternalLedger(loadedInternalLedger?.items ?? []);
+    setInternalLedgerTotal(loadedInternalLedger?.total ?? 0);
+    setTipsterPackages((tipsterPackageResult.data ?? []) as AdminTipsterPackage[]);
+    if (registrationResult.error) {
+      setRegistrationDiagnostics([]);
+      setRegistrationTotal(0);
+      setRegistrationDiagnosticsError(
+        "Enhanced registration diagnostics will activate when the approved database migration is deployed.",
+      );
+    } else {
+      const loadedRegistrations = registrationResult.data as RegistrationDiagnosticResult | null;
+      setRegistrationDiagnostics(loadedRegistrations?.items ?? []);
+      setRegistrationTotal(loadedRegistrations?.total ?? 0);
+      setRegistrationDiagnosticsError("");
+    }
+    if (emailDeliveryResult.error) {
+      setEmailDeliveryByUser({});
+      setEmailDeliveryError(
+        "Tracked provider delivery will activate after the Auth email delivery migration and hook are enabled.",
+      );
+    } else {
+      const loadedDelivery = emailDeliveryResult.data as AuthEmailDeliverySummaryResult | null;
+      setEmailDeliveryByUser(
+        Object.fromEntries(
+          (loadedDelivery?.items ?? []).map((item) => [item.userId, item]),
+        ),
+      );
+      setEmailDeliveryError("");
+    }
     const loadedPackages = (packageResult.data ?? []) as AdminCreditPackage[];
     setCreditPackages(loadedPackages);
     setPackageDrafts(Object.fromEntries(loadedPackages.map((item) => [item.id, item])));
     setLoading(false);
-  }, []);
+  }, [internalLedgerPage, paymentPage]);
 
   useEffect(() => {
     const timeoutId = window.setTimeout(() => {
@@ -227,7 +477,7 @@ export function AdminOperationsClient() {
     }
 
     const { error: workerError } = await supabase.functions.invoke(
-      "deliver-tip-notifications",
+      "process-tip-notifications",
       { body: { source: "admin-dashboard" } },
     );
 
@@ -243,6 +493,12 @@ export function AdminOperationsClient() {
       return;
     }
 
+    const adminNotes = disputeNotes[disputeId]?.trim() ?? "";
+    if (adminNotes.length < 10) {
+      setError("Add administrator review notes of at least ten characters before deciding the refund request.");
+      return;
+    }
+
     setProcessing(disputeId);
     setError("");
 
@@ -250,7 +506,7 @@ export function AdminOperationsClient() {
       const { error: disputeError } = await supabase.rpc("resolve_purchase_dispute", {
         p_dispute_id: disputeId,
         p_approve_refund: approve,
-        p_admin_notes: disputeNotes[disputeId] ?? "",
+        p_admin_notes: adminNotes,
       });
 
       if (disputeError) {
@@ -259,41 +515,25 @@ export function AdminOperationsClient() {
 
       setMessage(
         approve
-          ? "Dispute approved and the exact Credit reversal was recorded."
-          : "Dispute rejected with an immutable audit entry.",
+          ? "Refund request approved and the exact Credit reversal was recorded."
+          : "Refund request rejected with an immutable audit entry.",
       );
       await processNotificationWorker();
       await loadOperations();
     } catch (caughtError) {
-      setError(errorMessage(caughtError, "Could not resolve the dispute."));
+      setError(errorMessage(caughtError, "Could not resolve the refund request."));
     } finally {
       setProcessing("");
     }
   }
 
   async function runOperations() {
-    const supabase = createClient();
-
-    if (!supabase) {
-      return;
-    }
-
     setProcessing("operations");
     setError("");
 
     try {
-      const { data: refundCount, error: refundError } = await supabase.rpc(
-        "process_due_meeting_refunds",
-      );
-
-      if (refundError) {
-        throw refundError;
-      }
-
       await processNotificationWorker();
-      setMessage(
-        `${Number(refundCount ?? 0)} due meeting refund(s) processed. The email worker was invoked.`,
-      );
+      setMessage("The notification queue was processed. Refunds require a client request and administrator approval.");
       await loadOperations();
     } catch (caughtError) {
       setError(errorMessage(caughtError, "Operations could not be processed."));
@@ -467,6 +707,8 @@ export function AdminOperationsClient() {
   const queuedEmails = outbox.filter(
     (item) => item.status === "pending" || item.status === "failed",
   ).length;
+  const paymentPageCount = Math.max(1, Math.ceil(paymentTotal / 25));
+  const internalLedgerPageCount = Math.max(1, Math.ceil(internalLedgerTotal / 25));
 
   return (
     <div className="space-y-6">
@@ -529,7 +771,11 @@ export function AdminOperationsClient() {
       <Tabs defaultValue="meetings">
         <TabsList className="flex h-auto flex-wrap">
           <TabsTrigger value="meetings"><CalendarClock className="size-4" />Test meetings</TabsTrigger>
-          <TabsTrigger value="disputes"><Banknote className="size-4" />Disputes</TabsTrigger>
+          <TabsTrigger value="registrations"><UserPlus className="size-4" />Registrations</TabsTrigger>
+          <TabsTrigger value="payments"><CreditCard className="size-4" />Payments</TabsTrigger>
+          <TabsTrigger value="internal-ledger"><ReceiptText className="size-4" />In-house ledger</TabsTrigger>
+          <TabsTrigger value="tipster-packages"><PackagePlus className="size-4" />Tipster packages</TabsTrigger>
+          <TabsTrigger value="disputes"><Banknote className="size-4" />Refund requests</TabsTrigger>
           <TabsTrigger value="notifications"><BellRing className="size-4" />Notifications</TabsTrigger>
           <TabsTrigger value="packages"><Gift className="size-4" />Credit packages</TabsTrigger>
           <TabsTrigger value="system"><Settings className="size-4" />System</TabsTrigger>
@@ -590,11 +836,432 @@ export function AdminOperationsClient() {
           </Card>
         </TabsContent>
 
+        <TabsContent id="registrations" value="registrations">
+          <Card>
+            <CardHeader>
+              <CardTitle>Client registration and email diagnostics</CardTitle>
+              <CardDescription>
+                Latest account registrations, Supabase confirmation-dispatch timestamps,
+                confirmation evidence, age declarations, and sign-in activity.
+              </CardDescription>
+            </CardHeader>
+            <CardContent className="space-y-4">
+              <Alert>
+                <MailPlus className="size-4" />
+                <AlertTitle>Email delivery evidence</AlertTitle>
+                <AlertDescription>
+                  Tracked Auth email support is installed. Once the provider hook is enabled, new
+                  messages use provider IDs and signed webhooks for delivered, delayed, bounced,
+                  suppressed, complained, and failed events. Legacy Xneelo SMTP messages remain untracked.
+                </AlertDescription>
+              </Alert>
+
+              {registrationDiagnosticsError ? (
+                <Alert variant="destructive">
+                  <AlertCircle className="size-4" />
+                  <AlertTitle>Database update pending</AlertTitle>
+                  <AlertDescription>{registrationDiagnosticsError}</AlertDescription>
+                </Alert>
+              ) : null}
+
+              {emailDeliveryError ? (
+                <Alert>
+                  <AlertCircle className="size-4" />
+                  <AlertTitle>Provider tracking not active</AlertTitle>
+                  <AlertDescription>{emailDeliveryError}</AlertDescription>
+                </Alert>
+              ) : null}
+
+              <div className="overflow-x-auto">
+                <Table>
+                  <TableHeader>
+                    <TableRow>
+                      <TableHead>Registered</TableHead>
+                      <TableHead>Account</TableHead>
+                      <TableHead>Confirmation request</TableHead>
+                      <TableHead>Current evidence</TableHead>
+                      <TableHead>Provider delivery</TableHead>
+                      <TableHead>Last sign-in</TableHead>
+                      <TableHead />
+                    </TableRow>
+                  </TableHeader>
+                  <TableBody>
+                    {registrationDiagnostics.map((registration) => {
+                      const providerDelivery = emailDeliveryByUser[registration.userId];
+                      return (
+                      <TableRow key={registration.userId}>
+                        <TableCell className="whitespace-nowrap">
+                          {formatRaceDateTime(registration.createdAt)}
+                        </TableCell>
+                        <TableCell>
+                          <div className="min-w-64">
+                            {registration.displayName ? (
+                              <p className="font-medium">{registration.displayName}</p>
+                            ) : null}
+                            <p>{registration.email}</p>
+                            <p className="text-xs text-muted-foreground">
+                              {registration.phone || "No phone"} · {registration.providers.join(", ") || "Provider unavailable"}
+                            </p>
+                            <div className="mt-2 flex flex-wrap gap-1">
+                              <Badge variant={registration.confirmedOver18At ? "outline" : "destructive"}>
+                                {registration.confirmedOver18At ? "Age declared" : "Age record missing"}
+                              </Badge>
+                              <Badge variant={registration.acceptedTermsAt ? "outline" : "destructive"}>
+                                {registration.acceptedTermsAt
+                                  ? `Terms ${registration.acceptedTermsVersion || "accepted"}`
+                                  : "Terms record missing"}
+                              </Badge>
+                            </div>
+                          </div>
+                        </TableCell>
+                        <TableCell>
+                          {providerDelivery ? (
+                            <div className="min-w-40">
+                              <Badge variant={providerDeliveryVariant(providerDelivery.status)}>
+                                {providerDeliveryLabel(providerDelivery.status)}
+                              </Badge>
+                              <p className="mt-1 whitespace-nowrap text-xs text-muted-foreground">
+                                {providerDelivery.provider} · {providerDelivery.latestEventAt
+                                  ? formatRaceDateTime(providerDelivery.latestEventAt)
+                                  : providerDelivery.acceptedAt
+                                    ? formatRaceDateTime(providerDelivery.acceptedAt)
+                                    : "Awaiting event"}
+                              </p>
+                              {providerDelivery.lastErrorMessage ? (
+                                <p className="mt-1 max-w-72 text-xs text-destructive">
+                                  {providerDelivery.lastErrorMessage}
+                                </p>
+                              ) : null}
+                            </div>
+                          ) : (
+                            <span className="text-sm text-muted-foreground">Legacy / untracked</span>
+                          )}
+                        </TableCell>
+                        <TableCell className="whitespace-nowrap">
+                          {registration.confirmationSentAt
+                            ? formatRaceDateTime(registration.confirmationSentAt)
+                            : "Not recorded"}
+                        </TableCell>
+                        <TableCell>
+                          <Badge variant={registrationStatusVariant(registration.deliveryState)}>
+                            {registrationStatusLabel(registration.deliveryState)}
+                          </Badge>
+                          {registration.emailConfirmedAt ? (
+                            <p className="mt-1 whitespace-nowrap text-xs text-muted-foreground">
+                              {formatRaceDateTime(registration.emailConfirmedAt)}
+                            </p>
+                          ) : null}
+                        </TableCell>
+                        <TableCell className="whitespace-nowrap">
+                          {registration.lastSignInAt
+                            ? formatRaceDateTime(registration.lastSignInAt)
+                            : "Never"}
+                        </TableCell>
+                        <TableCell>
+                          <Button asChild size="sm" variant="outline">
+                            <Link href={`/admin/user/?user=${registration.userId}#registration`}>
+                              Review
+                            </Link>
+                          </Button>
+                        </TableCell>
+                      </TableRow>
+                      );
+                    })}
+                    {!registrationDiagnostics.length && !registrationDiagnosticsError ? (
+                      <TableRow>
+                        <TableCell colSpan={7} className="h-24 text-center text-muted-foreground">
+                          No registration records were returned.
+                        </TableCell>
+                      </TableRow>
+                    ) : null}
+                  </TableBody>
+                </Table>
+              </div>
+
+              {!registrationDiagnosticsError ? (
+                <p className="text-sm text-muted-foreground">
+                  Showing the latest {registrationDiagnostics.length.toLocaleString("en-ZA")} of {registrationTotal.toLocaleString("en-ZA")} registered accounts. Open a record for the immutable event timeline and administrator resend history.
+                </p>
+              ) : null}
+            </CardContent>
+          </Card>
+        </TabsContent>
+
+        <TabsContent id="payments" value="payments">
+          <Card>
+            <CardHeader>
+              <CardTitle>Gateway payments</CardTitle>
+              <CardDescription>
+                Successful purchases confirmed by current and future payment gateways. Pending, failed, and cancelled checkouts are excluded.
+              </CardDescription>
+            </CardHeader>
+            <CardContent className="space-y-4">
+              <Table>
+                <TableHeader>
+                  <TableRow>
+                    <TableHead>Date &amp; time</TableHead>
+                    <TableHead>Account</TableHead>
+                    <TableHead>Amount</TableHead>
+                    <TableHead>Gateway</TableHead>
+                    <TableHead>Status</TableHead>
+                  </TableRow>
+                </TableHeader>
+                <TableBody>
+                  {gatewayPayments.map((payment) => (
+                    <TableRow key={payment.id}>
+                      <TableCell>{formatRaceDateTime(payment.createdAt)}</TableCell>
+                      <TableCell>
+                        <div className="max-w-72">
+                          {payment.accountName ? (
+                            <p className="font-medium">{payment.accountName}</p>
+                          ) : null}
+                          <p className="text-muted-foreground">
+                            {payment.accountEmail ?? "Email unavailable"}
+                          </p>
+                        </div>
+                      </TableCell>
+                      <TableCell className="font-mono font-semibold">
+                        {formatPaymentAmount(payment.amountCents, payment.currency)}
+                      </TableCell>
+                      <TableCell className="capitalize">{payment.provider}</TableCell>
+                      <TableCell>
+                        <Badge variant={paymentStatusVariant(payment.status)} className="capitalize">
+                          {payment.status}
+                        </Badge>
+                      </TableCell>
+                    </TableRow>
+                  ))}
+                  {!gatewayPayments.length ? (
+                    <TableRow>
+                      <TableCell colSpan={5} className="h-24 text-center text-muted-foreground">
+                        No successful gateway payments have been recorded.
+                      </TableCell>
+                    </TableRow>
+                  ) : null}
+                </TableBody>
+              </Table>
+
+              <div className="flex flex-col gap-3 border-t pt-4 sm:flex-row sm:items-center sm:justify-between">
+                <p className="text-sm text-muted-foreground">
+                  Page {paymentPage} of {paymentPageCount} · {paymentTotal.toLocaleString("en-ZA")} records
+                </p>
+                <div className="flex gap-2">
+                  <Button
+                    type="button"
+                    variant="outline"
+                    disabled={loading || paymentPage <= 1}
+                    onClick={() => setPaymentPage((current) => Math.max(1, current - 1))}
+                  >
+                    Previous
+                  </Button>
+                  <Button
+                    type="button"
+                    variant="outline"
+                    disabled={loading || paymentPage >= paymentPageCount}
+                    onClick={() => setPaymentPage((current) => Math.min(paymentPageCount, current + 1))}
+                  >
+                    Next
+                  </Button>
+                </div>
+              </div>
+            </CardContent>
+          </Card>
+        </TabsContent>
+
+        <TabsContent id="internal-ledger" value="internal-ledger">
+          <Card>
+            <CardHeader>
+              <CardTitle>MRC in-house ledger</CardTitle>
+              <CardDescription>
+                Full client purchase prices, wallet funding splits, tipster earnings, and approved refund reversals.
+              </CardDescription>
+            </CardHeader>
+            <CardContent className="space-y-4">
+              <Alert>
+                <CheckCircle2 className="size-4" />
+                <AlertTitle>Automatic refunds are disabled</AlertTitle>
+                <AlertDescription>
+                  New refunds require a client request and administrator approval. Historic automatic reversals remain visible because financial audit records are immutable.
+                </AlertDescription>
+              </Alert>
+              <Table>
+                <TableHeader>
+                  <TableRow>
+                    <TableHead>Date &amp; time</TableHead>
+                    <TableHead>Client</TableHead>
+                    <TableHead>Tipster</TableHead>
+                    <TableHead>Purchase</TableHead>
+                    <TableHead>Entry</TableHead>
+                    <TableHead>Purchase total</TableHead>
+                    <TableHead>Funding</TableHead>
+                    <TableHead>MRC fee</TableHead>
+                    <TableHead>Tipster net</TableHead>
+                  </TableRow>
+                </TableHeader>
+                <TableBody>
+                  {internalLedger.map((entry) => (
+                    <TableRow key={entry.id}>
+                      <TableCell>{formatRaceDateTime(entry.createdAt)}</TableCell>
+                      <TableCell>
+                        <div className="max-w-72">
+                          {entry.clientName ? <p className="font-medium">{entry.clientName}</p> : null}
+                          <p className="break-all text-muted-foreground">
+                            {entry.clientEmail ?? "Email unavailable"}
+                          </p>
+                        </div>
+                      </TableCell>
+                      <TableCell>
+                        <div className="max-w-72">
+                          <p className="font-medium">{entry.tipsterName}</p>
+                          <p className="break-all text-muted-foreground">
+                            {entry.tipsterEmail ?? "Email unavailable"}
+                          </p>
+                        </div>
+                      </TableCell>
+                      <TableCell>
+                        <div className="max-w-80">
+                          <p className="font-medium capitalize">{entry.purchaseType}</p>
+                          <p className="whitespace-normal text-xs text-muted-foreground">
+                            {entry.sourceLabel}
+                          </p>
+                          <p className="mt-1 font-mono text-xs text-muted-foreground">
+                            Ref {entry.purchaseId.slice(0, 8)} · {entry.purchaseStatus}
+                          </p>
+                        </div>
+                      </TableCell>
+                      <TableCell>
+                        <Badge
+                          variant={entry.refundOrigin === "admin_approved" ? "destructive" : entry.refundOrigin === "legacy_refund_correction" ? "default" : entry.entryType === "refund" ? "secondary" : "outline"}
+                        >
+                          {entry.refundOrigin === "legacy_refund_correction"
+                            ? "Legacy refund correction"
+                            : entry.entryType === "sale"
+                            ? `${entry.purchaseType} sale`
+                            : entry.refundOrigin === "admin_approved"
+                              ? "Approved refund"
+                              : entry.refundOrigin === "legacy_automatic"
+                                ? "Legacy automatic reversal"
+                                : "Legacy refund"}
+                        </Badge>
+                      </TableCell>
+                      <TableCell className="font-mono font-semibold">
+                        {entry.grossCredits.toLocaleString("en-ZA")} Credits
+                      </TableCell>
+                      <TableCell>
+                        <p className="font-mono text-sm">{entry.purchasedCredits.toLocaleString("en-ZA")} Purchased</p>
+                        <p className="font-mono text-sm text-brand-cyan">{entry.rewardCredits.toLocaleString("en-ZA")} Reward</p>
+                        <p className="text-xs text-muted-foreground">
+                          {entry.earningGrossCredits.toLocaleString("en-ZA")} Credits earnings basis
+                        </p>
+                      </TableCell>
+                      <TableCell>
+                        <p className="font-mono">{entry.platformFeeCredits.toLocaleString("en-ZA")} Credits</p>
+                        <p className="text-xs text-muted-foreground">{entry.commissionRate}%</p>
+                      </TableCell>
+                      <TableCell className="font-mono font-semibold">
+                        {entry.tipsterNetCredits.toLocaleString("en-ZA")} Credits
+                      </TableCell>
+                    </TableRow>
+                  ))}
+                  {!internalLedger.length ? (
+                    <TableRow>
+                      <TableCell colSpan={9} className="h-24 text-center text-muted-foreground">
+                        No client-to-tipster ledger entries have been recorded.
+                      </TableCell>
+                    </TableRow>
+                  ) : null}
+                </TableBody>
+              </Table>
+
+              <div className="flex flex-col gap-3 border-t pt-4 sm:flex-row sm:items-center sm:justify-between">
+                <p className="text-sm text-muted-foreground">
+                  Page {internalLedgerPage} of {internalLedgerPageCount} · {internalLedgerTotal.toLocaleString("en-ZA")} entries
+                </p>
+                <div className="flex gap-2">
+                  <Button
+                    type="button"
+                    variant="outline"
+                    disabled={loading || internalLedgerPage <= 1}
+                    onClick={() => setInternalLedgerPage((current) => Math.max(1, current - 1))}
+                  >
+                    Previous
+                  </Button>
+                  <Button
+                    type="button"
+                    variant="outline"
+                    disabled={loading || internalLedgerPage >= internalLedgerPageCount}
+                    onClick={() => setInternalLedgerPage((current) => Math.min(internalLedgerPageCount, current + 1))}
+                  >
+                    Next
+                  </Button>
+                </div>
+              </div>
+            </CardContent>
+          </Card>
+        </TabsContent>
+
+        <TabsContent id="tipster-packages" value="tipster-packages">
+          <Card>
+            <CardHeader>
+              <CardTitle>Tipster subscription packages</CardTitle>
+              <CardDescription>
+                Current package prices for every tipster. Purchases retain the package price recorded when the client subscribed.
+              </CardDescription>
+            </CardHeader>
+            <CardContent>
+              <Table>
+                <TableHeader>
+                  <TableRow>
+                    <TableHead>Tipster</TableHead>
+                    <TableHead>Package</TableHead>
+                    <TableHead>Duration</TableHead>
+                    <TableHead>Price</TableHead>
+                    <TableHead>Status</TableHead>
+                    <TableHead>Updated</TableHead>
+                  </TableRow>
+                </TableHeader>
+                <TableBody>
+                  {tipsterPackages.map((tipsterPackage) => (
+                    <TableRow key={tipsterPackage.id}>
+                      <TableCell>
+                        <p className="font-medium">{tipsterPackage.tipsterName}</p>
+                        <p className="break-all text-muted-foreground">
+                          {tipsterPackage.tipsterEmail ?? "Email unavailable"}
+                        </p>
+                      </TableCell>
+                      <TableCell>{tipsterPackage.packageName}</TableCell>
+                      <TableCell>{tipsterPackage.durationMonths} month{tipsterPackage.durationMonths === 1 ? "" : "s"}</TableCell>
+                      <TableCell className="font-mono font-semibold">
+                        {tipsterPackage.priceCredits.toLocaleString("en-ZA")} Credits
+                      </TableCell>
+                      <TableCell>
+                        <Badge variant={tipsterPackage.active ? "default" : "secondary"}>
+                          {tipsterPackage.active ? "Active" : "Hidden"}
+                        </Badge>
+                      </TableCell>
+                      <TableCell>{formatRaceDateTime(tipsterPackage.updatedAt)}</TableCell>
+                    </TableRow>
+                  ))}
+                  {!tipsterPackages.length ? (
+                    <TableRow>
+                      <TableCell colSpan={6} className="h-24 text-center text-muted-foreground">
+                        No tipster packages have been configured.
+                      </TableCell>
+                    </TableRow>
+                  ) : null}
+                </TableBody>
+              </Table>
+            </CardContent>
+          </Card>
+        </TabsContent>
+
         <TabsContent id="disputes" value="disputes">
           <Card>
             <CardHeader>
-              <CardTitle>Purchase disputes</CardTitle>
-              <CardDescription>Approve or reject against the immutable purchase trail.</CardDescription>
+              <CardTitle>Client refund requests</CardTitle>
+              <CardDescription>
+                A request does not issue Credits. Only an administrator approval creates the exact refund reversal.
+              </CardDescription>
             </CardHeader>
             <CardContent className="space-y-3">
               {disputes.map((dispute) => (
@@ -614,7 +1281,7 @@ export function AdminOperationsClient() {
                   {dispute.status === "open" ? (
                     <div className="mt-4 space-y-2">
                       <Textarea
-                        placeholder="Administrator decision notes"
+                        placeholder="Required administrator decision notes"
                         value={disputeNotes[dispute.id] ?? ""}
                         onChange={(event) =>
                           setDisputeNotes((current) => ({

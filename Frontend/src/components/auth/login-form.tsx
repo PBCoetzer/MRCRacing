@@ -9,7 +9,11 @@ import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import { CaptchaField, turnstileSiteKey } from "@/components/auth/captcha-field";
+import {
+  CaptchaField,
+  isCaptchaChallengeError,
+  turnstileSiteKey,
+} from "@/components/auth/captcha-field";
 import { dashboardForRoles } from "@/lib/auth/roles";
 import { supabaseConfigMessage } from "@/lib/supabase/config";
 import { createClient } from "@/lib/supabase/client";
@@ -25,6 +29,7 @@ type RoleRow = {
 
 export function LoginForm() {
   const router = useRouter();
+  const submitLockRef = useRef(false);
   const turnstileRef = useRef<TurnstileInstance>(null);
   const [formState, setFormState] = useState<FormState>({
     kind: "idle",
@@ -56,10 +61,14 @@ export function LoginForm() {
       return;
     }
 
-    if (!captchaToken) {
+    const currentCaptchaToken = turnstileRef.current?.getResponse() || captchaToken;
+
+    if (!currentCaptchaToken || turnstileRef.current?.isExpired() === true) {
+      resetCaptcha();
       setFormState({
         kind: "error",
-        message: "Please complete the human verification before logging in.",
+        message:
+          "Human verification expired and has been refreshed. Please complete it again before logging in.",
       });
       return;
     }
@@ -68,6 +77,11 @@ export function LoginForm() {
     const email = String(formData.get("email") ?? "").trim();
     const password = String(formData.get("password") ?? "");
 
+    if (submitLockRef.current) {
+      return;
+    }
+
+    submitLockRef.current = true;
     setIsSubmitting(true);
     setFormState({ kind: "idle", message: "" });
 
@@ -76,7 +90,7 @@ export function LoginForm() {
         email,
         password,
         options: {
-          captchaToken,
+          captchaToken: currentCaptchaToken,
         },
       });
 
@@ -113,11 +127,14 @@ export function LoginForm() {
       setFormState({
         kind: "error",
         message:
-          error instanceof Error
-            ? error.message
-            : "Login failed. Please check your details and try again.",
+          isCaptchaChallengeError(error)
+            ? "Human verification expired or was already submitted. It has been refreshed; please complete it and log in again."
+            : error instanceof Error
+              ? error.message
+              : "Login failed. Please check your details and try again.",
       });
     } finally {
+      submitLockRef.current = false;
       setIsSubmitting(false);
     }
   }

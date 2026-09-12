@@ -6,7 +6,6 @@ const links = [
   { label: "MRC Blog", href: "/blog/" },
   { label: "Racecards & Results", href: "/horse-racing/" },
   { label: "Horse Care", href: "/horse-care/" },
-  { label: "Responsible Gambling", href: "/responsible-gambling" },
   { label: "Privacy", href: "/privacy" },
   { label: "Refunds", href: "/refund-policy/" },
   { label: "Cancellations", href: "/cancellation-policy/" },
@@ -29,9 +28,8 @@ export function SiteFooter() {
           <div>
           <p className="font-heading text-sm text-white">MRC Racing Tips</p>
           <p className="mt-2 max-w-2xl">
-            Horse-racing analysis and digital tipping content only. MRC Racing Tips does not
-            accept bets, process gambling deposits, or pay out winnings. 18+ only. Gamble
-            responsibly.
+            South African horse-racing analysis, factual racecards, result history, and
+            independent digital tipster content.
           </p>
           <p className="mt-3 max-w-2xl text-xs">
             {businessDetails.legalName} · Registration {businessDetails.registrationNumber}<br />

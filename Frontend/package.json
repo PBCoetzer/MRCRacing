@@ -5,7 +5,8 @@
   "scripts": {
     "dev": "next dev",
     "build": "next build",
-    "build:static": "next build && node scripts/prepare-static-export.mjs",
+    "audit:terminology": "node scripts/audit-public-terminology.mjs",
+    "build:static": "npm run audit:terminology && next build && node scripts/prepare-static-export.mjs",
     "start": "next start",
     "lint": "eslint"
   },

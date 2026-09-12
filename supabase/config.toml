@@ -1,4 +1,10 @@
 
+[functions.process-tip-notifications]
+enabled = true
+verify_jwt = false
+import_map = "./functions/process-tip-notifications/deno.json"
+entrypoint = "./functions/process-tip-notifications/index.ts"
+
 [functions.hermes-race-bridge]
 enabled = true
 verify_jwt = false
@@ -39,3 +45,15 @@ enabled = true
 verify_jwt = false
 import_map = "./functions/deliver-sms-notifications/deno.json"
 entrypoint = "./functions/deliver-sms-notifications/index.ts"
+
+[functions.auth-send-email]
+enabled = true
+verify_jwt = false
+import_map = "./functions/auth-send-email/deno.json"
+entrypoint = "./functions/auth-send-email/index.ts"
+
+[functions.auth-email-webhook]
+enabled = true
+verify_jwt = false
+import_map = "./functions/auth-email-webhook/deno.json"
+entrypoint = "./functions/auth-email-webhook/index.ts"

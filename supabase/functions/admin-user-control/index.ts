@@ -2,10 +2,12 @@ import "jsr:@supabase/functions-js/edge-runtime.d.ts";
 import { createClient } from "@supabase/supabase-js";
 
 type ModerationAction = "flag" | "suspend" | "ban" | "restore";
+type EmailConfirmationAction = "resend_confirmation" | "verify_email";
+type AdminUserAction = ModerationAction | EmailConfirmationAction;
 
-type ModerationRequest = {
+type AdminUserRequest = {
   userId?: string;
-  action?: ModerationAction;
+  action?: AdminUserAction;
   category?: string;
   internalReason?: string;
   publicMessage?: string;
@@ -37,7 +39,7 @@ function corsHeaders(request: Request) {
       ? origin
       : "https://www.mrcracing.co.za",
     "Access-Control-Allow-Headers":
-      "authorization, apikey, content-type, x-idempotency-key",
+      "authorization, x-client-info, apikey, content-type, x-idempotency-key",
     "Access-Control-Allow-Methods": "POST, OPTIONS",
     Vary: "Origin",
   };
@@ -74,6 +76,16 @@ function safeRpcMessage(message: string | undefined) {
   return "The requested user-control change could not be completed.";
 }
 
+function isModerationAction(action: string): action is ModerationAction {
+  return ["flag", "suspend", "ban", "restore"].includes(action);
+}
+
+function isEmailConfirmationAction(
+  action: string,
+): action is EmailConfirmationAction {
+  return ["resend_confirmation", "verify_email"].includes(action);
+}
+
 Deno.serve(async (request: Request) => {
   if (request.method === "OPTIONS") {
     return new Response("ok", { headers: corsHeaders(request) });
@@ -106,11 +118,15 @@ Deno.serve(async (request: Request) => {
       persistSession: false,
     },
   });
-  const { data: authenticatedUser, error: userError } =
-    await serviceClient.auth.getUser(accessToken);
+  const { data: authenticatedUser, error: userError } = await serviceClient.auth
+    .getUser(accessToken);
 
   if (userError || !authenticatedUser.user) {
-    return jsonResponse(request, { error: "Invalid authenticated session." }, 401);
+    return jsonResponse(
+      request,
+      { error: "Invalid authenticated session." },
+      401,
+    );
   }
 
   const actorId = authenticatedUser.user.id;
@@ -144,16 +160,16 @@ Deno.serve(async (request: Request) => {
     );
   }
 
-  let payload: ModerationRequest;
+  let payload: AdminUserRequest;
 
   try {
-    payload = await request.json() as ModerationRequest;
+    payload = await request.json() as AdminUserRequest;
   } catch {
     return jsonResponse(request, { error: "Invalid JSON request." }, 400);
   }
 
   const userId = safeText(payload.userId, 80);
-  const action = safeText(payload.action, 20) as ModerationAction;
+  const action = safeText(payload.action, 40);
   const category = safeText(payload.category, 100);
   const internalReason = safeText(payload.internalReason, 2000);
   const publicMessage = safeText(payload.publicMessage, 500);
@@ -163,8 +179,15 @@ Deno.serve(async (request: Request) => {
   );
   const suspensionUntil = safeText(payload.suspensionUntil, 80);
 
-  if (!userId || !["flag", "suspend", "ban", "restore"].includes(action)) {
-    return jsonResponse(request, { error: "Choose a valid user and action." }, 400);
+  if (
+    !userId ||
+    (!isModerationAction(action) && !isEmailConfirmationAction(action))
+  ) {
+    return jsonResponse(
+      request,
+      { error: "Choose a valid user and action." },
+      400,
+    );
   }
 
   if (!requestId || requestId.length < 8) {
@@ -181,6 +204,266 @@ Deno.serve(async (request: Request) => {
       { error: "An internal reason of at least ten characters is required." },
       400,
     );
+  }
+
+  if (isEmailConfirmationAction(action)) {
+    if (action === "verify_email" && payload.confirmation !== "VERIFY") {
+      return jsonResponse(
+        request,
+        { error: 'Type "VERIFY" to confirm manual email verification.' },
+        400,
+      );
+    }
+
+    const { data: existingAction, error: existingActionError } =
+      await serviceClient
+        .from("admin_email_confirmation_actions")
+        .select("actor_id,user_id,action,status")
+        .eq("request_id", requestId)
+        .maybeSingle();
+
+    if (existingActionError) {
+      return jsonResponse(
+        request,
+        { error: "The email action audit record could not be checked." },
+        502,
+      );
+    }
+
+    if (existingAction) {
+      const sameRequest = existingAction.actor_id === actorId &&
+        existingAction.user_id === userId &&
+        existingAction.action === action;
+
+      if (!sameRequest) {
+        return jsonResponse(
+          request,
+          { error: "This email action request id is already in use." },
+          409,
+        );
+      }
+
+      if (existingAction.status === "succeeded") {
+        return jsonResponse(request, {
+          ok: true,
+          action,
+          idempotent: true,
+          requestId,
+        });
+      }
+
+      return jsonResponse(
+        request,
+        {
+          error: existingAction.status === "processing"
+            ? "This email action is already processing."
+            : "This email action failed. Start a new request to retry.",
+        },
+        409,
+      );
+    }
+
+    const { data: targetUserData, error: targetUserError } = await serviceClient
+      .auth.admin.getUserById(userId);
+    const targetUser = targetUserData?.user;
+
+    if (targetUserError || !targetUser) {
+      return jsonResponse(request, { error: "User record not found." }, 404);
+    }
+
+    if (!targetUser.email) {
+      return jsonResponse(
+        request,
+        { error: "This account does not have an email address." },
+        400,
+      );
+    }
+
+    if (targetUser.email_confirmed_at) {
+      return jsonResponse(
+        request,
+        { error: "This email address is already confirmed." },
+        409,
+      );
+    }
+
+    if (action === "resend_confirmation") {
+      const resendCooldownStart = new Date(Date.now() - 60_000).toISOString();
+      const { data: recentResend, error: recentResendError } =
+        await serviceClient
+          .from("admin_email_confirmation_actions")
+          .select("id")
+          .eq("user_id", userId)
+          .eq("action", "resend_confirmation")
+          .eq("status", "succeeded")
+          .gte("created_at", resendCooldownStart)
+          .limit(1)
+          .maybeSingle();
+
+      if (recentResendError) {
+        return jsonResponse(
+          request,
+          { error: "The confirmation resend limit could not be checked." },
+          502,
+        );
+      }
+
+      if (recentResend) {
+        return jsonResponse(
+          request,
+          { error: "Wait at least 60 seconds before resending confirmation." },
+          429,
+        );
+      }
+    }
+
+    const { data: actionRecord, error: actionRecordError } = await serviceClient
+      .from("admin_email_confirmation_actions")
+      .insert({
+        request_id: requestId,
+        actor_id: actorId,
+        user_id: userId,
+        action,
+        reason: internalReason,
+      })
+      .select("id")
+      .single();
+
+    if (actionRecordError || !actionRecord) {
+      return jsonResponse(
+        request,
+        { error: "The email action could not be staged safely." },
+        502,
+      );
+    }
+
+    let actionError: { status?: number } | null = null;
+    let confirmedAt: string | null = null;
+    let confirmationSentAt = targetUser.confirmation_sent_at ?? null;
+
+    if (action === "resend_confirmation") {
+      const publicSiteUrl = (Deno.env.get("MRC_PUBLIC_SITE_URL") ??
+        "https://www.mrcracing.co.za").replace(/\/+$/, "");
+      const { error: resendError } = await serviceClient.auth.resend({
+        type: "signup",
+        email: targetUser.email,
+        options: {
+          emailRedirectTo: `${publicSiteUrl}/auth/callback/`,
+        },
+      });
+      actionError = resendError;
+
+      if (!resendError) {
+        const { data: refreshedUserData } = await serviceClient.auth.admin
+          .getUserById(userId);
+        confirmationSentAt = refreshedUserData?.user?.confirmation_sent_at ??
+          confirmationSentAt;
+      }
+    } else {
+      const { data: verifiedUserData, error: verifyError } = await serviceClient
+        .auth.admin.updateUserById(userId, {
+          email_confirm: true,
+        });
+      actionError = verifyError;
+      confirmedAt = verifiedUserData?.user?.email_confirmed_at ?? null;
+    }
+
+    if (actionError) {
+      const isRateLimit = actionError.status === 429;
+      const sanitizedFailure = isRateLimit
+        ? "Supabase Auth rate-limited the confirmation resend."
+        : action === "resend_confirmation"
+        ? "Supabase Auth did not accept the confirmation resend."
+        : "Supabase Auth did not accept manual email verification.";
+
+      await serviceClient
+        .from("admin_email_confirmation_actions")
+        .update({
+          status: "failed",
+          sanitized_error: sanitizedFailure,
+          completed_at: new Date().toISOString(),
+        })
+        .eq("id", actionRecord.id);
+
+      return jsonResponse(
+        request,
+        {
+          error: isRateLimit
+            ? "Supabase temporarily rate-limited confirmation emails. Try again later."
+            : action === "resend_confirmation"
+            ? "The confirmation email could not be resent."
+            : "The email address could not be verified manually.",
+          retryable: true,
+          requestId,
+        },
+        isRateLimit ? 429 : 502,
+      );
+    }
+
+    const { error: completionError } = await serviceClient
+      .from("admin_email_confirmation_actions")
+      .update({
+        status: "succeeded",
+        sanitized_error: null,
+        completed_at: new Date().toISOString(),
+      })
+      .eq("id", actionRecord.id);
+
+    if (completionError) {
+      return jsonResponse(
+        request,
+        {
+          error:
+            "Supabase Auth completed the action, but its audit status could not be finalized. Do not repeat it immediately.",
+          retryable: false,
+          requestId,
+        },
+        502,
+      );
+    }
+
+    const auditAction = action === "resend_confirmation"
+      ? "user_confirmation_resent"
+      : "user_email_manually_verified";
+    const { error: auditError } = await serviceClient.from("audit_logs").insert(
+      {
+        actor_id: actorId,
+        action: auditAction,
+        entity_type: "user",
+        entity_id: userId,
+        metadata: {
+          requestId,
+          reason: internalReason,
+          email: targetUser.email,
+          previousConfirmationSentAt: targetUser.confirmation_sent_at ?? null,
+          confirmationSentAt,
+          confirmedAt,
+          manualVerification: action === "verify_email",
+        },
+      },
+    );
+
+    if (auditError) {
+      return jsonResponse(
+        request,
+        {
+          error:
+            "The email action completed, but its immutable audit entry could not be written.",
+          retryable: false,
+          requestId,
+        },
+        502,
+      );
+    }
+
+    return jsonResponse(request, {
+      ok: true,
+      action,
+      emailConfirmed: action === "verify_email",
+      confirmationSentAt,
+      confirmedAt,
+      requestId,
+    });
   }
 
   if (action !== "restore" && !category) {
@@ -262,8 +545,8 @@ Deno.serve(async (request: Request) => {
     banDuration = "876000h";
   }
 
-  const { data: authUpdate, error: authUpdateError } =
-    await serviceClient.auth.admin.updateUserById(userId, {
+  const { data: authUpdate, error: authUpdateError } = await serviceClient.auth
+    .admin.updateUserById(userId, {
       ban_duration: banDuration,
     });
 

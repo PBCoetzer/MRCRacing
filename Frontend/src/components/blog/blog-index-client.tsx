@@ -1,7 +1,6 @@
 "use client";
 
 import Image from "next/image";
-import Link from "next/link";
 import { useCallback, useEffect, useState } from "react";
 import { CalendarDays, Loader2, MessageCircle, Newspaper, PlayCircle } from "lucide-react";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
@@ -94,7 +93,7 @@ export function BlogIndexClient() {
               {post.videoUrl ? <span className="flex items-center gap-1 text-brand-cyan"><PlayCircle className="size-3" />Video</span> : null}
             </div>
             <Button asChild className="mt-5 bg-brand-gold text-brand-purple-deep hover:bg-brand-gold/90">
-              <Link href={`/blog/post/?slug=${encodeURIComponent(post.slug)}`}>Read article</Link>
+              <a href={`/blog/${post.slug}/`}>Read article</a>
             </Button>
           </CardContent>
         </Card>

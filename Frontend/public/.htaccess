@@ -3,6 +3,9 @@ RewriteCond %{HTTPS} !=on [OR]
 RewriteCond %{HTTP_HOST} !^www\.mrcracing\.co\.za$ [NC]
 RewriteRule ^ https://www.mrcracing.co.za%{REQUEST_URI} [R=301,L,NE]
 
+# Retired public guidance route.
+RewriteRule ^responsible-gambling/?$ about/ [R=301,L,NC]
+
 # Xneelo SFTP rejects literal dollar signs in generated Next route-payload names.
 # Rewrite those internal requests to the underscore-safe names used by the deployer.
 RewriteCond %{REQUEST_URI} \$
@@ -14,8 +17,16 @@ RewriteCond %{REQUEST_FILENAME} !-f
 RewriteCond %{REQUEST_FILENAME} !-d
 RewriteRule ^tipsters/([a-z0-9-]+)/?$ tipsters/profile/index.html?slug=$1 [L,QSA,NC]
 
-RewriteCond %{QUERY_STRING} (^|&)slug=([a-z0-9-]+)(&|$) [NC]
-RewriteRule ^blog/post/?$ https://www.mrcracing.co.za/blog/%2/? [R=301,L,NE]
+# New public content remains available immediately between static SEO builds.
+# Existing generated routes continue to win because these rules only handle
+# paths that do not yet exist on disk.
+RewriteCond %{REQUEST_FILENAME} !-f
+RewriteCond %{REQUEST_FILENAME} !-d
+RewriteRule ^blog/([a-z0-9-]+)/?$ blog/post/index.html?slug=$1 [L,QSA,NC]
+
+RewriteCond %{REQUEST_FILENAME} !-f
+RewriteCond %{REQUEST_FILENAME} !-d
+RewriteRule ^horse-racing/([a-z0-9-]+)/(\d{4}-\d{2}-\d{2})/?$ horse-racing/meeting/index.html?venue=$1&date=$2 [L,QSA,NC]
 
 Options -Indexes
 

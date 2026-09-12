@@ -7,6 +7,18 @@ import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 
 export const turnstileSiteKey = process.env.NEXT_PUBLIC_TURNSTILE_SITE_KEY ?? "";
 
+export function isCaptchaChallengeError(error: unknown) {
+  const message =
+    error instanceof Error
+      ? error.message
+      : typeof error === "object" && error !== null && "message" in error
+        ? String(error.message)
+        : "";
+
+  return /captcha/i.test(message) &&
+    /(timeout-or-duplicate|expired|already\s+(?:used|validated)|invalid)/i.test(message);
+}
+
 type CaptchaFieldProps = {
   action: "forgot_password" | "login" | "register";
   onTokenChange: (token: string) => void;
@@ -35,9 +47,16 @@ export const CaptchaField = forwardRef<TurnstileInstance, CaptchaFieldProps>(
         <Turnstile
           ref={ref}
           siteKey={turnstileSiteKey}
-          options={{ action, size: "flexible", theme: "dark" }}
+          options={{
+            action,
+            refreshExpired: "auto",
+            refreshTimeout: "auto",
+            size: "flexible",
+            theme: "dark",
+          }}
           onSuccess={onTokenChange}
           onExpire={() => onTokenChange("")}
+          onTimeout={() => onTokenChange("")}
           onError={() => onTokenChange("")}
         />
       </div>

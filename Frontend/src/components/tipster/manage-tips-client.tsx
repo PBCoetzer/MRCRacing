@@ -46,6 +46,11 @@ import type {
 
 type RaceDraftMap = Record<string, RaceSelectionDraft>;
 type MultipleDraftMap = Record<string, MultipleDraft>;
+type PublishedTipCardResult = TipCard & {
+  notifyAllClients?: boolean;
+  notificationAudienceCount?: number;
+  notificationNewlyQueuedCount?: number;
+};
 
 function getErrorMessage(error: unknown, fallback: string) {
   if (error instanceof Error) {
@@ -57,6 +62,45 @@ function getErrorMessage(error: unknown, fallback: string) {
   }
 
   return fallback;
+}
+
+function raceDraftSignature(draft: RaceSelectionDraft | undefined) {
+  if (!draft) {
+    return "";
+  }
+
+  return JSON.stringify({
+    selectionStatus: draft.selectionStatus,
+    winnerEntryId: draft.winnerEntryId,
+    placeEntryId: draft.placeEntryId,
+    comments: draft.comments.trim(),
+  });
+}
+
+function multipleDraftSignature(draft: MultipleDraft | undefined) {
+  if (!draft) {
+    return "";
+  }
+
+  const legs = draft.legs
+    .map((leg) => ({
+      legNumber: leg.legNumber,
+      fixtureId: leg.fixtureId,
+      entryIds: [...leg.entryIds].sort(),
+    }))
+    .filter((leg) => leg.entryIds.length > 0)
+    .sort((left, right) => left.legNumber - right.legNumber);
+
+  if (!draft.tipText.trim() && legs.length === 0) {
+    return "";
+  }
+
+  return JSON.stringify({
+    customName: draft.customName.trim(),
+    tipText: draft.tipText.trim(),
+    comments: draft.comments.trim(),
+    legs,
+  });
 }
 
 export function ManageTipsClient() {
@@ -74,13 +118,17 @@ export function ManageTipsClient() {
   const [title, setTitle] = useState("");
   const [summary, setSummary] = useState("");
   const [coinPrice, setCoinPrice] = useState("25");
+  const [freeMeetingCard, setFreeMeetingCard] = useState(false);
   const [listingStatus, setListingStatus] = useState<Extract<TipCardStatus, "draft" | "coming_soon">>("draft");
   const [revisionSummary, setRevisionSummary] = useState("");
   const [raceDrafts, setRaceDrafts] = useState<RaceDraftMap>({});
   const [multipleDrafts, setMultipleDrafts] = useState<MultipleDraftMap>({});
+  const [originalRaceDrafts, setOriginalRaceDrafts] = useState<RaceDraftMap>({});
+  const [originalMultipleDrafts, setOriginalMultipleDrafts] = useState<MultipleDraftMap>({});
   const [selectedOptionId, setSelectedOptionId] = useState("");
   const [changeAlerts, setChangeAlerts] = useState<TipCardChangeAlert[]>([]);
   const [acknowledgingAlertId, setAcknowledgingAlertId] = useState("");
+  const [notifyAllClients, setNotifyAllClients] = useState(false);
 
   const loadEditor = useCallback(async () => {
     const supabase = createClient();
@@ -285,21 +333,19 @@ export function ManageTipsClient() {
 
         nextMultipleDrafts[option.id] = {
           betOptionId: option.id,
-          customName: multiple?.custom_name ?? "",
-          tipText: multiple?.tip_text ?? "",
-          comments: multiple?.comments ?? "",
+          customName: multiple.custom_name ?? "",
+          tipText: multiple.tip_text ?? "",
+          comments: multiple.comments ?? "",
           legs: optionLegs.map((leg) => ({
             legNumber: leg.leg_number,
             fixtureId: leg.fixture_id,
-            entryIds: multiple
-              ? loadedMultipleSelections
-                  .filter(
-                    (selection) =>
-                      selection.multiple_id === multiple.id &&
-                      selection.leg_number === leg.leg_number,
-                  )
-                  .map((selection) => selection.entry_id)
-              : [],
+            entryIds: loadedMultipleSelections
+              .filter(
+                (selection) =>
+                  selection.multiple_id === multiple.id &&
+                  selection.leg_number === leg.leg_number,
+              )
+              .map((selection) => selection.entry_id),
           })),
         };
       }
@@ -311,11 +357,14 @@ export function ManageTipsClient() {
       setFixtures(loadedFixtures);
       setEntries((entryResult.data ?? []) as RaceEntry[]);
       setBetOptions(loadedOptions);
+      setOriginalRaceDrafts(nextRaceDrafts);
+      setOriginalMultipleDrafts(nextMultipleDrafts);
       setRaceDrafts(nextRaceDrafts);
       setMultipleDrafts(nextMultipleDrafts);
       setTitle(loadedCard?.title ?? `${loadedMeeting.venue} ${formatRaceDate(loadedMeeting.first_race_at)} Meeting Card`);
       setSummary(loadedCard?.summary ?? "");
-      setCoinPrice(String(loadedCard?.coin_price ?? 25));
+      setCoinPrice(String(loadedCard && loadedCard.coin_price > 0 ? loadedCard.coin_price : 25));
+      setFreeMeetingCard(loadedCard?.coin_price === 0);
       setListingStatus(loadedCard?.status === "coming_soon" ? "coming_soon" : "draft");
       setChangeAlerts(loadedChangeAlerts);
     } catch (loadError) {
@@ -354,15 +403,30 @@ export function ManageTipsClient() {
     () => new Map(fixtures.map((fixture) => [fixture.id, fixture])),
     [fixtures],
   );
+  const unusedBetOptions = betOptions.filter((option) => !multipleDrafts[option.id]);
   const isPublished = card?.status === "published";
   const creationWindowClosed = !isPublished && Boolean(
     meeting && !meetingCardSalesOpen(meeting, currentTime),
   );
   const isReadOnlyCard = card?.status === "settled" || card?.status === "void" || creationWindowClosed;
-  const unusedBetOptions = betOptions.filter((option) => !multipleDrafts[option.id]);
   const hasEditableSelections =
     fixtures.some((fixture) => new Date(fixture.selection_lock_at).getTime() > currentTime) ||
     betOptions.some((option) => new Date(option.cutoff_at).getTime() > currentTime);
+  const changedRaceFixtures = isPublished
+    ? fixtures.filter((fixture) =>
+        isOpen(fixture.selection_lock_at) &&
+        raceDraftSignature(raceDrafts[fixture.id]) !==
+          raceDraftSignature(originalRaceDrafts[fixture.id])
+      )
+    : [];
+  const changedMultipleOptions = isPublished
+    ? betOptions.filter((option) =>
+        isOpen(option.cutoff_at) &&
+        multipleDraftSignature(multipleDrafts[option.id]) !==
+          multipleDraftSignature(originalMultipleDrafts[option.id])
+      )
+    : [];
+  const revisionChangeCount = changedRaceFixtures.length + changedMultipleOptions.length;
 
   function isOpen(value: string) {
     return new Date(value).getTime() > currentTime;
@@ -415,6 +479,26 @@ export function ManageTipsClient() {
     }));
   }
 
+  function focusRaceEditor(fixtureId: string) {
+    const fixture = fixturesById.get(fixtureId);
+
+    if (!fixture || !isOpen(fixture.selection_lock_at) || isReadOnlyCard) {
+      return;
+    }
+
+    if (raceDrafts[fixtureId]?.selectionStatus === "skipped") {
+      updateRaceDraft(fixtureId, { selectionStatus: "tipped" });
+    }
+
+    window.setTimeout(() => {
+      document.getElementById(`race-editor-${fixtureId}`)?.scrollIntoView({
+        behavior: "smooth",
+        block: "start",
+      });
+      document.getElementById(`winner-${fixtureId}`)?.focus();
+    }, 0);
+  }
+
   function updateMultipleDraft(optionId: string, patch: Partial<MultipleDraft>) {
     setMultipleDrafts((current) => ({
       ...current,
@@ -460,13 +544,13 @@ export function ManageTipsClient() {
       return "Notification worker is not configured.";
     }
 
-    const { error: workerError } = await supabase.functions.invoke("deliver-tip-notifications", {
+    const { error: workerError } = await supabase.functions.invoke("process-tip-notifications", {
       body: { source: "tip-card-editor" },
     });
 
     return workerError
       ? "The card was saved, but the queued notification worker could not be started."
-      : "Entitled clients were queued for notification delivery.";
+      : "Queued notifications are being delivered.";
   }
 
   async function saveCard(action: "draft" | "publish" | "revise") {
@@ -476,16 +560,19 @@ export function ManageTipsClient() {
       return;
     }
 
-    const parsedPrice = Number(coinPrice);
+    const parsedPrice = freeMeetingCard ? 0 : Number(coinPrice);
 
-    if (!Number.isInteger(parsedPrice) || parsedPrice <= 0) {
-      setError("Enter a positive whole-Credit meeting price.");
+    if (!Number.isInteger(parsedPrice) || parsedPrice < 0) {
+      setError("Choose Free or enter a positive whole-Credit meeting price.");
       return;
     }
 
     setSaving(true);
     setError("");
     setMessage("");
+    let revisionAttempted = false;
+    let raceChangeCount = 0;
+    let multipleChangeCount = 0;
 
     try {
       if (action === "revise") {
@@ -497,8 +584,13 @@ export function ManageTipsClient() {
           throw new Error("Describe the correction in at least five characters.");
         }
 
-        const raceChanges = fixtures
-          .filter((fixture) => isOpen(fixture.starts_at))
+        if (revisionChangeCount === 0) {
+          throw new Error(
+            "Change at least one future race or meeting option. If the listed source change does not affect your tip, choose Tip remains valid.",
+          );
+        }
+
+        const raceChanges = changedRaceFixtures
           .map((fixture) => {
             const draft = raceDrafts[fixture.id];
             const remove = draft.selectionStatus !== "skipped" &&
@@ -508,8 +600,7 @@ export function ManageTipsClient() {
               ? { fixtureId: fixture.id, remove: true }
               : draft;
           });
-        const multipleChanges = betOptions
-          .filter((option) => isOpen(option.cutoff_at))
+        const multipleChanges = changedMultipleOptions
           .map((option) => {
             const draft = multipleDrafts[option.id];
             const hasLegacySelections = draft?.legs.some(
@@ -520,6 +611,9 @@ export function ManageTipsClient() {
               ? draft
               : { betOptionId: option.id, remove: true };
           });
+        raceChangeCount = raceChanges.length;
+        multipleChangeCount = multipleChanges.length;
+        revisionAttempted = true;
         const { data, error: revisionError } = await supabase.rpc("revise_tip_card_v2", {
           p_card_id: card.id,
           p_expected_revision: card.revision,
@@ -534,6 +628,8 @@ export function ManageTipsClient() {
 
         const notificationMessage = await invokeNotificationWorker();
         const revisedCard = data as TipCard;
+        setOriginalRaceDrafts(raceDrafts);
+        setOriginalMultipleDrafts(multipleDrafts);
         setCard(revisedCard);
         setChangeAlerts((current) => current.map((alert) =>
           alert.status === "pending"
@@ -578,9 +674,10 @@ export function ManageTipsClient() {
       setCard(savedCard);
 
       if (action === "publish") {
-        const { data: publishedData, error: publishError } = await supabase.rpc("publish_tip_card_v2", {
+        const { data: publishedData, error: publishError } = await supabase.rpc("publish_tip_card_v3", {
           p_card_id: savedCard.id,
           p_expected_revision: savedCard.revision,
+          p_notify_all_clients: notifyAllClients,
         });
 
         if (publishError) {
@@ -588,19 +685,40 @@ export function ManageTipsClient() {
         }
 
         const notificationMessage = await invokeNotificationWorker();
-        setCard(publishedData as TipCard);
-        setMessage(`Meeting card published. ${notificationMessage}`);
+        const publishedCard = publishedData as PublishedTipCardResult;
+        setCard(publishedCard);
+        setNotifyAllClients(false);
+        setMessage(
+          notifyAllClients
+            ? `Meeting card published. Email notifications cover ${publishedCard.notificationAudienceCount ?? "all eligible"} active clients. ${notificationMessage}`
+            : `Meeting card published. Entitled clients and followers were queued. ${notificationMessage}`,
+        );
       } else {
         const nextUrl = `/tipster/manage-tips/?card=${encodeURIComponent(savedCard.id)}`;
         window.history.replaceState(null, "", nextUrl);
         setMessage(
           listingStatus === "coming_soon"
-            ? "Coming Soon card saved and available for pre-purchase."
+            ? "Coming Soon preview saved. Individual purchase opens only after the tips are published."
             : "Draft saved privately.",
         );
       }
     } catch (saveError) {
-      setError(getErrorMessage(saveError, "Could not save the meeting card."));
+      const saveMessage = getErrorMessage(saveError, "Could not save the meeting card.");
+
+      if (revisionAttempted && card) {
+        await supabase.rpc("report_tip_card_revision_failure", {
+          p_card_id: card.id,
+          p_expected_revision: card.revision,
+          p_error_message: saveMessage.slice(0, 1000),
+          p_context: {
+            browserTime: new Date().toISOString(),
+            raceChangeCount,
+            multipleChangeCount,
+          },
+        });
+      }
+
+      setError(saveMessage);
     } finally {
       setSaving(false);
     }
@@ -611,7 +729,7 @@ export function ManageTipsClient() {
       <Card>
         <CardContent className="flex min-h-56 items-center justify-center gap-2">
           <Loader2 className="size-5 animate-spin text-primary" />
-          Loading races, runners, and betting legs…
+          Loading races, runners, and additional option legs…
         </CardContent>
       </Card>
     );
@@ -680,20 +798,25 @@ export function ManageTipsClient() {
                       {alert.status === "locked" ? "Changed after lock" : "Review required"}
                     </Badge>
                   </div>
-                  <div className="mt-3 grid gap-3 text-xs md:grid-cols-2">
-                    <div className="rounded-md border bg-black/10 p-3">
-                      <p className="mb-1 font-semibold text-muted-foreground">Previous data</p>
-                      <pre className="whitespace-pre-wrap break-words font-mono">
-                        {JSON.stringify(alert.beforeValues, null, 2)}
-                      </pre>
+                  <details className="mt-3 rounded-md border bg-black/10 p-3 text-xs">
+                    <summary className="cursor-pointer font-semibold text-muted-foreground">
+                      View factual data details
+                    </summary>
+                    <div className="mt-3 grid gap-3 md:grid-cols-2">
+                      <div>
+                        <p className="mb-1 font-semibold text-muted-foreground">Previous data</p>
+                        <pre className="whitespace-pre-wrap break-words font-mono">
+                          {JSON.stringify(alert.beforeValues, null, 2)}
+                        </pre>
+                      </div>
+                      <div>
+                        <p className="mb-1 font-semibold text-muted-foreground">Updated data</p>
+                        <pre className="whitespace-pre-wrap break-words font-mono">
+                          {JSON.stringify(alert.afterValues, null, 2)}
+                        </pre>
+                      </div>
                     </div>
-                    <div className="rounded-md border bg-black/10 p-3">
-                      <p className="mb-1 font-semibold text-muted-foreground">Updated data</p>
-                      <pre className="whitespace-pre-wrap break-words font-mono">
-                        {JSON.stringify(alert.afterValues, null, 2)}
-                      </pre>
-                    </div>
-                  </div>
+                  </details>
                   {alert.status === "pending" ? (
                     <div className="mt-3 flex flex-wrap gap-2">
                       <Button
@@ -710,6 +833,18 @@ export function ManageTipsClient() {
                         )}
                         Tip remains valid
                       </Button>
+                      {alert.fixtureId && isOpen(
+                        fixturesById.get(alert.fixtureId)?.selection_lock_at ?? "",
+                      ) && !isReadOnlyCard ? (
+                        <Button
+                          type="button"
+                          size="sm"
+                          onClick={() => focusRaceEditor(alert.fixtureId as string)}
+                        >
+                          <FilePenLine className="size-4" />
+                          Edit Race {alert.raceNumber ?? ""} tips
+                        </Button>
+                      ) : null}
                       <p className="self-center text-xs text-muted-foreground">
                         Otherwise edit the affected selection and publish a correction below.
                       </p>
@@ -737,8 +872,8 @@ export function ManageTipsClient() {
           <CardDescription>
             This is {tipster?.display_name ?? "your Tipster account"}&apos;s independent version of the meeting card. The factual
             runners and race times are shared, but these tips, comments, price, and revisions belong
-            only to this Tipster account. First publication must happen before Race 1; tips and
-            Exotic&apos;s and Multiples lock at their official cutoffs.
+            only to this Tipster account. First publication must happen before Race 1, and
+            race selections and additional meeting options lock at their scheduled cutoffs.
           </CardDescription>
         </CardHeader>
         <CardContent className="grid gap-4 md:grid-cols-2">
@@ -765,12 +900,35 @@ export function ManageTipsClient() {
             <Label htmlFor="coin-price">Meeting price in Credits</Label>
             <Input
               id="coin-price"
-              disabled={isPublished}
+              disabled={isPublished || freeMeetingCard}
               min={1}
               type="number"
-              value={coinPrice}
-              onChange={(event) => setCoinPrice(event.target.value)}
+              value={freeMeetingCard ? "0" : coinPrice}
+              onChange={(event) => {
+                if (event.target.value === "0") {
+                  setFreeMeetingCard(true);
+                  return;
+                }
+
+                setCoinPrice(event.target.value);
+              }}
             />
+            <label className="flex cursor-pointer items-start gap-3 rounded-lg border border-brand-cyan/35 bg-brand-cyan/8 p-3">
+              <input
+                type="checkbox"
+                className="mt-1 size-4 accent-primary"
+                checked={freeMeetingCard}
+                disabled={isPublished}
+                onChange={(event) => setFreeMeetingCard(event.target.checked)}
+              />
+              <span className="space-y-1">
+                <span className="block text-sm font-semibold text-white">Free meeting card</span>
+                <span className="block text-xs text-muted-foreground">
+                  Every signed-in client can open it after accepting the current terms. No Credits,
+                  purchase, commission, earnings, or refund entry is created.
+                </span>
+              </span>
+            </label>
           </div>
           {!isPublished ? (
             <div className="space-y-2">
@@ -782,7 +940,7 @@ export function ManageTipsClient() {
                 onChange={(event) => setListingStatus(event.target.value as "draft" | "coming_soon")}
               >
                 <option value="draft">Private draft</option>
-                <option value="coming_soon">Coming Soon / pre-purchase</option>
+                <option value="coming_soon">Coming Soon / preview only</option>
               </select>
             </div>
           ) : (
@@ -797,7 +955,7 @@ export function ManageTipsClient() {
         <div>
           <h2 className="font-heading text-2xl text-white">Race-by-race tips</h2>
           <p className="text-sm text-muted-foreground">
-            Select optional winner and best-place tips, or explicitly skip a race that offers no worthwhile selection.
+            Select optional Winner and Place Selection tips, or explicitly skip a race that offers no worthwhile selection.
           </p>
         </div>
         {fixtures.map((fixture) => {
@@ -822,7 +980,8 @@ export function ManageTipsClient() {
           return (
             <Card
               key={fixture.id}
-              className={`${locked ? "opacity-75" : ""} ${skipped ? "border-muted-foreground/45" : ""}`}
+              id={`race-editor-${fixture.id}`}
+              className={`scroll-mt-24 ${locked ? "opacity-75" : ""} ${skipped ? "border-muted-foreground/45" : ""}`}
             >
               <CardHeader>
                 <div className="flex flex-wrap items-center justify-between gap-2">
@@ -840,16 +999,16 @@ export function ManageTipsClient() {
                       size="sm"
                       variant={skipped ? "secondary" : "outline"}
                       disabled={locked}
-                      onClick={() => updateRaceDraft(fixture.id, skipped
-                        ? { selectionStatus: "tipped" }
-                        : {
+                      onClick={() => skipped
+                        ? focusRaceEditor(fixture.id)
+                        : updateRaceDraft(fixture.id, {
                             selectionStatus: "skipped",
                             winnerEntryId: "",
                             placeEntryId: "",
                           })}
                     >
-                      <CircleSlash2 className="size-3" />
-                      {skipped ? "Race skipped" : "Skip this race"}
+                      {skipped ? <FilePenLine className="size-3" /> : <CircleSlash2 className="size-3" />}
+                      {skipped ? "Add tip to this race" : "Skip this race"}
                     </Button>
                     <Badge
                       variant={resultAvailable ? "default" : locked ? "destructive" : "outline"}
@@ -861,14 +1020,12 @@ export function ManageTipsClient() {
                       )}
                       {resultAvailable ? "Result Available" : locked ? "Locked" : "Open"}
                     </Badge>
-                    {!locked ? (
+                    {!locked && !skipped ? (
                       <Button
                         type="button"
                         size="sm"
                         variant="outline"
-                        onClick={() =>
-                          document.getElementById(`winner-${fixture.id}`)?.focus()
-                        }
+                        onClick={() => focusRaceEditor(fixture.id)}
                       >
                         <FilePenLine className="size-3" />
                         Edit tips
@@ -878,16 +1035,24 @@ export function ManageTipsClient() {
                 </div>
               </CardHeader>
               <CardContent className="grid gap-4 md:grid-cols-2">
+                {skipped && !locked ? (
+                  <p className="rounded-md border border-brand-cyan/30 bg-brand-cyan/8 p-3 text-sm text-muted-foreground md:col-span-2">
+                    This race currently has no tip. Choose a horse below to activate the race automatically.
+                  </p>
+                ) : null}
                 <div className="space-y-2">
                   <Label htmlFor={`winner-${fixture.id}`}>Race winner</Label>
                   <select
                     id={`winner-${fixture.id}`}
                     className="h-9 w-full rounded-lg border border-input bg-background px-2.5 text-sm"
-                    disabled={locked || skipped}
+                    disabled={locked}
                     value={draft?.winnerEntryId ?? ""}
-                    onChange={(event) => updateRaceDraft(fixture.id, { winnerEntryId: event.target.value })}
+                    onChange={(event) => updateRaceDraft(fixture.id, {
+                      winnerEntryId: event.target.value,
+                      ...(event.target.value ? { selectionStatus: "tipped" } : {}),
+                    })}
                   >
-                    <option value="">No selection</option>
+                    <option value="">{skipped ? "Choose a horse to add a tip" : "No selection"}</option>
                     {fixtureEntries.map((entry) => (
                       <option key={entry.id} value={entry.id} disabled={entry.status === "scratched"}>
                         {entry.saddle_number}. {entry.horse_name}{entry.jockey_name ? ` · ${entry.jockey_name}` : ""}
@@ -896,15 +1061,18 @@ export function ManageTipsClient() {
                   </select>
                 </div>
                 <div className="space-y-2">
-                  <Label htmlFor={`place-${fixture.id}`}>Best place option</Label>
+                  <Label htmlFor={`place-${fixture.id}`}>Place Selection</Label>
                   <select
                     id={`place-${fixture.id}`}
                     className="h-9 w-full rounded-lg border border-input bg-background px-2.5 text-sm"
-                    disabled={locked || skipped}
+                    disabled={locked}
                     value={draft?.placeEntryId ?? ""}
-                    onChange={(event) => updateRaceDraft(fixture.id, { placeEntryId: event.target.value })}
+                    onChange={(event) => updateRaceDraft(fixture.id, {
+                      placeEntryId: event.target.value,
+                      ...(event.target.value ? { selectionStatus: "tipped" } : {}),
+                    })}
                   >
-                    <option value="">No selection</option>
+                    <option value="">{skipped ? "Choose a horse to add a tip" : "No selection"}</option>
                     {fixtureEntries.map((entry) => (
                       <option key={entry.id} value={entry.id} disabled={entry.status === "scratched"}>
                         {entry.saddle_number}. {entry.horse_name}{entry.jockey_name ? ` · ${entry.jockey_name}` : ""}
@@ -955,7 +1123,7 @@ export function ManageTipsClient() {
                         ) : null}
                       </div>
                       <div>
-                        <p className="text-muted-foreground">Best-place selection</p>
+                        <p className="text-muted-foreground">Place Selection</p>
                         <p>
                           {selectedPlace
                             ? `${selectedPlace.saddle_number}. ${selectedPlace.horse_name} · ${
@@ -966,8 +1134,7 @@ export function ManageTipsClient() {
                             : "No selection"}
                         </p>
                         <p className="mt-2 text-xs text-muted-foreground">
-                          Finishing position only. No monetary win is claimed without
-                          authoritative place terms or dividends.
+                          The official finishing position is shown when available.
                         </p>
                       </div>
                     </div>
@@ -1111,7 +1278,7 @@ export function ManageTipsClient() {
                     id={`multiple-comments-${option.id}`}
                     disabled={locked}
                     placeholder="Optional strategy or banker notes."
-                    value={draft?.comments ?? ""}
+                    value={draft.comments}
                     onChange={(event) => updateMultipleDraft(option.id, { comments: event.target.value })}
                   />
                 </div>
@@ -1131,7 +1298,7 @@ export function ManageTipsClient() {
         ) : null}
       </div>
 
-      <Card className="sticky bottom-4 z-20 border-brand-gold bg-card/95 shadow-2xl backdrop-blur">
+      <Card className="border-brand-gold bg-card/95 shadow-2xl backdrop-blur sm:sticky sm:bottom-4 sm:z-20">
         <CardContent className="flex flex-col gap-3 p-4 sm:flex-row sm:items-center sm:justify-between">
           <div>
             <p className="font-semibold">{tipster?.display_name}</p>
@@ -1155,21 +1322,54 @@ export function ManageTipsClient() {
                 value={revisionSummary}
                 onChange={(event) => setRevisionSummary(event.target.value)}
               />
-              <Button disabled={saving} type="button" onClick={() => void saveCard("revise")}>
+              <p className="text-xs text-muted-foreground">
+                {revisionChangeCount > 0
+                  ? `${revisionChangeCount} unsaved correction${revisionChangeCount === 1 ? "" : "s"}.`
+                  : "Edit a future race or meeting option. If a source change does not affect the tip, use Tip remains valid."}
+              </p>
+              {error ? (
+                <p className="text-xs text-destructive">Last save failed: {error}</p>
+              ) : null}
+              <Button
+                disabled={saving || revisionSummary.trim().length < 5 || revisionChangeCount === 0}
+                type="button"
+                onClick={() => void saveCard("revise")}
+              >
                 {saving ? <Loader2 className="size-4 animate-spin" /> : <BellRing className="size-4" />}
                 Publish audited correction
               </Button>
             </div>
           ) : (
-            <div className="flex flex-wrap gap-2">
-              <Button disabled={saving} type="button" variant="outline" onClick={() => void saveCard("draft")}>
-                {saving ? <Loader2 className="size-4 animate-spin" /> : <Save className="size-4" />}
-                Save {listingStatus === "coming_soon" ? "Coming Soon" : "draft"}
-              </Button>
-              <Button disabled={saving} type="button" onClick={() => void saveCard("publish")}>
-                {saving ? <Loader2 className="size-4 animate-spin" /> : <Send className="size-4" />}
-                Publish meeting card
-              </Button>
+            <div className="flex w-full flex-col gap-3 sm:w-auto sm:min-w-[28rem]">
+              <label
+                htmlFor="notify-all-clients"
+                className="flex cursor-pointer items-start gap-3 rounded-lg border border-border bg-background/45 p-3"
+              >
+                <input
+                  id="notify-all-clients"
+                  type="checkbox"
+                  className="mt-1 size-4 accent-primary"
+                  checked={notifyAllClients}
+                  disabled={saving}
+                  onChange={(event) => setNotifyAllClients(event.target.checked)}
+                />
+                <span className="space-y-1">
+                  <span className="block text-sm font-semibold">Notify all clients</span>
+                  <span className="block text-xs text-muted-foreground">
+                    Email every active client who permits email notifications. Each account receives this new-card announcement only once.
+                  </span>
+                </span>
+              </label>
+              <div className="flex flex-wrap gap-2 sm:justify-end">
+                <Button disabled={saving} type="button" variant="outline" onClick={() => void saveCard("draft")}>
+                  {saving ? <Loader2 className="size-4 animate-spin" /> : <Save className="size-4" />}
+                  Save {listingStatus === "coming_soon" ? "Coming Soon" : "draft"}
+                </Button>
+                <Button disabled={saving} type="button" onClick={() => void saveCard("publish")}>
+                  {saving ? <Loader2 className="size-4 animate-spin" /> : <Send className="size-4" />}
+                  Publish meeting card
+                </Button>
+              </div>
             </div>
           )}
         </CardContent>

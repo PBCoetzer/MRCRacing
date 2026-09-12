@@ -7,7 +7,7 @@ export default function ContactPage() {
     <InfoPage
       badge="Contact"
       title="Contact MRC Racing Tips"
-      description="The right support route for account, payment, privacy, racing-content, and responsible-use enquiries."
+      description="The right support route for account, payment, privacy, and racing-content enquiries."
       sections={[
         {
           title: "Business details and support",
@@ -29,11 +29,7 @@ export default function ContactPage() {
         },
         {
           title: "Refunds and cancellations",
-          body: <p>Review the <Link href="/refund-policy/" className="text-brand-cyan underline">Refund Policy</Link> and <Link href="/cancellation-policy/" className="text-brand-cyan underline">Cancellation Policy</Link> first. Meeting-card refunds triggered by cancellation, abandonment, or missed publication are recorded in the platform ledger.</p>,
-        },
-        {
-          title: "Responsible use",
-          body: <p>MRC provides informational digital content and does not accept bets. If gambling is causing harm, stop betting and use the support resources on the <Link href="/responsible-gambling/" className="text-brand-cyan underline">Responsible Gambling page</Link>.</p>,
+          body: <p>Review the <Link href="/refund-policy/" className="text-brand-cyan underline">Refund Policy</Link> and <Link href="/cancellation-policy/" className="text-brand-cyan underline">Cancellation Policy</Link> first. Individual meeting-card refunds triggered by withdrawal, cancellation, or abandonment are recorded in the platform ledger. Subscription refunds require a client request and review.</p>,
         },
       ]}
     />

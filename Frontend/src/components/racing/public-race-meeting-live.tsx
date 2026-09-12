@@ -1,8 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import Link from "next/link";
-import { Clock3, Database, ExternalLink, Flag, RefreshCw, Trophy } from "lucide-react";
+import { Clock3, Database, Flag, RefreshCw, Trophy } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import type { PublicRaceMeeting } from "@/lib/public-content";
@@ -24,6 +23,15 @@ function formatTime(value: string) {
     hour: "2-digit",
     minute: "2-digit",
     hour12: false,
+    timeZone: "Africa/Johannesburg",
+  }).format(new Date(value));
+}
+
+function formatUpdatedDate(value: string) {
+  return new Intl.DateTimeFormat("en-ZA", {
+    day: "2-digit",
+    month: "short",
+    year: "numeric",
     timeZone: "Africa/Johannesburg",
   }).format(new Date(value));
 }
@@ -54,7 +62,7 @@ export function PublicRaceMeetingLive({ initialMeeting }: { initialMeeting: Publ
     async function refreshMeeting() {
       const supabase = createClient();
       if (!supabase) {
-        setLiveError("Live race data is temporarily unavailable. The last verified snapshot is shown.");
+        setLiveError("Live race data is temporarily unavailable. The last saved snapshot is shown.");
         return;
       }
 
@@ -70,7 +78,7 @@ export function PublicRaceMeetingLive({ initialMeeting }: { initialMeeting: Publ
       setLastCheckedAt(new Date().toISOString());
 
       if (error || !data) {
-        setLiveError("Live race data could not be refreshed. The last verified snapshot is shown.");
+        setLiveError("Live race data could not be refreshed. The last saved snapshot is shown.");
         refreshTimer = setTimeout(refreshMeeting, LIVE_REFRESH_MS);
         return;
       }
@@ -160,14 +168,8 @@ export function PublicRaceMeetingLive({ initialMeeting }: { initialMeeting: Publ
                 </table>
               </div>
               <p className="mt-4 text-xs text-muted-foreground">
-                Verified by{" "}
-                {publicSourceUrl(race.sourceName, race.sourceUrl) ? (
-                  <Link href={publicSourceUrl(race.sourceName, race.sourceUrl) ?? "#"} target="_blank" rel="noreferrer" className="text-brand-cyan underline">
-                    {professionalSourceName(race.sourceName)}
-                    <ExternalLink className="ml-1 inline size-3" />
-                  </Link>
-                ) : professionalSourceName(race.sourceName)}
-                {race.sourceUpdatedAt ? ` · Updated ${new Date(race.sourceUpdatedAt).toLocaleString("en-ZA", { timeZone: "Africa/Johannesburg" })}` : ""}
+                Race data normalised and presented by MRC Racing Tips.
+                {race.sourceUpdatedAt ? ` Updated ${formatUpdatedDate(race.sourceUpdatedAt)}` : ""}
               </p>
             </CardContent>
           </Card>
@@ -175,9 +177,9 @@ export function PublicRaceMeetingLive({ initialMeeting }: { initialMeeting: Publ
       </div>
 
       <Card className="mt-8">
-        <CardHeader><CardTitle className="flex items-center gap-2"><Flag className="size-5 text-brand-gold" />Responsible racing information</CardTitle></CardHeader>
+        <CardHeader><CardTitle className="flex items-center gap-2"><Flag className="size-5 text-brand-gold" />Race information</CardTitle></CardHeader>
         <CardContent className="text-sm leading-7 text-muted-foreground">
-          This page presents factual race and result information, not guaranteed outcomes. MRC Racing Tips does not accept bets. If you choose to gamble, be 18+, set limits, and never chase losses.
+          This page presents factual race and result information. Historical performance does not guarantee future outcomes.
         </CardContent>
       </Card>
     </>

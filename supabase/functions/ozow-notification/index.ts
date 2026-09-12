@@ -5,6 +5,7 @@ import {
   safeEqual,
   safeMoney,
   sanitizeProviderEvent,
+  selectOzowVerificationRecord,
   signOzow,
   textResponse,
 } from "../_shared/payments.ts";
@@ -110,10 +111,22 @@ Deno.serve(async (request: Request) => {
       transactionReference,
     );
     const verificationResponse = await fetch(verificationUrl, {
-      headers: { ApiKey: apiKey },
+      headers: {
+        Accept: "application/json",
+        ApiKey: apiKey,
+      },
     });
-    const verification = await verificationResponse.json().catch(() => ({})) as
-      Record<string, unknown>;
+    const verificationPayload = await verificationResponse.json().catch(() => ({}));
+    const verification = selectOzowVerificationRecord(
+      verificationPayload,
+      transactionReference,
+      transactionId,
+    );
+
+    if (!verificationResponse.ok || !verification) {
+      return textResponse("Provider confirmation failed.", 400);
+    }
+
     const verifiedStatus = String(
       verification.status ?? verification.Status ?? "",
     );
@@ -127,7 +140,6 @@ Deno.serve(async (request: Request) => {
     );
 
     if (
-      !verificationResponse.ok ||
       verifiedReference !== transactionReference ||
       verifiedAmount.toFixed(2) !== safeMoney(payment.amount_cents)
     ) {

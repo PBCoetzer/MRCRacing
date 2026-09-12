@@ -29,6 +29,10 @@ export function writeCreditCart(cart: CreditCartState) {
   window.localStorage.setItem(creditCartStorageKey, JSON.stringify(cart));
 }
 
+export function clearCreditCart() {
+  window.localStorage.removeItem(creditCartStorageKey);
+}
+
 export function addCreditPackageToCart(
   cart: CreditCartState,
   packageId: string,

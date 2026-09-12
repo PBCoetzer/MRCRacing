@@ -73,4 +73,4 @@ Do not commit or share the Supabase access token.
 - The templates use Supabase GoTrue variables from the official Email Templates documentation.
 - `{{ .ConfirmationURL }}` is used for hosted confirmation, invite, recovery, email change, and magic-link flows.
 - `{{ .Token }}` is used for OTP and reauthentication code flows.
-- The copy is intentionally concise because Supabase recommends keeping authentication emails focused and non-promotional, especially for gambling-related products.
+- The copy is intentionally concise because Supabase recommends keeping authentication emails focused and non-promotional.

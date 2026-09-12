@@ -154,7 +154,7 @@ Deno.serve(async (request) => {
 
     const { data: tipster, error: tipsterError } = await serviceClient
       .from("tipsters")
-      .select("id,is_verified,tipster_blog_permissions(can_publish)")
+      .select("id,tipster_blog_permissions(can_publish)")
       .eq("user_id", authData.user.id)
       .maybeSingle();
     if (tipsterError) throw tipsterError;
@@ -175,8 +175,7 @@ Deno.serve(async (request) => {
         accountControl.suspension_until &&
         Date.parse(accountControl.suspension_until) <= Date.now());
     if (
-      !tipster?.id || tipster.is_verified !== true ||
-      permission?.can_publish !== true || !accountActive
+      !tipster?.id || permission?.can_publish !== true || !accountActive
     ) {
       return json(
         request,

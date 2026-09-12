@@ -8,7 +8,10 @@ to race tables.
 3. One grounded search per race captures runners and factual race details.
 4. Complete meeting fragments become a proposal with citations, deterministic
    confidence scoring, source agreement, and a current-database diff.
-5. An administrator approves or rejects each proposal during the pilot.
+5. Proposals below the auto-approval threshold open an audited administrator review.
+   Telegram attaches a branded, paginated MRC approval PDF containing every race,
+   runner, jockey, trainer, draw, carried weight, and status. A concise caption and
+   the review buttons remain on the document message.
 6. Approved proposals use the existing atomic ingestion RPC, preserving locks and
    creating tip-impact alerts only after factual changes are applied.
 
@@ -52,8 +55,12 @@ Never add these values to Xneelo, browser code, or a `NEXT_PUBLIC_` variable.
   Function open.
 - Google Search and structured extraction have separate bounded timeouts.
 - Result polling is created only for non-test meetings linked to non-void tip cards.
-- Auto-approval requires the configured threshold, two approved independent domains,
-  no critical conflict, and an enabled change-type switch. All switches default off.
+- Proposals at 90% confidence or higher auto-apply when backed by two approved
+  independent domains and no critical conflict. New meetings, routine changes, and
+  results are all enabled for auto-approval in production.
+- A proposal backed by only one approved domain remains capped at 70% and requires
+  manual review. Approval supplies a standard audit note when the administrator does
+  not enter a custom note; rejection always requires an explicit reason.
 - Dummy meetings must remain until one future meeting and one recent results meeting
   pass the full proposal and approval acceptance test.
 

@@ -19,7 +19,7 @@ export default function CancellationPolicyPage() {
         },
         {
           title: "Meeting cards",
-          body: <p>Purchases close 30 minutes before Race 1. Customers cannot cancel a card after its premium digital content has been supplied merely because the selections later lose. If the card is never published before Race 1, or the meeting is cancelled or abandoned, the automatic Credit-return rules in the <Link href="/refund-policy/" className="text-brand-cyan underline">Refund Policy</Link> apply.</p>,
+          body: <p>Individual purchases open only after the meeting tips are published and close 30 minutes before Race 1. Customers cannot cancel a card after its premium digital content has been supplied merely because the selections later lose. If a paid published card is withdrawn, or the meeting is cancelled or abandoned, the client may request an administrator-reviewed refund under the <Link href="/refund-policy/" className="text-brand-cyan underline">Refund Policy</Link>.</p>,
         },
         {
           title: "Account closure",

@@ -3,8 +3,8 @@ import { JsonLd } from "@/lib/json-ld";
 
 const faqItems = [
   { question: "How do credits work?", answer: "Users buy credits and spend them to unlock premium tips. Every movement is recorded in a transaction ledger." },
-  { question: "Does MRC Racing Tips accept bets?", answer: "No. MRC Racing Tips provides analysis and digital tipping content only. Betting activity happens independently through licensed operators." },
-  { question: "How are tipsters ranked?", answer: "Public performance uses officially settled winner selections and shows the settled sample. ROI remains hidden until authoritative dividends support it." },
+  { question: "What information is available?", answer: "MRC Racing Tips provides factual racecards, recorded results, tipster profiles, and independent digital selections." },
+  { question: "How are tipsters ranked?", answer: "Public performance uses officially settled winner and place selections. Place strike rate counts official top-three finishes, and every displayed rate includes its settled sample size." },
 ];
 
 export default function FaqPage() {

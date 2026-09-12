@@ -1,5 +1,12 @@
 import "jsr:@supabase/functions-js/edge-runtime.d.ts";
 import { createClient } from "npm:@supabase/supabase-js@2.110.8";
+import {
+  buildTelegramApprovalRequest,
+  buildTelegramApprovalRequests,
+  type TelegramApprovalPayload,
+  validProposalId,
+} from "./telegram.ts";
+import { generateRaceApprovalPdf } from "./telegram-pdf.ts";
 
 type NotificationPayload = {
   template?: string;
@@ -23,12 +30,22 @@ type NotificationPayload = {
   afterValues?: Record<string, unknown>;
   isAfterLock?: boolean;
   tipsterUrl?: string;
+  notificationAudience?: "all_clients";
+  proposalId?: string;
+  confidenceScore?: number;
+  distinctSourceCount?: number;
+  approvedSourceCount?: number;
+  changeType?: string;
+  adminUrl?: string;
+  confidenceBreakdown?: Record<string, unknown>;
+  raceSnapshot?: TelegramApprovalPayload["raceSnapshot"];
 };
 
 type NotificationJob = {
   id: string;
   user_id: string;
   event_type: string;
+  channel: "email" | "telegram";
   dedupe_key: string;
   payload: NotificationPayload;
   attempt_count: number;
@@ -50,11 +67,18 @@ type SmtpConfig = {
   senderName: string;
 };
 
+type TelegramConfig = {
+  botToken: string;
+  chatId: string;
+};
+
 const allowedOrigins = new Set([
   "https://mrcracing.co.za",
   "https://www.mrcracing.co.za",
   "http://localhost:3000",
 ]);
+const mrcLogoUrl =
+  "https://www.mrcracing.co.za/images/mrc-racing-tips-logo.jpeg";
 
 function corsHeaders(request: Request) {
   const origin = request.headers.get("origin") ?? "";
@@ -214,8 +238,17 @@ function renderLayout(
           <table role="presentation" width="100%" cellspacing="0" cellpadding="0" style="max-width:620px;border:1px solid #7c3aed;background:#281044;border-radius:18px;overflow:hidden">
             <tr>
               <td style="padding:24px 28px;background:#311253;border-bottom:3px solid #ffb000">
-                <div style="font-size:24px;font-weight:800;letter-spacing:1px">MRC RACING TIPS</div>
-                <div style="margin-top:6px;color:#22d3ee;font-size:13px;text-transform:uppercase;letter-spacing:2px">Horse racing intelligence</div>
+                <table role="presentation" width="100%" cellspacing="0" cellpadding="0">
+                  <tr>
+                    <td style="padding-right:18px;vertical-align:middle">
+                      <div style="font-size:24px;font-weight:800;letter-spacing:1px">MRC RACING TIPS</div>
+                      <div style="margin-top:6px;color:#22d3ee;font-size:13px;text-transform:uppercase;letter-spacing:2px">Horse racing intelligence</div>
+                    </td>
+                    <td width="112" align="right" style="vertical-align:middle">
+                      <img src="${mrcLogoUrl}" width="104" alt="MRC Racing Tips" style="display:block;width:104px;max-width:104px;height:auto;border:1px solid #ffb000;border-radius:12px">
+                    </td>
+                  </tr>
+                </table>
               </td>
             </tr>
             <tr>
@@ -235,7 +268,7 @@ function renderLayout(
             </tr>
             <tr>
               <td style="padding:18px 28px;background:#1d0c34;color:#c4b5fd;font-size:12px;line-height:1.6">
-                MRC Racing provides horse-racing analysis and information. It is not a bookmaker and does not accept bets. Please gamble responsibly.
+                MRC Racing Tips provides South African horse-racing analysis, factual race information, and independent digital tipster content.
               </td>
             </tr>
           </table>
@@ -397,6 +430,33 @@ function renderEmail(job: NotificationJob): EmailContent {
     return { subject, text, html };
   }
 
+  if (job.event_type === "tip_card_published_all_clients") {
+    const tipsterName = String(payload.tipsterName ?? "An MRC tipster");
+    const venue = String(payload.meetingVenue ?? "a new race meeting");
+    const meetingDate = String(payload.meetingDate ?? "");
+    const tipsterUrl = String(
+      payload.tipsterUrl ?? "https://www.mrcracing.co.za/tipsters/",
+    );
+    const subject = `${tipsterName} published a new ${venue} meeting card`;
+    const dateText = meetingDate ? ` for ${meetingDate}` : "";
+    const text =
+      `${tipsterName} published a new ${venue} meeting card${dateText}. ` +
+      "Visit the tipster profile to review the preview and available access options.";
+    const html = renderLayout(
+      "A new meeting card is available",
+      `<p style="margin:0 0 14px"><strong>${
+        escapeHtml(tipsterName)
+      }</strong> published a new meeting card for <strong>${
+        escapeHtml(venue)
+      }</strong>${meetingDate ? ` on ${escapeHtml(meetingDate)}` : ""}.</p>` +
+        '<p style="margin:0">Visit the tipster profile to review the preview and available purchase or subscription options. This announcement does not grant access by itself.</p>',
+      tipsterUrl,
+      "View meeting card options",
+    );
+
+    return { subject, text, html };
+  }
+
   const tipsterName = String(payload.tipsterName ?? "Your tipster");
   const venue = String(payload.meetingVenue ?? "the selected meeting");
   const meetingDate = String(payload.meetingDate ?? "");
@@ -507,6 +567,163 @@ async function deliverEmail(
   }
 }
 
+async function deliverTelegram(
+  telegram: TelegramConfig,
+  payload: TelegramApprovalPayload,
+) {
+  if (!telegram.botToken || !telegram.chatId) {
+    throw new Error("Telegram approval notifications are not configured.");
+  }
+
+  const meeting = payload.raceSnapshot?.meetings?.[0];
+  if (meeting?.races?.length) {
+    let logoBytes: Uint8Array | undefined;
+    try {
+      const logoResponse = await fetch(mrcLogoUrl, {
+        signal: AbortSignal.timeout(10_000),
+      });
+      if (logoResponse.ok) {
+        logoBytes = new Uint8Array(await logoResponse.arrayBuffer());
+      }
+    } catch {
+      logoBytes = undefined;
+    }
+
+    const pdf = await generateRaceApprovalPdf(payload, { logoBytes });
+    const approvalRequest = buildTelegramApprovalRequest(payload);
+    const formData = new FormData();
+    const pdfBuffer = new ArrayBuffer(pdf.bytes.byteLength);
+    new Uint8Array(pdfBuffer).set(pdf.bytes);
+    formData.set("chat_id", telegram.chatId);
+    formData.set(
+      "document",
+      new Blob([pdfBuffer], { type: "application/pdf" }),
+      pdf.fileName,
+    );
+    formData.set("caption", approvalRequest.text.slice(0, 1024));
+    formData.set("reply_markup", JSON.stringify(approvalRequest.reply_markup));
+
+    const response = await fetch(
+      `https://api.telegram.org/bot${
+        encodeURIComponent(telegram.botToken)
+      }/sendDocument`,
+      {
+        method: "POST",
+        body: formData,
+        signal: AbortSignal.timeout(30_000),
+      },
+    );
+    const result = await response.json().catch(() => null) as {
+      ok?: boolean;
+      description?: string;
+      result?: { message_id?: number };
+    } | null;
+
+    if (!response.ok || result?.ok !== true || !result.result?.message_id) {
+      const description = typeof result?.description === "string"
+        ? result.description.replace(/[\u0000-\u001f\u007f]/g, " ").trim()
+          .slice(
+            0,
+            180,
+          )
+        : "Provider rejected the request.";
+      throw new Error(
+        `Telegram delivery failed with HTTP ${response.status}: ${description}`,
+      );
+    }
+    return `telegram:${result.result.message_id}`;
+  }
+
+  const request = buildTelegramApprovalRequests(payload)[0];
+  const response = await fetch(
+    `https://api.telegram.org/bot${
+      encodeURIComponent(telegram.botToken)
+    }/sendMessage`,
+    {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ chat_id: telegram.chatId, ...request }),
+      signal: AbortSignal.timeout(15_000),
+    },
+  );
+  const result = await response.json().catch(() => null) as {
+    ok?: boolean;
+    description?: string;
+    result?: { message_id?: number };
+  } | null;
+  if (!response.ok || result?.ok !== true || !result.result?.message_id) {
+    const description = typeof result?.description === "string"
+      ? result.description.replace(/[\u0000-\u001f\u007f]/g, " ").trim().slice(
+        0,
+        180,
+      )
+      : "Provider rejected the request.";
+    throw new Error(
+      `Telegram delivery failed with HTTP ${response.status}: ${description}`,
+    );
+  }
+  return `telegram:${result.result.message_id}`;
+}
+
+async function discoverTelegramChats(telegram: TelegramConfig) {
+  if (!telegram.botToken) {
+    throw new Error("Telegram approval notifications are not configured.");
+  }
+
+  const response = await fetch(
+    `https://api.telegram.org/bot${
+      encodeURIComponent(telegram.botToken)
+    }/getUpdates?limit=100&timeout=0`,
+    { signal: AbortSignal.timeout(15_000) },
+  );
+  const payload = await response.json().catch(() => null) as {
+    ok?: boolean;
+    description?: string;
+    result?: Array<{
+      message?: { chat?: TelegramChat };
+      edited_message?: { chat?: TelegramChat };
+      channel_post?: { chat?: TelegramChat };
+      edited_channel_post?: { chat?: TelegramChat };
+      my_chat_member?: { chat?: TelegramChat };
+    }>;
+  } | null;
+
+  if (!response.ok || payload?.ok !== true || !Array.isArray(payload.result)) {
+    const description = typeof payload?.description === "string"
+      ? payload.description.replace(/[\u0000-\u001f\u007f]/g, " ").trim().slice(
+        0,
+        180,
+      )
+      : "Provider rejected the request.";
+    throw new Error(
+      `Telegram chat discovery failed with HTTP ${response.status}: ${description}`,
+    );
+  }
+
+  const chats = new Map<string, TelegramChat>();
+  for (const update of payload.result) {
+    const chat = update.message?.chat ?? update.edited_message?.chat ??
+      update.channel_post?.chat ?? update.edited_channel_post?.chat ??
+      update.my_chat_member?.chat;
+    if (chat && Number.isSafeInteger(chat.id)) {
+      chats.set(String(chat.id), chat);
+    }
+  }
+
+  return [...chats.values()].map((chat) => ({
+    id: String(chat.id),
+    type: chat.type ?? "unknown",
+    label: chat.title ?? (chat.username ? `@${chat.username}` : "Private chat"),
+  }));
+}
+
+type TelegramChat = {
+  id: number;
+  type?: string;
+  title?: string;
+  username?: string;
+};
+
 Deno.serve(async (request: Request) => {
   if (request.method === "OPTIONS") {
     return new Response("ok", { headers: corsHeaders(request) });
@@ -526,9 +743,17 @@ Deno.serve(async (request: Request) => {
     fromEmail: Deno.env.get("MRC_SMTP_FROM_EMAIL") ?? "",
     senderName: Deno.env.get("MRC_SMTP_SENDER_NAME") ?? "MRC Racing Tips",
   };
+  const telegram: TelegramConfig = {
+    botToken: Deno.env.get("MRC_TELEGRAM_BOT_TOKEN") ?? "",
+    chatId: Deno.env.get("MRC_TELEGRAM_ADMIN_CHAT_ID") ?? "",
+  };
   const authorization = request.headers.get("authorization") ?? "";
   const accessToken = authorization.replace(/^Bearer\s+/i, "");
   const workerToken = request.headers.get("x-mrc-notification-token") ?? "";
+  const requestBody = await request.json().catch(() => ({})) as Record<
+    string,
+    unknown
+  >;
 
   if (!supabaseUrl || !serviceRoleKey) {
     return jsonResponse(request, {
@@ -587,29 +812,24 @@ Deno.serve(async (request: Request) => {
     }
   }
 
-  const { error: refundError } = await serviceClient.rpc(
-    "process_due_meeting_refunds",
-  );
-
-  if (refundError) {
-    console.error("Due refund processing failed", refundError.message);
-  }
-
-  if (
-    !smtp.host ||
-    smtp.port !== 465 ||
-    !smtp.username ||
-    !smtp.password ||
-    !smtp.fromEmail
-  ) {
-    return jsonResponse(
-      request,
-      {
-        error: "The dedicated SMTPS mailbox is not configured.",
-        refundsProcessed: !refundError,
-      },
-      503,
-    );
+  if (requestBody.trigger === "telegram-discover-chat") {
+    if (!workerToken) {
+      return jsonResponse(
+        request,
+        { error: "Worker authorization required." },
+        403,
+      );
+    }
+    try {
+      const chats = await discoverTelegramChats(telegram);
+      return jsonResponse(request, { chats, count: chats.length });
+    } catch (error) {
+      return jsonResponse(request, {
+        error: error instanceof Error
+          ? error.message
+          : "Telegram chat discovery failed.",
+      }, 502);
+    }
   }
 
   const { data: claimedData, error: claimError } = await serviceClient.rpc(
@@ -629,20 +849,63 @@ Deno.serve(async (request: Request) => {
 
   for (const job of jobs) {
     try {
-      const { data: recipient, error: recipientError } = await serviceClient
-        .auth.admin.getUserById(job.user_id);
+      let providerMessageId: string;
+      if (job.channel === "telegram") {
+        let telegramPayload: TelegramApprovalPayload = job.payload;
+        const proposalId = validProposalId(job.payload.proposalId);
+        if (
+          job.event_type === "race_feed_proposal_review_required" && proposalId
+        ) {
+          const { data: proposalData, error: proposalError } =
+            await serviceClient
+              .from("race_feed_proposals")
+              .select("snapshot,confidence_breakdown,proposal_version")
+              .eq("id", proposalId)
+              .maybeSingle();
+          if (proposalError) {
+            throw new Error(
+              `Could not load the proposed race layout: ${proposalError.message}`,
+            );
+          }
+          const proposal = proposalData as {
+            snapshot?: TelegramApprovalPayload["raceSnapshot"];
+            confidence_breakdown?: Record<string, unknown>;
+            proposal_version?: number;
+          } | null;
+          telegramPayload = {
+            ...job.payload,
+            confidenceBreakdown: proposal?.confidence_breakdown,
+            proposalVersion: proposal?.proposal_version,
+            raceSnapshot: proposal?.snapshot,
+          };
+        }
+        providerMessageId = await deliverTelegram(telegram, telegramPayload);
+      } else {
+        if (
+          !smtp.host ||
+          smtp.port !== 465 ||
+          !smtp.username ||
+          !smtp.password ||
+          !smtp.fromEmail
+        ) {
+          throw new Error("The dedicated SMTPS mailbox is not configured.");
+        }
+        const { data: recipient, error: recipientError } = await serviceClient
+          .auth.admin.getUserById(job.user_id);
 
-      if (recipientError || !recipient.user?.email) {
-        throw new Error(
-          recipientError?.message ?? "Recipient email address is unavailable.",
+        if (recipientError || !recipient.user?.email) {
+          throw new Error(
+            recipientError?.message ??
+              "Recipient email address is unavailable.",
+          );
+        }
+
+        providerMessageId = await deliverEmail(
+          smtp,
+          recipient.user.email,
+          job,
         );
       }
-
-      const providerMessageId = await deliverEmail(
-        smtp,
-        recipient.user.email,
-        job,
-      );
       const { error: completeError } = await serviceClient.rpc(
         "complete_tip_notification_job",
         {
@@ -682,6 +945,5 @@ Deno.serve(async (request: Request) => {
     failed: failed.length,
     completed,
     failures: failed,
-    refundsProcessed: !refundError,
   });
 });

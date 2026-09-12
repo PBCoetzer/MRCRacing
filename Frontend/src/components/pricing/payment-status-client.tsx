@@ -17,6 +17,7 @@ import {
   CardHeader,
   CardTitle,
 } from "@/components/ui/card";
+import { clearCreditCart } from "@/lib/credit-commerce";
 import { createClient } from "@/lib/supabase/client";
 
 type PaymentRow = {
@@ -77,6 +78,10 @@ export function PaymentStatusClient() {
       setPayment(paymentRow);
       setLoading(false);
 
+      if (paymentRow.status === "paid") {
+        clearCreditCart();
+      }
+
       if (paymentRow.status === "pending" && attempt < 15) {
         window.setTimeout(() => void loadPayment(), 2000);
       }
@@ -122,7 +127,8 @@ export function PaymentStatusClient() {
             <AlertTitle>Credits added</AlertTitle>
             <AlertDescription>
               {payment?.credits.toLocaleString("en-ZA")} Credits were issued exactly once
-              after {payment?.provider} confirmed the payment.
+              after {payment?.provider} confirmed the payment. Your Shopping Cart has
+              been cleared.
             </AlertDescription>
           </Alert>
         ) : isPending ? (

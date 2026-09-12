@@ -3,7 +3,6 @@
 import Image from "next/image";
 import Link from "next/link";
 import { useCallback, useEffect, useState } from "react";
-import { useSearchParams } from "next/navigation";
 import { AlertTriangle, Flag, Loader2, MessageCircle, Send, Undo2 } from "lucide-react";
 import { SafeMarkdown } from "@/components/blog/safe-markdown";
 import { BlogVideo } from "@/components/blog/blog-video";
@@ -39,9 +38,15 @@ function formatDate(value: string) {
   }).format(new Date(value));
 }
 
-export function BlogPostClient() {
-  const searchParams = useSearchParams();
-  const slug = searchParams.get("slug")?.trim() ?? "";
+function resolvePostSlug(suppliedSlug?: string) {
+  if (suppliedSlug?.trim()) return suppliedSlug.trim();
+  const querySlug = new URLSearchParams(window.location.search).get("slug")?.trim();
+  if (querySlug) return querySlug;
+  const path = window.location.pathname.split("/").filter(Boolean);
+  return path[0] === "blog" && path[1] && path[1] !== "post" ? path[1] : "";
+}
+
+export function BlogPostClient({ slug: suppliedSlug }: { slug?: string } = {}) {
   const [post, setPost] = useState<PublicPost | null>(null);
   const [comment, setComment] = useState("");
   const [loading, setLoading] = useState(true);
@@ -50,6 +55,7 @@ export function BlogPostClient() {
   const [message, setMessage] = useState("");
 
   const loadPost = useCallback(async () => {
+    const slug = resolvePostSlug(suppliedSlug);
     const supabase = createClient();
     if (!supabase || !slug) {
       setError("Choose a valid MRC blog article.");
@@ -61,7 +67,7 @@ export function BlogPostClient() {
     else if (!data) setError("This article is not published or no longer available.");
     else setPost(data as PublicPost);
     setLoading(false);
-  }, [slug]);
+  }, [suppliedSlug]);
 
   useEffect(() => {
     const timeoutId = window.setTimeout(() => void loadPost(), 0);

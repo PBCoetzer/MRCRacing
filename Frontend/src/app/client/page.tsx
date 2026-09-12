@@ -7,6 +7,7 @@ const clientNav = [
   { label: "Discover Tipsters", href: "/client/#discover-tipsters" },
   { label: "Marketplace", href: "/client/#marketplace" },
   { label: "Purchases", href: "/client/#purchases" },
+  { label: "Write for MRC", href: "/tipster/blog/" },
   { label: "Become a Tipster", href: "/client/tipster-application/" },
 ];
 

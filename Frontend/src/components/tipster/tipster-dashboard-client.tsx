@@ -11,6 +11,7 @@ import {
   FilePenLine,
   Loader2,
   PackageCheck,
+  Palette,
   RefreshCw,
   ShieldCheck,
 } from "lucide-react";
@@ -22,8 +23,17 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { createClient } from "@/lib/supabase/client";
-import { formatCredits, formatRaceDateTime } from "@/lib/racing/format";
+import { formatCredits, formatMeetingCardPrice, formatRaceDateTime } from "@/lib/racing/format";
 import { meetingCardSalesOpen } from "@/lib/racing/availability";
+import {
+  defaultTipsterTheme,
+  resolveTipsterTheme,
+  tipsterThemeAccentStyle,
+  tipsterThemeButtonStyle,
+  tipsterThemeCardStyle,
+  tipsterThemePanelStyle,
+  type TipsterTheme,
+} from "@/lib/racing/tipster-theme";
 import type {
   RaceMeeting,
   TipCard,
@@ -34,6 +44,9 @@ import type {
 type EarningRow = {
   id: string;
   entry_type: "sale" | "refund";
+  purchase_type: "meeting" | "subscription";
+  source_label: string;
+  purchaser_email: string | null;
   gross_coins: number;
   platform_fee_coins: number;
   net_coins: number;
@@ -56,6 +69,7 @@ type CardOutcome = {
   selected_winner_entry_id: string | null;
   selected_winner_position: number | null;
   winner_hit: boolean | null;
+  selected_place_entry_id: string | null;
   selected_place_position: number | null;
   result_summary: string | null;
   settled_at: string;
@@ -73,12 +87,41 @@ function meetingLabel(meeting: RaceMeeting | undefined) {
   return `${meeting.venue} · ${formatRaceDateTime(meeting.first_race_at)}`;
 }
 
+function cardSelectionWinRecord(outcomes: CardOutcome[]) {
+  const gradedEntryIds = new Set<string>();
+  const winningEntryIds = new Set<string>();
+
+  for (const outcome of outcomes) {
+    const selections = [
+      [outcome.selected_winner_entry_id, outcome.selected_winner_position],
+      [outcome.selected_place_entry_id, outcome.selected_place_position],
+    ] as const;
+
+    for (const [entryId, position] of selections) {
+      if (!entryId || position == null) {
+        continue;
+      }
+
+      gradedEntryIds.add(entryId);
+      if (position === 1) {
+        winningEntryIds.add(entryId);
+      }
+    }
+  }
+
+  return {
+    graded: gradedEntryIds.size,
+    wins: winningEntryIds.size,
+  };
+}
+
 export function TipsterDashboardClient() {
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
   const [lastCheckedAt, setLastCheckedAt] = useState<string | null>(null);
   const [checkedAt, setCheckedAt] = useState(() => Date.now());
   const [savingPackages, setSavingPackages] = useState(false);
+  const [savingTheme, setSavingTheme] = useState(false);
   const [message, setMessage] = useState("");
   const [error, setError] = useState("");
   const [tipster, setTipster] = useState<TipsterProfile | null>(null);
@@ -90,8 +133,10 @@ export function TipsterDashboardClient() {
   const [cardOutcomes, setCardOutcomes] = useState<CardOutcome[]>([]);
   const [recordedEarnings, setRecordedEarnings] = useState(0);
   const [packageDraft, setPackageDraft] = useState<PackageDraft>(emptyPackageDraft);
+  const [themeDraft, setThemeDraft] = useState<TipsterTheme>(defaultTipsterTheme);
   const [meetingPageIndex, setMeetingPageIndex] = useState(0);
   const loadInFlight = useRef(false);
+  const themeDraftTouched = useRef(false);
 
   const loadDashboard = useCallback(async (silent = false) => {
     const supabase = createClient();
@@ -126,7 +171,7 @@ export function TipsterDashboardClient() {
 
       const { data: tipsterData, error: tipsterError } = await supabase
         .from("tipsters")
-        .select("id,user_id,display_name,biography,is_verified,commission_rate_override")
+        .select("id,slug,user_id,display_name,biography,is_verified,is_public,commission_rate_override,theme_primary_color,theme_secondary_color,theme_surface_color")
         .eq("user_id", user.id)
         .maybeSingle();
 
@@ -160,12 +205,7 @@ export function TipsterDashboardClient() {
           .select("id,tipster_id,name,duration_months,coin_price,is_active,created_at")
           .eq("tipster_id", verifiedTipster.id)
           .order("duration_months"),
-        supabase
-          .from("tipster_earnings")
-          .select("id,entry_type,gross_coins,platform_fee_coins,net_coins,created_at")
-          .eq("tipster_id", verifiedTipster.id)
-          .order("created_at", { ascending: false })
-          .limit(20),
+        supabase.rpc("get_my_tipster_earnings_ledger_v2", { p_limit: 20 }),
         supabase.rpc("get_my_tipster_recorded_earnings"),
       ]);
 
@@ -201,7 +241,7 @@ export function TipsterDashboardClient() {
 
         const outcomeResult = await supabase
           .from("tip_card_race_outcomes")
-          .select("tip_card_id,fixture_id,selected_winner_entry_id,selected_winner_position,winner_hit,selected_place_position,result_summary,settled_at")
+          .select("tip_card_id,fixture_id,selected_winner_entry_id,selected_winner_position,winner_hit,selected_place_entry_id,selected_place_position,result_summary,settled_at")
           .in("tip_card_id", loadedCards.map((card) => card.id))
           .order("settled_at", { ascending: false });
         if (outcomeResult.error) throw outcomeResult.error;
@@ -221,6 +261,9 @@ export function TipsterDashboardClient() {
       setCardOutcomes(loadedCardOutcomes);
       setRecordedEarnings(Number(earningTotalResult.data ?? 0));
       setPackageDraft(nextDraft);
+      if (!themeDraftTouched.current) {
+        setThemeDraft(resolveTipsterTheme(verifiedTipster));
+      }
     } catch (loadError) {
       setError(loadError instanceof Error ? loadError.message : "Could not load tipster data.");
     } finally {
@@ -336,6 +379,43 @@ export function TipsterDashboardClient() {
     }
   }
 
+  function updateThemeColor(color: keyof TipsterTheme, value: string) {
+    themeDraftTouched.current = true;
+    setThemeDraft((current) => ({ ...current, [color]: value.toUpperCase() }));
+  }
+
+  async function saveTheme() {
+    const supabase = createClient();
+
+    if (!supabase || !tipster) {
+      return;
+    }
+
+    setSavingTheme(true);
+    setError("");
+    setMessage("");
+
+    try {
+      const { error: saveError } = await supabase.rpc("update_my_tipster_theme", {
+        p_primary_color: themeDraft.primary,
+        p_secondary_color: themeDraft.secondary,
+        p_surface_color: themeDraft.surface,
+      });
+
+      if (saveError) {
+        throw saveError;
+      }
+
+      themeDraftTouched.current = false;
+      setMessage("Your client-facing profile and meeting-card theme has been saved.");
+      await loadDashboard(true);
+    } catch (saveError) {
+      setError(saveError instanceof Error ? saveError.message : "Could not save your theme.");
+    } finally {
+      setSavingTheme(false);
+    }
+  }
+
   if (loading) {
     return (
       <Card>
@@ -346,6 +426,15 @@ export function TipsterDashboardClient() {
       </Card>
     );
   }
+
+  const themedPreview = tipster
+    ? {
+        ...tipster,
+        theme_primary_color: themeDraft.primary,
+        theme_secondary_color: themeDraft.secondary,
+        theme_surface_color: themeDraft.surface,
+      }
+    : null;
 
   return (
     <div className="space-y-6">
@@ -415,6 +504,63 @@ export function TipsterDashboardClient() {
           </Card>
         ))}
       </div>
+
+      <Card>
+        <CardHeader>
+          <CardTitle className="flex items-center gap-2">
+            <Palette className="size-5 text-primary" />
+            Client-facing theme
+          </CardTitle>
+          <CardDescription>
+            Choose the colors clients see on your public profile and your meeting cards. Changes do not affect another tipster.
+          </CardDescription>
+        </CardHeader>
+        <CardContent className="grid gap-5 lg:grid-cols-[minmax(0,0.8fr)_minmax(0,1.2fr)]">
+          <div className="space-y-4">
+            {([
+              ["primary", "Primary accent"],
+              ["secondary", "Secondary accent"],
+              ["surface", "Card background"],
+            ] as const).map(([color, label]) => (
+              <div key={color} className="space-y-2">
+                <Label htmlFor={`theme-${color}`}>{label}</Label>
+                <div className="flex items-center gap-3 rounded-lg border bg-background/45 p-2">
+                  <input
+                    id={`theme-${color}`}
+                    type="color"
+                    value={themeDraft[color]}
+                    className="h-10 w-14 cursor-pointer rounded border-0 bg-transparent p-0"
+                    onChange={(event) => updateThemeColor(color, event.target.value)}
+                  />
+                  <span className="font-mono text-sm">{themeDraft[color]}</span>
+                </div>
+              </div>
+            ))}
+            <Button type="button" disabled={savingTheme} onClick={() => void saveTheme()}>
+              {savingTheme ? <Loader2 className="size-4 animate-spin" /> : <Palette className="size-4" />}
+              Save client theme
+            </Button>
+          </div>
+
+          <div className="rounded-xl border p-5 text-white" style={tipsterThemePanelStyle(themedPreview)}>
+            <Badge style={tipsterThemeButtonStyle(themedPreview)}>Client preview</Badge>
+            <h3 className="mt-4 font-heading text-3xl">{tipster?.display_name}</h3>
+            <p className="mt-2 text-sm" style={tipsterThemeAccentStyle(themedPreview)}>
+              Verified tipster profile and meeting-card presentation
+            </p>
+            <div className="mt-5 grid gap-3 sm:grid-cols-2">
+              <div className="rounded-lg border p-4" style={tipsterThemeCardStyle(themedPreview)}>
+                <p className="font-semibold">Race 1 selection</p>
+                <p className="mt-1 text-sm text-white/70">Your analysis remains clear and readable.</p>
+              </div>
+              <div className="rounded-lg border p-4" style={tipsterThemeCardStyle(themedPreview)}>
+                <p className="font-semibold">Meeting option</p>
+                <p className="mt-1 text-sm text-white/70">Accents identify your own published card.</p>
+              </div>
+            </div>
+          </div>
+        </CardContent>
+      </Card>
 
       <Card>
         <CardHeader className="flex-row items-start justify-between gap-4">
@@ -487,7 +633,7 @@ export function TipsterDashboardClient() {
                 <TableHead>Status</TableHead>
                 <TableHead>Revision</TableHead>
                 <TableHead>Price</TableHead>
-                <TableHead>Winner record</TableHead>
+                <TableHead>Selections won</TableHead>
                 <TableHead />
               </TableRow>
             </TableHeader>
@@ -503,8 +649,7 @@ export function TipsterDashboardClient() {
                   (fixture) => new Date(fixture.starts_at).getTime() > checkedAt,
                 ).length;
                 const outcomes = cardOutcomes.filter((outcome) => outcome.tip_card_id === card.id);
-                const graded = outcomes.filter((outcome) => outcome.selected_winner_position != null);
-                const hits = graded.filter((outcome) => outcome.winner_hit === true).length;
+                const selectionWinRecord = cardSelectionWinRecord(outcomes);
                 const actionLabel =
                   openCount === 0 || (fixtures.length > 0 && resultCount === fixtures.length)
                     ? "View results"
@@ -533,9 +678,11 @@ export function TipsterDashboardClient() {
                       </Badge>
                     </TableCell>
                     <TableCell className="font-mono">{card.revision}</TableCell>
-                    <TableCell className="font-mono">{formatCredits(card.coin_price)}</TableCell>
+                    <TableCell className="font-mono">{formatMeetingCardPrice(card.coin_price)}</TableCell>
                     <TableCell className="font-mono">
-                      {card.status === "settled" ? `${hits}/${graded.length} hits` : `${resultCount}/${fixtures.length} results`}
+                      {card.status === "settled"
+                        ? `${selectionWinRecord.wins}/${selectionWinRecord.graded} wins`
+                        : `${resultCount}/${fixtures.length} results`}
                     </TableCell>
                     <TableCell className="text-right">
                       <Button asChild variant="outline">
@@ -598,13 +745,17 @@ export function TipsterDashboardClient() {
       <Card>
         <CardHeader>
           <CardTitle>Recent earnings ledger</CardTitle>
-          <CardDescription>Sales and exact refund reversals are recorded for future settlement.</CardDescription>
+          <CardDescription>
+            Meeting-card and subscription sales are identified separately. Meeting settlement never reverses a subscription sale.
+          </CardDescription>
         </CardHeader>
         <CardContent>
           <Table>
             <TableHeader>
               <TableRow>
                 <TableHead>Time</TableHead>
+                <TableHead>Source</TableHead>
+                <TableHead>Client email</TableHead>
                 <TableHead>Entry</TableHead>
                 <TableHead>Gross</TableHead>
                 <TableHead>Commission</TableHead>
@@ -616,8 +767,17 @@ export function TipsterDashboardClient() {
                 <TableRow key={entry.id}>
                   <TableCell>{formatRaceDateTime(entry.created_at)}</TableCell>
                   <TableCell>
+                    <p className="font-medium">
+                      {entry.purchase_type === "meeting" ? "Meeting card" : "Subscription"}
+                    </p>
+                    <p className="max-w-72 text-xs text-muted-foreground">{entry.source_label}</p>
+                  </TableCell>
+                  <TableCell className="max-w-64 break-all text-sm">
+                    {entry.purchaser_email ?? "Email unavailable"}
+                  </TableCell>
+                  <TableCell>
                     <Badge variant={entry.entry_type === "refund" ? "destructive" : "outline"}>
-                      {entry.entry_type}
+                      {entry.purchase_type} {entry.entry_type}
                     </Badge>
                   </TableCell>
                   <TableCell>{formatCredits(entry.gross_coins)}</TableCell>
@@ -627,7 +787,7 @@ export function TipsterDashboardClient() {
               ))}
               {!earnings.length ? (
                 <TableRow>
-                  <TableCell colSpan={5} className="text-center text-muted-foreground">
+                  <TableCell colSpan={7} className="text-center text-muted-foreground">
                     No earnings entries yet.
                   </TableCell>
                 </TableRow>

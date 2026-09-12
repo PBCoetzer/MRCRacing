@@ -102,6 +102,15 @@ Deno.serve(async (request) => {
   try {
     const body = await request.json().catch(() => ({})) as { dryRun?: boolean };
     const dryRun = body.dryRun === true;
+    let reconciliation: unknown = { dryRun: true };
+    if (!dryRun) {
+      const { data, error } = await serviceClient.rpc(
+        "reconcile_race_statuses",
+        { p_actor_id: authorization.userId },
+      );
+      if (error) throw error;
+      reconciliation = data;
+    }
     const { data, error } = await serviceClient.rpc("run_race_lifecycle", {
       p_dry_run: dryRun,
       p_actor_id: authorization.userId,
@@ -110,6 +119,7 @@ Deno.serve(async (request) => {
     return json(request, {
       status: "succeeded",
       authorization: authorization.kind,
+      reconciliation,
       ...data,
     });
   } catch (error) {

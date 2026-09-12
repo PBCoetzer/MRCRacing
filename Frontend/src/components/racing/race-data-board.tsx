@@ -1,13 +1,12 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { AlertCircle, ExternalLink } from "lucide-react";
+import { AlertCircle } from "lucide-react";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { Badge } from "@/components/ui/badge";
 import { createClient } from "@/lib/supabase/client";
 import { isSupabaseConfigured } from "@/lib/supabase/config";
 import { minimumUpcomingFirstRace } from "@/lib/racing/availability";
-import { professionalSourceName, publicSourceUrl } from "@/lib/racing/source-brand";
 
 type RaceRecord = {
   id: string;
@@ -25,6 +24,7 @@ type RaceRecord = {
 type MeetingRecord = {
   id: string;
   venue: string;
+  venue_slug: string;
   meeting_date: string;
   first_race_at: string;
   last_race_at: string | null;
@@ -58,14 +58,15 @@ function formatMeetingDay(value: string) {
   }).format(new Date(value));
 }
 
-function formatSyncTime(value: string | null) {
+function formatSyncDate(value: string | null) {
   if (!value) {
     return "Awaiting first sync";
   }
 
   return new Intl.DateTimeFormat("en-ZA", {
-    dateStyle: "medium",
-    timeStyle: "short",
+    day: "2-digit",
+    month: "short",
+    year: "numeric",
     timeZone: "Africa/Johannesburg",
   }).format(new Date(value));
 }
@@ -92,7 +93,7 @@ export function UpcomingMeetingBoard() {
       const response = await supabase
         .from("race_meetings")
         .select(
-          "id,venue,meeting_date,first_race_at,last_race_at,status,source_name,source_url,source_updated_at",
+          "id,venue,venue_slug,meeting_date,first_race_at,last_race_at,status,source_name,source_url,source_updated_at",
         )
         .eq("status", "scheduled")
         .gt("first_race_at", minimumUpcomingFirstRace())
@@ -172,16 +173,16 @@ export function UpcomingMeetingBoard() {
   return (
     <div className="flex snap-x gap-4 overflow-x-auto pb-4">
       {state.data.map((meeting) => {
-        const sourceUrl = publicSourceUrl(meeting.source_name, meeting.source_url);
         const meetingFixtures = state.fixtures.filter(
           (fixture) => "meeting_id" in fixture &&
             String((fixture as RaceRecord & { meeting_id: string }).meeting_id) === meeting.id,
         );
 
         return (
-          <article
+          <a
             key={meeting.id}
-            className="min-w-[18rem] snap-start rounded-xl border border-brand-gold/24 bg-brand-purple-deep/70 p-5 text-white shadow-[0_18px_44px_rgba(0,0,0,0.24)] sm:min-w-[22rem]"
+            href={`/horse-racing/meeting/?venue=${encodeURIComponent(meeting.venue_slug)}&date=${encodeURIComponent(meeting.meeting_date)}`}
+            className="min-w-[18rem] snap-start rounded-xl border border-brand-gold/24 bg-brand-purple-deep/70 p-5 text-white shadow-[0_18px_44px_rgba(0,0,0,0.24)] transition hover:border-brand-gold/60 sm:min-w-[22rem]"
           >
             <div className="flex items-start justify-between gap-4">
               <div>
@@ -213,21 +214,10 @@ export function UpcomingMeetingBoard() {
             </div>
             <div className="mt-4 flex flex-wrap items-center justify-between gap-3 border-t border-white/10 pt-3 text-xs text-white/62">
               <span>
-                Verified by {professionalSourceName(meeting.source_name)} · Updated {formatSyncTime(meeting.source_updated_at)}
+                Race data normalised and presented by MRC Racing Tips. Updated {formatSyncDate(meeting.source_updated_at)}
               </span>
-              {sourceUrl ? (
-                <a
-                  href={sourceUrl}
-                  target="_blank"
-                  rel="noopener noreferrer"
-                  className="inline-flex items-center gap-1 text-brand-cyan hover:underline"
-                >
-                  Source
-                  <ExternalLink className="size-3" />
-                </a>
-              ) : null}
             </div>
-          </article>
+          </a>
         );
       })}
     </div>

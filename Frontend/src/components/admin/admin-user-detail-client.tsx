@@ -17,6 +17,8 @@ import {
   Flag,
   History,
   Loader2,
+  MailPlus,
+  Newspaper,
   NotebookPen,
   RefreshCw,
   Save,
@@ -58,6 +60,151 @@ import { createClient } from "@/lib/supabase/client";
 type AppRole = "client" | "tipster" | "administrator";
 type AccountStatus = "active" | "flagged" | "suspended" | "banned";
 type ModerationAction = "flag" | "suspend" | "ban" | "restore";
+
+type EmailConfirmationActionRecord = {
+  id: string;
+  action: "resend_confirmation" | "verify_email";
+  reason: string;
+  status: "processing" | "succeeded" | "failed";
+  sanitized_error: string | null;
+  completed_at: string | null;
+  created_at: string;
+};
+
+type RegistrationDeliveryState =
+  | "manually_verified"
+  | "confirmed"
+  | "dispatched_unverified"
+  | "not_dispatched";
+
+type AuthEmailProviderStatus =
+  | "pending"
+  | "accepted"
+  | "sent"
+  | "delivery_delayed"
+  | "delivered"
+  | "bounced"
+  | "complained"
+  | "suppressed"
+  | "failed";
+
+type AuthEmailDeliveryMessage = {
+  id: string;
+  provider: string;
+  providerMessageId: string | null;
+  recipientEmail: string;
+  emailActionType: string;
+  actionVariant: string;
+  subject: string;
+  status: AuthEmailProviderStatus;
+  attemptCount: number;
+  acceptedAt: string | null;
+  latestEventAt: string | null;
+  deliveredAt: string | null;
+  bouncedAt: string | null;
+  complainedAt: string | null;
+  suppressedAt: string | null;
+  failedAt: string | null;
+  lastErrorCode: string | null;
+  lastErrorMessage: string | null;
+  createdAt: string;
+};
+
+type AuthEmailDeliveryEvent = {
+  providerEventId: string;
+  messageId: string | null;
+  provider: string;
+  providerEmailId: string;
+  eventType: string;
+  eventAt: string;
+  details: Record<string, unknown>;
+};
+
+type AuthEmailDeliveryDiagnostics = {
+  providerTracked: boolean;
+  latestSignup: Omit<
+    AuthEmailDeliveryMessage,
+    "id" | "recipientEmail" | "emailActionType" | "actionVariant" | "subject" | "attemptCount" | "createdAt"
+  > | null;
+  messages: AuthEmailDeliveryMessage[];
+  events: AuthEmailDeliveryEvent[];
+};
+
+type RegistrationDiagnostics = {
+  auth: {
+    userId: string;
+    email: string;
+    phone: string | null;
+    audience: string | null;
+    authRole: string | null;
+    createdAt: string;
+    updatedAt: string;
+    invitedAt: string | null;
+    confirmationSentAt: string | null;
+    emailConfirmedAt: string | null;
+    recoverySentAt: string | null;
+    emailChangeSentAt: string | null;
+    emailChangePending: string | null;
+    reauthenticationSentAt: string | null;
+    phoneConfirmedAt: string | null;
+    lastSignInAt: string | null;
+    bannedUntil: string | null;
+    deletedAt: string | null;
+    isSsoUser: boolean;
+    isAnonymous: boolean;
+  };
+  profile: {
+    firstName: string | null;
+    lastName: string | null;
+    displayName: string | null;
+    phone: string | null;
+    createdAt: string | null;
+    updatedAt: string | null;
+    acceptedTermsAt: string | null;
+    acceptedTermsVersion: string | null;
+    confirmedOver18At: string | null;
+    emailNotificationsEnabled: boolean | null;
+  };
+  providers: {
+    id: string;
+    provider: string;
+    email: string | null;
+    createdAt: string;
+    updatedAt: string;
+    lastSignInAt: string | null;
+  }[];
+  delivery: {
+    state: RegistrationDeliveryState;
+    providerDeliveryTracked: boolean;
+    providerDeliveryStatus: string | null;
+    note: string;
+  };
+  events: {
+    id: string;
+    eventType: string;
+    source:
+      | "auth_trigger"
+      | "auth_snapshot_backfill"
+      | "auth_email_hook"
+      | "email_provider_webhook";
+    email: string | null;
+    eventAt: string;
+    details: Record<string, unknown>;
+  }[];
+  confirmationActions: {
+    id: string;
+    requestId: string;
+    action: "resend_confirmation" | "verify_email";
+    reason: string;
+    status: "processing" | "succeeded" | "failed";
+    sanitizedError: string | null;
+    createdAt: string;
+    completedAt: string | null;
+    actorId: string;
+    actorName: string | null;
+    actorEmail: string | null;
+  }[];
+};
 
 type UserDetail = {
   identity: {
@@ -171,6 +318,33 @@ type UserDetail = {
   }[];
 };
 
+type TipsterWorkspace = {
+  loadedAt: string;
+  tipsterId: string | null;
+  packages: {
+    id: string;
+    name: string;
+    durationMonths: number;
+    priceCredits: number;
+    active: boolean;
+    createdAt: string;
+    updatedAt: string;
+  }[];
+  sales: {
+    id: string;
+    type: "meeting" | "subscription";
+    status: string;
+    totalCredits: number;
+    purchasedCredits: number;
+    rewardCredits: number;
+    buyerEmail: string;
+    buyerName: string | null;
+    sourceLabel: string;
+    refundedAt: string | null;
+    createdAt: string;
+  }[];
+};
+
 type ProfileDraft = {
   firstName: string;
   lastName: string;
@@ -185,10 +359,19 @@ type AccessDraft = {
   administrator: boolean;
   tipsterDisplayName: string;
   tipsterBiography: string;
-  tipsterVerified: boolean;
+  tipsterPublic: boolean;
   blogPublish: boolean;
   testAccess: boolean;
   reason: string;
+};
+
+type BlogAuthorRequest = {
+  id: string;
+  status: "requested" | "approved" | "rejected" | "revoked";
+  request_reason: string;
+  review_note: string | null;
+  created_at: string;
+  reviewed_at: string | null;
 };
 
 type WalletDraft = {
@@ -229,6 +412,71 @@ function errorMessage(error: unknown, fallback: string) {
   return fallback;
 }
 
+function registrationStatusLabel(state: RegistrationDeliveryState) {
+  if (state === "manually_verified") return "Manually verified";
+  if (state === "confirmed") return "Email confirmed";
+  if (state === "dispatched_unverified") return "Dispatch recorded; delivery unverified";
+  return "No dispatch recorded";
+}
+
+function registrationEventLabel(eventType: string) {
+  return eventType
+    .split("_")
+    .map((part) => `${part.charAt(0).toUpperCase()}${part.slice(1)}`)
+    .join(" ");
+}
+
+function registrationEventSourceLabel(source: RegistrationDiagnostics["events"][number]["source"]) {
+  if (source === "auth_trigger") return "Live Auth event";
+  if (source === "auth_email_hook") return "Auth email sender";
+  if (source === "email_provider_webhook") return "Signed provider webhook";
+  return "Historical Auth timestamp";
+}
+
+function providerDeliveryLabel(status: AuthEmailProviderStatus) {
+  if (status === "delivery_delayed") return "Delivery delayed";
+  return status.charAt(0).toUpperCase() + status.slice(1);
+}
+
+function providerDeliveryVariant(status: AuthEmailProviderStatus) {
+  if (["bounced", "complained", "suppressed", "failed"].includes(status)) {
+    return "destructive" as const;
+  }
+  if (status === "delivered") return "default" as const;
+  return "outline" as const;
+}
+
+const userWorkspaceTabs = new Set([
+  "identity",
+  "registration",
+  "access",
+  "credits",
+  "moderation",
+  "notes",
+  "commerce",
+  "tipster",
+  "audit",
+]);
+
+async function edgeFunctionErrorMessage(error: unknown, fallback: string) {
+  const context = typeof error === "object" && error && "context" in error
+    ? error.context
+    : null;
+
+  if (context instanceof Response) {
+    try {
+      const payload = await context.clone().json() as { error?: string };
+      if (payload.error) {
+        return payload.error;
+      }
+    } catch {
+      return errorMessage(error, fallback);
+    }
+  }
+
+  return errorMessage(error, fallback);
+}
+
 export function AdminUserDetailClient() {
   const [detail, setDetail] = useState<UserDetail | null>(null);
   const [actorId, setActorId] = useState("");
@@ -237,6 +485,7 @@ export function AdminUserDetailClient() {
   const [processing, setProcessing] = useState("");
   const [error, setError] = useState("");
   const [message, setMessage] = useState("");
+  const [activeTab, setActiveTab] = useState("identity");
   const [profileDraft, setProfileDraft] = useState<ProfileDraft>({
     firstName: "",
     lastName: "",
@@ -250,7 +499,7 @@ export function AdminUserDetailClient() {
     administrator: false,
     tipsterDisplayName: "",
     tipsterBiography: "",
-    tipsterVerified: false,
+    tipsterPublic: false,
     blogPublish: false,
     testAccess: false,
     reason: "Administrator access configuration",
@@ -269,8 +518,30 @@ export function AdminUserDetailClient() {
     confirmation: "",
   });
   const [largeCreditDialogOpen, setLargeCreditDialogOpen] = useState(false);
+  const [verifyEmailDialogOpen, setVerifyEmailDialogOpen] = useState(false);
+  const [verifyEmailConfirmation, setVerifyEmailConfirmation] = useState("");
+  const [emailActionError, setEmailActionError] = useState("");
+  const [emailConfirmationActions, setEmailConfirmationActions] = useState<
+    EmailConfirmationActionRecord[]
+  >([]);
+  const [registrationDiagnostics, setRegistrationDiagnostics] = useState<
+    RegistrationDiagnostics | null
+  >(null);
+  const [registrationDiagnosticsError, setRegistrationDiagnosticsError] = useState("");
+  const [emailDeliveryDiagnostics, setEmailDeliveryDiagnostics] = useState<
+    AuthEmailDeliveryDiagnostics | null
+  >(null);
+  const [emailDeliveryDiagnosticsError, setEmailDeliveryDiagnosticsError] = useState("");
+  const [resendConfirmationReason, setResendConfirmationReason] = useState(
+    "Administrator requested confirmation email resend after reported non-delivery",
+  );
+  const [manualVerificationReason, setManualVerificationReason] = useState(
+    "Administrator independently verified ownership of this email address",
+  );
   const [tipsterApplication, setTipsterApplication] = useState<TipsterApplication | null>(null);
   const [tipsterApplicationDocuments, setTipsterApplicationDocuments] = useState<TipsterApplicationDocument[]>([]);
+  const [tipsterWorkspace, setTipsterWorkspace] = useState<TipsterWorkspace | null>(null);
+  const [blogAuthorRequest, setBlogAuthorRequest] = useState<BlogAuthorRequest | null>(null);
 
   const loadDetail = useCallback(async () => {
     const userId = new URLSearchParams(window.location.search).get("user");
@@ -300,8 +571,13 @@ export function AdminUserDetailClient() {
       detailResult,
       ownerResult,
       blogPermissionResult,
+      blogAuthorRequestResult,
       tipsterApplicationResult,
       tipsterDocumentResult,
+      tipsterWorkspaceResult,
+      emailConfirmationActionResult,
+      registrationDiagnosticsResult,
+      emailDeliveryDiagnosticsResult,
     ] = await Promise.all([
       supabase.rpc("admin_get_user_detail", { p_user_id: userId }),
       supabase
@@ -311,7 +587,12 @@ export function AdminUserDetailClient() {
         .maybeSingle(),
       supabase
         .from("tipsters")
-        .select("tipster_blog_permissions(can_publish)")
+        .select("id,is_public,tipster_blog_permissions(can_publish)")
+        .eq("user_id", userId)
+        .maybeSingle(),
+      supabase
+        .from("blog_author_requests")
+        .select("id,status,request_reason,review_note,created_at,reviewed_at")
         .eq("user_id", userId)
         .maybeSingle(),
       supabase
@@ -324,6 +605,15 @@ export function AdminUserDetailClient() {
         .select("id,application_id,user_id,document_type,storage_path,original_file_name,mime_type,size_bytes,sha256,created_at")
         .eq("user_id", userId)
         .order("created_at"),
+      supabase.rpc("admin_get_user_tipster_workspace", { p_user_id: userId }),
+      supabase
+        .from("admin_email_confirmation_actions")
+        .select("id,action,reason,status,sanitized_error,completed_at,created_at")
+        .eq("user_id", userId)
+        .order("created_at", { ascending: false })
+        .limit(20),
+      supabase.rpc("admin_get_user_registration_diagnostics", { p_user_id: userId }),
+      supabase.rpc("admin_get_user_email_delivery", { p_user_id: userId }),
     ]);
 
     if (detailResult.error || !detailResult.data) {
@@ -335,14 +625,20 @@ export function AdminUserDetailClient() {
     if (
       ownerResult.error ||
       blogPermissionResult.error ||
+      blogAuthorRequestResult.error ||
       tipsterApplicationResult.error ||
-      tipsterDocumentResult.error
+      tipsterDocumentResult.error ||
+      tipsterWorkspaceResult.error ||
+      emailConfirmationActionResult.error
     ) {
       setError(
-        ownerResult.error?.message ??
+          ownerResult.error?.message ??
           blogPermissionResult.error?.message ??
+          blogAuthorRequestResult.error?.message ??
           tipsterApplicationResult.error?.message ??
           tipsterDocumentResult.error?.message ??
+          tipsterWorkspaceResult.error?.message ??
+          emailConfirmationActionResult.error?.message ??
           "Could not load access controls.",
       );
       setLoading(false);
@@ -352,7 +648,34 @@ export function AdminUserDetailClient() {
     const loadedDetail = detailResult.data as UserDetail;
     setDetail(loadedDetail);
     setTipsterApplication((tipsterApplicationResult.data as TipsterApplication | null) ?? null);
+    setBlogAuthorRequest((blogAuthorRequestResult.data as BlogAuthorRequest | null) ?? null);
     setTipsterApplicationDocuments((tipsterDocumentResult.data ?? []) as TipsterApplicationDocument[]);
+    setTipsterWorkspace(tipsterWorkspaceResult.data as TipsterWorkspace);
+    setEmailConfirmationActions(
+      (emailConfirmationActionResult.data ?? []) as EmailConfirmationActionRecord[],
+    );
+    if (registrationDiagnosticsResult.error) {
+      setRegistrationDiagnostics(null);
+      setRegistrationDiagnosticsError(
+        "Enhanced Auth event history will activate when the approved database migration is deployed.",
+      );
+    } else {
+      setRegistrationDiagnostics(
+        registrationDiagnosticsResult.data as RegistrationDiagnostics,
+      );
+      setRegistrationDiagnosticsError("");
+    }
+    if (emailDeliveryDiagnosticsResult.error) {
+      setEmailDeliveryDiagnostics(null);
+      setEmailDeliveryDiagnosticsError(
+        "Tracked provider delivery will activate after the Auth email delivery migration and hook are enabled.",
+      );
+    } else {
+      setEmailDeliveryDiagnostics(
+        emailDeliveryDiagnosticsResult.data as AuthEmailDeliveryDiagnostics,
+      );
+      setEmailDeliveryDiagnosticsError("");
+    }
     setActorId(user.id);
     setActorIsOwner(Boolean(ownerResult.data));
     setProfileDraft({
@@ -371,7 +694,7 @@ export function AdminUserDetailClient() {
         loadedDetail.identity.displayName ??
         loadedDetail.identity.email.split("@")[0],
       tipsterBiography: loadedDetail.access.tipsterBiography ?? "",
-      tipsterVerified: loadedDetail.access.tipsterVerified,
+      tipsterPublic: blogPermissionResult.data?.is_public === true,
       blogPublish: (() => {
         const permission = blogPermissionResult.data?.tipster_blog_permissions;
         const value = Array.isArray(permission) ? permission[0] : permission;
@@ -391,8 +714,57 @@ export function AdminUserDetailClient() {
     return () => window.clearTimeout(timeoutId);
   }, [loadDetail]);
 
+  useEffect(() => {
+    const timeoutId = window.setTimeout(() => {
+      const requestedTab = window.location.hash.slice(1);
+      if (userWorkspaceTabs.has(requestedTab)) {
+        setActiveTab(requestedTab);
+      }
+    }, 0);
+
+    return () => window.clearTimeout(timeoutId);
+  }, []);
+
+  function changeActiveTab(value: string) {
+    setActiveTab(value);
+    const nextUrl = `${window.location.pathname}${window.location.search}#${value}`;
+    window.history.replaceState(null, "", nextUrl);
+  }
+
   const targetIsAdministrator = detail?.roles.includes("administrator") ?? false;
   const targetIsSelf = detail?.identity.userId === actorId;
+  const latestManualVerification = emailConfirmationActions.find(
+    (action) => action.action === "verify_email" && action.status === "succeeded",
+  );
+  const latestConfirmationResend = emailConfirmationActions.find(
+    (action) => action.action === "resend_confirmation" && action.status === "succeeded",
+  );
+  const effectiveRegistrationState: RegistrationDeliveryState =
+    registrationDiagnostics?.delivery.state ??
+    (detail?.identity.emailConfirmed
+      ? latestManualVerification
+        ? "manually_verified"
+        : "confirmed"
+      : latestConfirmationResend
+        ? "dispatched_unverified"
+        : "not_dispatched");
+  const latestSignupDelivery = emailDeliveryDiagnostics?.latestSignup ?? null;
+  const providerDeliveryFailed = Boolean(
+    latestSignupDelivery &&
+      ["bounced", "complained", "suppressed", "failed"].includes(
+        latestSignupDelivery.status,
+      ),
+  );
+  const registrationAlertIsDestructive =
+    effectiveRegistrationState === "not_dispatched" || providerDeliveryFailed;
+  const registrationDeliveryNote = latestSignupDelivery
+    ? latestSignupDelivery.status === "delivered"
+      ? "The tracked provider reports that the recipient mail server accepted the confirmation email. Account confirmation remains recorded separately."
+      : providerDeliveryFailed
+        ? `The tracked provider reported ${providerDeliveryLabel(latestSignupDelivery.status).toLowerCase()}. Review the provider error and event timeline before resending.`
+        : `The tracked provider currently reports ${providerDeliveryLabel(latestSignupDelivery.status).toLowerCase()}. Delivery events will update automatically.`
+    : registrationDiagnostics?.delivery.note ??
+      "This account predates tracked provider delivery or the provider hook is not active yet.";
   const canModerate = Boolean(
     detail &&
       !detail.identity.isOwner &&
@@ -455,14 +827,15 @@ export function AdminUserDetailClient() {
     setError("");
 
     try {
-      const { error: accessError } = await supabase.rpc("admin_configure_user_v2", {
+      const { error: accessError } = await supabase.rpc("admin_configure_user_v3", {
         p_user_id: detail.identity.userId,
         p_client: accessDraft.client,
         p_tipster: accessDraft.tipster,
         p_administrator: accessDraft.administrator,
         p_tipster_display_name: accessDraft.tipsterDisplayName || null,
         p_tipster_biography: accessDraft.tipsterBiography || null,
-        p_verify_tipster: accessDraft.tipster && accessDraft.tipsterVerified,
+        p_tipster_public: accessDraft.tipster && accessDraft.tipsterPublic,
+        p_blog_publish: accessDraft.blogPublish,
         p_test_access: accessDraft.testAccess,
         p_reason: accessDraft.reason,
       });
@@ -471,23 +844,99 @@ export function AdminUserDetailClient() {
         throw accessError;
       }
 
-      if (accessDraft.tipster || detail.access.tipsterId) {
-        const { error: blogPermissionError } = await supabase.rpc(
-          "admin_set_tipster_blog_permission",
-          {
-            p_user_id: detail.identity.userId,
-            p_can_publish:
-              accessDraft.tipster && accessDraft.tipsterVerified && accessDraft.blogPublish,
-            p_reason: accessDraft.reason,
-          },
-        );
-        if (blogPermissionError) throw blogPermissionError;
-      }
-
-      setMessage("Roles, tipster verification, blog-author permission, and private test access were audit logged.");
+      setMessage("Roles, Tipster access, public visibility, blog-author permission, and private test access were audit logged.");
       await loadDetail();
     } catch (caughtError) {
       setError(errorMessage(caughtError, "Could not update user access."));
+    } finally {
+      setProcessing("");
+    }
+  }
+
+  async function runEmailConfirmationAction(
+    action: "resend_confirmation" | "verify_email",
+  ) {
+    const supabase = createClient();
+    const reason = action === "resend_confirmation"
+      ? resendConfirmationReason.trim()
+      : manualVerificationReason.trim();
+
+    if (!supabase || !detail) {
+      return;
+    }
+
+    if (detail.identity.emailConfirmed) {
+      setError("This email address is already confirmed.");
+      return;
+    }
+
+    if (reason.length < 10) {
+      setError("Enter an audit reason of at least ten characters.");
+      return;
+    }
+
+    if (action === "verify_email" && verifyEmailConfirmation !== "VERIFY") {
+      setError('Type "VERIFY" to confirm manual email verification.');
+      return;
+    }
+
+    setProcessing(`email:${action}`);
+    setError("");
+    setMessage("");
+    setEmailActionError("");
+
+    try {
+      const requestId = crypto.randomUUID();
+      const { data, error: functionError } = await supabase.functions.invoke(
+        "admin-user-control",
+        {
+          headers: { "x-idempotency-key": requestId },
+          body: {
+            userId: detail.identity.userId,
+            action,
+            internalReason: reason,
+            confirmation: action === "verify_email"
+              ? verifyEmailConfirmation
+              : undefined,
+            requestId,
+          },
+        },
+      );
+
+      if (functionError) {
+        throw new Error(
+          await edgeFunctionErrorMessage(
+            functionError,
+            "The administrator email action could not be completed.",
+          ),
+        );
+      }
+
+      if (data?.error) {
+        throw new Error(data.error);
+      }
+
+      if (action === "verify_email") {
+        setVerifyEmailDialogOpen(false);
+        setVerifyEmailConfirmation("");
+        setMessage(`${detail.identity.email} was manually verified and audit logged.`);
+      } else {
+        setMessage(
+          `Supabase accepted a new confirmation email request for ${detail.identity.email}. Provider delivery status will update in the registration diagnostics.`,
+        );
+      }
+
+      await loadDetail();
+    } catch (caughtError) {
+      const actionError = errorMessage(
+        caughtError,
+        action === "resend_confirmation"
+          ? "The confirmation email could not be resent."
+          : "The email address could not be verified manually.",
+      );
+      setError(actionError);
+      setEmailActionError(actionError);
+      await loadDetail();
     } finally {
       setProcessing("");
     }
@@ -730,11 +1179,23 @@ export function AdminUserDetailClient() {
               {detail.moderation.status}
             </Badge>
             {detail.identity.isOwner ? <Badge>Platform owner</Badge> : null}
+            {detail.identity.emailConfirmed ? (
+              <Badge className="border-emerald-400/40 bg-emerald-400/15 text-emerald-100">
+                {latestManualVerification ? "Email manually verified" : "Email confirmed"}
+              </Badge>
+            ) : (
+              <Badge variant="destructive">Email pending</Badge>
+            )}
             {detail.moderation.authSyncStatus !== "synced" ? (
               <Badge variant="destructive">Auth {detail.moderation.authSyncStatus}</Badge>
             ) : null}
           </div>
           <p className="mt-1 text-sm text-muted-foreground">{detail.identity.email}</p>
+          {tipsterWorkspace ? (
+            <p className="mt-1 text-xs text-brand-cyan">
+              Live Supabase snapshot · loaded {formatRaceDateTime(tipsterWorkspace.loadedAt)}
+            </p>
+          ) : null}
         </div>
         <Button type="button" variant="outline" onClick={() => void loadDetail()}>
           <RefreshCw className="size-4" />
@@ -760,26 +1221,39 @@ export function AdminUserDetailClient() {
         </Alert>
       ) : null}
 
-      <div className="grid gap-4 md:grid-cols-4">
+      <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-5">
         <SummaryCard label="Credit balance" value={formatCredits(detail.wallet.balance)} />
         <SummaryCard label="Roles" value={detail.roles.join(", ") || "None"} />
         <SummaryCard
           label="Email"
-          value={detail.identity.emailConfirmed ? "Confirmed" : "Confirmation pending"}
+          value={
+            detail.identity.emailConfirmed
+              ? latestManualVerification
+                ? "Manually verified"
+                : "Confirmed"
+              : "Confirmation pending"
+          }
         />
         <SummaryCard
           label="Last sign-in"
           value={
             detail.identity.lastSignInAt
               ? formatRaceDateTime(detail.identity.lastSignInAt)
-              : "Never"
+            : "Never"
           }
         />
+        {tipsterWorkspace?.tipsterId ? (
+          <SummaryCard
+            label="Tipster packages"
+            value={`${tipsterWorkspace.packages.length} live record${tipsterWorkspace.packages.length === 1 ? "" : "s"}`}
+          />
+        ) : null}
       </div>
 
-      <Tabs defaultValue="identity">
+      <Tabs value={activeTab} onValueChange={changeActiveTab}>
         <TabsList className="flex h-auto flex-wrap">
           <TabsTrigger value="identity"><CircleUserRound className="size-4" />Identity</TabsTrigger>
+          <TabsTrigger value="registration"><MailPlus className="size-4" />Registration</TabsTrigger>
           <TabsTrigger value="access"><UserCog className="size-4" />Access</TabsTrigger>
           <TabsTrigger value="credits"><Coins className="size-4" />Credits</TabsTrigger>
           <TabsTrigger value="moderation"><ShieldCheck className="size-4" />Moderation</TabsTrigger>
@@ -790,7 +1264,164 @@ export function AdminUserDetailClient() {
         </TabsList>
 
         <TabsContent value="identity">
-          <Card>
+          <div className="space-y-4">
+            <Card
+              className={
+                detail.identity.emailConfirmed
+                  ? "border-emerald-400/35"
+                  : "border-amber-400/35"
+              }
+            >
+              <CardHeader>
+                <CardTitle>Email verification status</CardTitle>
+                <CardDescription>
+                  Confirmation state and administrator email actions from the live database.
+                </CardDescription>
+              </CardHeader>
+              <CardContent className="space-y-4">
+                <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
+                  <div className="rounded-lg border bg-background/45 p-4">
+                    <p className="text-xs uppercase tracking-wide text-muted-foreground">
+                      Account status
+                    </p>
+                    <div className="mt-2">
+                      {detail.identity.emailConfirmed ? (
+                        <Badge className="border-emerald-400/40 bg-emerald-400/15 text-emerald-100">
+                          {latestManualVerification ? "Manually verified" : "Verified"}
+                        </Badge>
+                      ) : (
+                        <Badge variant="destructive">Pending verification</Badge>
+                      )}
+                    </div>
+                    {detail.identity.emailConfirmedAt ? (
+                      <p className="mt-2 text-sm text-muted-foreground">
+                        Confirmed {formatRaceDateTime(detail.identity.emailConfirmedAt)}
+                      </p>
+                    ) : null}
+                  </div>
+
+                  <div className="rounded-lg border bg-background/45 p-4">
+                    <p className="text-xs uppercase tracking-wide text-muted-foreground">
+                      Manual verification
+                    </p>
+                    <p className="mt-2 font-medium">
+                      {latestManualVerification ? "Completed" : "Not recorded"}
+                    </p>
+                    {latestManualVerification ? (
+                      <p className="mt-1 text-sm text-muted-foreground">
+                        {formatRaceDateTime(
+                          latestManualVerification.completed_at ??
+                            latestManualVerification.created_at,
+                        )}
+                      </p>
+                    ) : null}
+                  </div>
+
+                  <div className="rounded-lg border bg-background/45 p-4">
+                    <p className="text-xs uppercase tracking-wide text-muted-foreground">
+                      Verification email sent
+                    </p>
+                    <p className="mt-2 font-medium">
+                      {latestConfirmationResend ? "Recorded" : "No administrator resend recorded"}
+                    </p>
+                    {latestConfirmationResend ? (
+                      <p className="mt-1 text-sm text-muted-foreground">
+                        {formatRaceDateTime(
+                          latestConfirmationResend.completed_at ??
+                            latestConfirmationResend.created_at,
+                        )}
+                      </p>
+                    ) : null}
+                  </div>
+                </div>
+
+                {emailConfirmationActions.length ? (
+                  <div className="space-y-2">
+                    <p className="text-sm font-medium">Recent verification actions</p>
+                    {emailConfirmationActions.slice(0, 5).map((action) => (
+                      <div
+                        key={action.id}
+                        className="flex flex-col gap-2 rounded-lg border bg-background/35 p-3 sm:flex-row sm:items-start sm:justify-between"
+                      >
+                        <div>
+                          <p className="font-medium">
+                            {action.action === "verify_email"
+                              ? "Manual verification"
+                              : "Verification email sent"}
+                          </p>
+                          <p className="text-sm text-muted-foreground">{action.reason}</p>
+                          {action.sanitized_error ? (
+                            <p className="mt-1 text-sm text-destructive">
+                              {action.sanitized_error}
+                            </p>
+                          ) : null}
+                        </div>
+                        <div className="shrink-0 text-left sm:text-right">
+                          <Badge
+                            variant={action.status === "failed" ? "destructive" : "outline"}
+                          >
+                            {action.status}
+                          </Badge>
+                          <p className="mt-1 text-xs text-muted-foreground">
+                            {formatRaceDateTime(action.completed_at ?? action.created_at)}
+                          </p>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                ) : null}
+              </CardContent>
+            </Card>
+
+            {!detail.identity.emailConfirmed ? (
+              <Card className="border-amber-400/35">
+                <CardHeader>
+                  <CardTitle>Email confirmation pending</CardTitle>
+                  <CardDescription>
+                    Resend the Supabase confirmation link, or manually verify only after independently confirming that the client owns this address.
+                  </CardDescription>
+                </CardHeader>
+                <CardContent className="space-y-4">
+                  <div className="rounded-lg border bg-background/45 p-4">
+                    <p className="font-medium">{detail.identity.email}</p>
+                    <p className="mt-1 text-sm text-muted-foreground">
+                      A successful resend confirms that Supabase accepted the request, not that the recipient inbox delivered it. Manual verification bypasses the email-link ownership check and is permanently audit logged.
+                    </p>
+                  </div>
+                  <Field label="Required resend audit reason">
+                    <Input
+                      value={resendConfirmationReason}
+                      onChange={(event) => setResendConfirmationReason(event.target.value)}
+                    />
+                  </Field>
+                  <div className="flex flex-wrap gap-2">
+                    <Button
+                      type="button"
+                      disabled={processing.startsWith("email:")}
+                      onClick={() => void runEmailConfirmationAction("resend_confirmation")}
+                    >
+                      {processing === "email:resend_confirmation" ? (
+                        <Loader2 className="size-4 animate-spin" />
+                      ) : (
+                        <MailPlus className="size-4" />
+                      )}
+                      Resend confirmation email
+                    </Button>
+                    <Button
+                      type="button"
+                      variant="outline"
+                      disabled={processing.startsWith("email:")}
+                      onClick={() => setVerifyEmailDialogOpen(true)}
+                    >
+                      <ShieldCheck className="size-4" />
+                      Verify manually
+                    </Button>
+                  </div>
+                </CardContent>
+              </Card>
+            ) : null}
+
+            <Card>
             <CardHeader>
               <CardTitle>Identity and Auth status</CardTitle>
               <CardDescription>
@@ -853,15 +1484,471 @@ export function AdminUserDetailClient() {
                 </Button>
               </div>
             </CardContent>
+            </Card>
+          </div>
+        </TabsContent>
+
+        <TabsContent id="registration" value="registration" className="space-y-4">
+          <Card>
+            <CardHeader>
+              <CardTitle>Registration and confirmation diagnostics</CardTitle>
+              <CardDescription>
+                Live Supabase Auth state, profile declarations, identity providers, email
+                timestamps, and immutable account events for this client.
+              </CardDescription>
+            </CardHeader>
+            <CardContent className="space-y-5">
+              <Alert variant={registrationAlertIsDestructive ? "destructive" : "default"}>
+                {registrationAlertIsDestructive ? (
+                  <AlertCircle className="size-4" />
+                ) : (
+                  <CheckCircle2 className="size-4" />
+                )}
+                <AlertTitle>{registrationStatusLabel(effectiveRegistrationState)}</AlertTitle>
+                <AlertDescription>{registrationDeliveryNote}</AlertDescription>
+              </Alert>
+
+              <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
+                <DiagnosticValue
+                  label="Account registered"
+                  value={formatRaceDateTime(
+                    registrationDiagnostics?.auth.createdAt ?? detail.identity.createdAt,
+                  )}
+                />
+                <DiagnosticValue
+                  label="Confirmation requested"
+                  value={
+                    registrationDiagnostics?.auth.confirmationSentAt
+                      ? formatRaceDateTime(registrationDiagnostics.auth.confirmationSentAt)
+                      : "No Supabase timestamp"
+                  }
+                />
+                <DiagnosticValue
+                  label="Email confirmed"
+                  value={
+                    registrationDiagnostics?.auth.emailConfirmedAt || detail.identity.emailConfirmedAt
+                      ? formatRaceDateTime(
+                          registrationDiagnostics?.auth.emailConfirmedAt ??
+                            detail.identity.emailConfirmedAt ??
+                            detail.identity.createdAt,
+                        )
+                      : "Pending"
+                  }
+                />
+                <DiagnosticValue
+                  label="Last sign-in"
+                  value={
+                    registrationDiagnostics?.auth.lastSignInAt || detail.identity.lastSignInAt
+                      ? formatRaceDateTime(
+                          registrationDiagnostics?.auth.lastSignInAt ??
+                            detail.identity.lastSignInAt ??
+                            detail.identity.createdAt,
+                        )
+                      : "Never"
+                  }
+                />
+                <DiagnosticValue
+                  label="Provider delivery"
+                  value={
+                    latestSignupDelivery
+                      ? providerDeliveryLabel(latestSignupDelivery.status)
+                      : "Legacy / untracked"
+                  }
+                />
+                <DiagnosticValue
+                  label="Provider event"
+                  value={
+                    latestSignupDelivery?.latestEventAt || latestSignupDelivery?.acceptedAt
+                      ? formatRaceDateTime(
+                          latestSignupDelivery.latestEventAt ??
+                            latestSignupDelivery.acceptedAt ??
+                            detail.identity.createdAt,
+                        )
+                      : "No tracked event"
+                  }
+                />
+                <DiagnosticValue
+                  label="Provider message ID"
+                  value={latestSignupDelivery?.providerMessageId ?? "Not available"}
+                  mono
+                />
+              </div>
+
+              {registrationDiagnosticsError ? (
+                <Alert>
+                  <AlertCircle className="size-4" />
+                  <AlertTitle>Enhanced timeline pending deployment</AlertTitle>
+                  <AlertDescription>{registrationDiagnosticsError}</AlertDescription>
+                </Alert>
+              ) : null}
+
+              {emailDeliveryDiagnosticsError ? (
+                <Alert>
+                  <AlertCircle className="size-4" />
+                  <AlertTitle>Provider delivery tracking pending</AlertTitle>
+                  <AlertDescription>{emailDeliveryDiagnosticsError}</AlertDescription>
+                </Alert>
+              ) : null}
+
+              <div className="grid gap-4 xl:grid-cols-2">
+                <Card className="bg-background/25">
+                  <CardHeader>
+                    <CardTitle>Auth account snapshot</CardTitle>
+                    <CardDescription>Non-secret fields only. Tokens and credentials are never returned.</CardDescription>
+                  </CardHeader>
+                  <CardContent className="grid gap-3 sm:grid-cols-2">
+                    <DiagnosticValue label="Auth user ID" value={detail.identity.userId} mono />
+                    <DiagnosticValue
+                      label="Auth provider"
+                      value={
+                        registrationDiagnostics?.providers.map((provider) => provider.provider).join(", ") ||
+                        "Available after migration"
+                      }
+                    />
+                    <DiagnosticValue
+                      label="Auth updated"
+                      value={
+                        registrationDiagnostics?.auth.updatedAt
+                          ? formatRaceDateTime(registrationDiagnostics.auth.updatedAt)
+                          : "Available after migration"
+                      }
+                    />
+                    <DiagnosticValue
+                      label="Profile created"
+                      value={
+                        registrationDiagnostics?.profile.createdAt
+                          ? formatRaceDateTime(registrationDiagnostics.profile.createdAt)
+                          : "Not recorded"
+                      }
+                    />
+                    <DiagnosticValue
+                      label="Profile updated"
+                      value={
+                        registrationDiagnostics?.profile.updatedAt
+                          ? formatRaceDateTime(registrationDiagnostics.profile.updatedAt)
+                          : "Not recorded"
+                      }
+                    />
+                    <DiagnosticValue
+                      label="Invitation sent"
+                      value={
+                        registrationDiagnostics?.auth.invitedAt
+                          ? formatRaceDateTime(registrationDiagnostics.auth.invitedAt)
+                          : "Not an invited account"
+                      }
+                    />
+                    <DiagnosticValue
+                      label="Recovery email requested"
+                      value={
+                        registrationDiagnostics?.auth.recoverySentAt
+                          ? formatRaceDateTime(registrationDiagnostics.auth.recoverySentAt)
+                          : "None recorded"
+                      }
+                    />
+                    <DiagnosticValue
+                      label="Email-change request"
+                      value={
+                        registrationDiagnostics?.auth.emailChangeSentAt
+                          ? `${formatRaceDateTime(registrationDiagnostics.auth.emailChangeSentAt)}${registrationDiagnostics.auth.emailChangePending ? ` · ${registrationDiagnostics.auth.emailChangePending}` : ""}`
+                          : "None recorded"
+                      }
+                    />
+                    <DiagnosticValue
+                      label="Reauthentication requested"
+                      value={
+                        registrationDiagnostics?.auth.reauthenticationSentAt
+                          ? formatRaceDateTime(registrationDiagnostics.auth.reauthenticationSentAt)
+                          : "None recorded"
+                      }
+                    />
+                    <DiagnosticValue
+                      label="Phone confirmed"
+                      value={
+                        registrationDiagnostics?.auth.phoneConfirmedAt
+                          ? formatRaceDateTime(registrationDiagnostics.auth.phoneConfirmedAt)
+                          : "Not confirmed"
+                      }
+                    />
+                    <DiagnosticValue
+                      label="Account restrictions"
+                      value={
+                        registrationDiagnostics?.auth.deletedAt
+                          ? `Deleted ${formatRaceDateTime(registrationDiagnostics.auth.deletedAt)}`
+                          : registrationDiagnostics?.auth.bannedUntil
+                            ? `Restricted until ${formatRaceDateTime(registrationDiagnostics.auth.bannedUntil)}`
+                            : "None recorded"
+                      }
+                    />
+                    <DiagnosticValue
+                      label="Account type"
+                      value={
+                        registrationDiagnostics
+                          ? `${registrationDiagnostics.auth.isSsoUser ? "SSO" : "Standard"}${registrationDiagnostics.auth.isAnonymous ? " · anonymous" : ""}`
+                          : "Available after migration"
+                      }
+                    />
+                  </CardContent>
+                </Card>
+
+                <Card className="bg-background/25">
+                  <CardHeader>
+                    <CardTitle>Registration declarations</CardTitle>
+                    <CardDescription>Profile values copied from the original registration metadata.</CardDescription>
+                  </CardHeader>
+                  <CardContent className="grid gap-3 sm:grid-cols-2">
+                    <DiagnosticValue
+                      label="First name"
+                      value={registrationDiagnostics?.profile.firstName ?? detail.identity.firstName ?? "Missing"}
+                    />
+                    <DiagnosticValue
+                      label="Surname"
+                      value={registrationDiagnostics?.profile.lastName ?? detail.identity.lastName ?? "Missing"}
+                    />
+                    <DiagnosticValue
+                      label="Display name"
+                      value={registrationDiagnostics?.profile.displayName ?? detail.identity.displayName ?? "Missing"}
+                    />
+                    <DiagnosticValue
+                      label="Cell number"
+                      value={registrationDiagnostics?.profile.phone ?? detail.identity.phone ?? "Missing"}
+                    />
+                    <DiagnosticValue
+                      label="Terms accepted"
+                      value={
+                        registrationDiagnostics?.profile.acceptedTermsAt
+                          ? formatRaceDateTime(registrationDiagnostics.profile.acceptedTermsAt)
+                          : "No timestamp recorded"
+                      }
+                    />
+                    <DiagnosticValue
+                      label="Terms version"
+                      value={registrationDiagnostics?.profile.acceptedTermsVersion ?? "Not recorded"}
+                    />
+                    <DiagnosticValue
+                      label="Age declaration"
+                      value={
+                        registrationDiagnostics?.profile.confirmedOver18At
+                          ? formatRaceDateTime(registrationDiagnostics.profile.confirmedOver18At)
+                          : "No timestamp recorded"
+                      }
+                    />
+                    <DiagnosticValue
+                      label="Account emails"
+                      value={
+                        registrationDiagnostics?.profile.emailNotificationsEnabled === false
+                          ? "Disabled"
+                          : registrationDiagnostics?.profile.emailNotificationsEnabled === true
+                            ? "Enabled"
+                            : "Not recorded"
+                      }
+                    />
+                  </CardContent>
+                </Card>
+              </div>
+
+              <Card className="bg-background/25">
+                <CardHeader>
+                  <CardTitle>Identity providers</CardTitle>
+                  <CardDescription>Supabase identities linked to this Auth account.</CardDescription>
+                </CardHeader>
+                <CardContent className="space-y-3">
+                  {(registrationDiagnostics?.providers ?? []).map((provider) => (
+                    <div key={provider.id} className="grid gap-2 rounded-lg border p-4 text-sm sm:grid-cols-2 xl:grid-cols-4">
+                      <p><span className="text-muted-foreground">Provider:</span> {provider.provider}</p>
+                      <p><span className="text-muted-foreground">Email:</span> {provider.email ?? "Not returned"}</p>
+                      <p><span className="text-muted-foreground">Created:</span> {formatRaceDateTime(provider.createdAt)}</p>
+                      <p><span className="text-muted-foreground">Last sign-in:</span> {provider.lastSignInAt ? formatRaceDateTime(provider.lastSignInAt) : "Never"}</p>
+                    </div>
+                  ))}
+                  {!registrationDiagnostics?.providers.length ? (
+                    <p className="text-sm text-muted-foreground">
+                      Provider details will appear after the approved migration is deployed.
+                    </p>
+                  ) : null}
+                </CardContent>
+              </Card>
+
+              <Card className="bg-background/25">
+                <CardHeader>
+                  <CardTitle>Immutable registration timeline</CardTitle>
+                  <CardDescription>
+                    Historical Auth timestamps are backfilled once; future dispatches,
+                    confirmations, sign-ins, address changes, and recovery requests are captured automatically.
+                  </CardDescription>
+                </CardHeader>
+                <CardContent className="space-y-3">
+                  {(registrationDiagnostics?.events ?? []).map((event) => (
+                    <div key={event.id} className="rounded-lg border bg-background/35 p-4">
+                      <div className="flex flex-wrap items-start justify-between gap-3">
+                        <div>
+                          <p className="font-medium">{registrationEventLabel(event.eventType)}</p>
+                          <p className="text-sm text-muted-foreground">
+                            {event.email || detail.identity.email} · {registrationEventSourceLabel(event.source)}
+                          </p>
+                        </div>
+                        <Badge variant="outline">{formatRaceDateTime(event.eventAt)}</Badge>
+                      </div>
+                      {Object.keys(event.details ?? {}).length ? (
+                        <pre className="mt-3 overflow-x-auto whitespace-pre-wrap rounded-md bg-black/20 p-3 text-xs text-muted-foreground">
+                          {JSON.stringify(event.details, null, 2)}
+                        </pre>
+                      ) : null}
+                    </div>
+                  ))}
+                  {!registrationDiagnostics?.events.length ? (
+                    <p className="text-sm text-muted-foreground">
+                      No enhanced Auth events are available in the local approval build yet.
+                    </p>
+                  ) : null}
+                </CardContent>
+              </Card>
+
+              <Card className="bg-background/25">
+                <CardHeader>
+                  <CardTitle>Tracked Auth email delivery</CardTitle>
+                  <CardDescription>
+                    Provider acceptance, mail-server delivery, delays, bounces, suppressions,
+                    complaints, and send failures. Signed webhook events are deduplicated and immutable.
+                  </CardDescription>
+                </CardHeader>
+                <CardContent className="space-y-5">
+                  <div className="overflow-x-auto">
+                    <Table>
+                      <TableHeader>
+                        <TableRow>
+                          <TableHead>Created</TableHead>
+                          <TableHead>Email</TableHead>
+                          <TableHead>Status</TableHead>
+                          <TableHead>Provider reference</TableHead>
+                        </TableRow>
+                      </TableHeader>
+                      <TableBody>
+                        {(emailDeliveryDiagnostics?.messages ?? []).map((emailMessage) => (
+                          <TableRow key={emailMessage.id}>
+                            <TableCell className="whitespace-nowrap">
+                              {formatRaceDateTime(emailMessage.createdAt)}
+                            </TableCell>
+                            <TableCell>
+                              <p className="font-medium">{registrationEventLabel(emailMessage.emailActionType)}</p>
+                              <p>{emailMessage.recipientEmail}</p>
+                              <p className="text-xs text-muted-foreground">
+                                {emailMessage.subject} · attempt {emailMessage.attemptCount}
+                              </p>
+                            </TableCell>
+                            <TableCell>
+                              <Badge variant={providerDeliveryVariant(emailMessage.status)}>
+                                {providerDeliveryLabel(emailMessage.status)}
+                              </Badge>
+                              {emailMessage.latestEventAt ? (
+                                <p className="mt-1 whitespace-nowrap text-xs text-muted-foreground">
+                                  {formatRaceDateTime(emailMessage.latestEventAt)}
+                                </p>
+                              ) : null}
+                              {emailMessage.lastErrorMessage ? (
+                                <p className="mt-2 max-w-80 text-xs text-destructive">
+                                  {emailMessage.lastErrorMessage}
+                                </p>
+                              ) : null}
+                            </TableCell>
+                            <TableCell>
+                              <p>{emailMessage.provider}</p>
+                              <code className="text-xs text-muted-foreground">
+                                {emailMessage.providerMessageId ?? "Awaiting provider ID"}
+                              </code>
+                            </TableCell>
+                          </TableRow>
+                        ))}
+                        {!emailDeliveryDiagnostics?.messages.length ? (
+                          <TableRow>
+                            <TableCell colSpan={4} className="h-20 text-center text-muted-foreground">
+                              No tracked provider messages exist for this account.
+                            </TableCell>
+                          </TableRow>
+                        ) : null}
+                      </TableBody>
+                    </Table>
+                  </div>
+
+                  <div className="space-y-3">
+                    <h3 className="font-medium">Signed provider events</h3>
+                    {(emailDeliveryDiagnostics?.events ?? []).slice(0, 20).map((event) => (
+                      <div key={event.providerEventId} className="rounded-lg border bg-background/35 p-4">
+                        <div className="flex flex-wrap items-start justify-between gap-3">
+                          <div>
+                            <p className="font-medium">{registrationEventLabel(event.eventType)}</p>
+                            <p className="text-xs text-muted-foreground">
+                              {event.provider} · {event.providerEmailId}
+                            </p>
+                          </div>
+                          <Badge variant="outline">{formatRaceDateTime(event.eventAt)}</Badge>
+                        </div>
+                        {Object.keys(event.details ?? {}).length ? (
+                          <pre className="mt-3 overflow-x-auto whitespace-pre-wrap rounded-md bg-black/20 p-3 text-xs text-muted-foreground">
+                            {JSON.stringify(event.details, null, 2)}
+                          </pre>
+                        ) : null}
+                      </div>
+                    ))}
+                    {!emailDeliveryDiagnostics?.events.length ? (
+                      <p className="text-sm text-muted-foreground">
+                        No provider webhook events have been recorded for this account.
+                      </p>
+                    ) : null}
+                  </div>
+                </CardContent>
+              </Card>
+
+              <Card className="bg-background/25">
+                <CardHeader>
+                  <CardTitle>Administrator confirmation actions</CardTitle>
+                  <CardDescription>Every resend and manual verification request with its actor and outcome.</CardDescription>
+                </CardHeader>
+                <CardContent className="space-y-3">
+                  {(registrationDiagnostics?.confirmationActions ?? []).map((action) => (
+                    <div key={action.id} className="rounded-lg border bg-background/35 p-4">
+                      <div className="flex flex-wrap items-start justify-between gap-3">
+                        <div>
+                          <p className="font-medium">
+                            {action.action === "verify_email" ? "Manual verification" : "Confirmation resend"}
+                          </p>
+                          <p className="text-sm text-muted-foreground">{action.reason}</p>
+                          <p className="mt-1 text-xs text-muted-foreground">
+                            {action.actorName || action.actorEmail || action.actorId} · request {action.requestId}
+                          </p>
+                          {action.sanitizedError ? (
+                            <p className="mt-2 text-sm text-destructive">{action.sanitizedError}</p>
+                          ) : null}
+                        </div>
+                        <div className="text-right">
+                          <Badge variant={action.status === "failed" ? "destructive" : "outline"}>
+                            {action.status}
+                          </Badge>
+                          <p className="mt-1 text-xs text-muted-foreground">
+                            {formatRaceDateTime(action.completedAt ?? action.createdAt)}
+                          </p>
+                        </div>
+                      </div>
+                    </div>
+                  ))}
+                  {!registrationDiagnostics?.confirmationActions.length ? (
+                    <p className="text-sm text-muted-foreground">
+                      No enhanced administrator action details are available. Existing actions remain visible on the Identity tab.
+                    </p>
+                  ) : null}
+                </CardContent>
+              </Card>
+            </CardContent>
           </Card>
         </TabsContent>
 
         <TabsContent value="access">
           <Card>
             <CardHeader>
-              <CardTitle>Roles and approved tipster access</CardTitle>
+              <CardTitle>Roles, Tipster access, and publishing</CardTitle>
               <CardDescription>
-                Tipster workspace access and public verification are granted together only through the reviewed application below. Only the platform owner can grant or remove administrator access.
+                Tipster applications retain their review history. Administrators can separately
+                configure Tipster workspace access, public visibility, and blog-author approval;
+                only the platform owner can grant or remove administrator access.
               </CardDescription>
             </CardHeader>
             <CardContent className="space-y-5">
@@ -924,6 +2011,25 @@ export function AdminUserDetailClient() {
                   }
                 />
                 <CheckboxField
+                  label="Tipster workspace access"
+                  checked={accessDraft.tipster}
+                  onChange={(checked) =>
+                    setAccessDraft((current) => ({
+                      ...current,
+                      tipster: checked,
+                      tipsterPublic: checked ? current.tipsterPublic : false,
+                    }))
+                  }
+                />
+                <CheckboxField
+                  label="Show Tipster publicly"
+                  checked={accessDraft.tipsterPublic}
+                  disabled={!accessDraft.tipster}
+                  onChange={(checked) =>
+                    setAccessDraft((current) => ({ ...current, tipsterPublic: checked }))
+                  }
+                />
+                <CheckboxField
                   label="Administrator"
                   checked={accessDraft.administrator}
                   disabled={!actorIsOwner || detail.identity.isOwner}
@@ -938,22 +2044,36 @@ export function AdminUserDetailClient() {
                     setAccessDraft((current) => ({ ...current, testAccess: checked }))
                   }
                 />
-                {accessDraft.tipster && accessDraft.tipsterVerified ? (
+                {accessDraft.tipster ? (
                   <Badge className="h-6 self-center">Approved Tipster</Badge>
                 ) : null}
                 <CheckboxField
                   label="May publish blog posts"
                   checked={accessDraft.blogPublish}
-                  disabled={tipsterApplication?.status !== "approved"}
                   onChange={(checked) =>
                     setAccessDraft((current) => ({ ...current, blogPublish: checked }))
                   }
                 />
+                {blogAuthorRequest ? (
+                  <Badge variant="outline" className="h-6 self-center capitalize">
+                    Author request: {blogAuthorRequest.status.replaceAll("_", " ")}
+                  </Badge>
+                ) : null}
               </div>
+              {blogAuthorRequest ? (
+                <Alert>
+                  <Newspaper className="size-4" />
+                  <AlertTitle>Blog author request</AlertTitle>
+                  <AlertDescription>
+                    {blogAuthorRequest.request_reason}
+                    {blogAuthorRequest.review_note ? ` Review: ${blogAuthorRequest.review_note}` : ""}
+                  </AlertDescription>
+                </Alert>
+              ) : null}
               <div className="grid gap-4 sm:grid-cols-2">
-                <Field label="Tipster display name">
+                <Field label="Tipster or author display name">
                   <Input
-                    disabled={tipsterApplication?.status !== "approved"}
+                    disabled={!accessDraft.tipster && !accessDraft.blogPublish}
                     value={accessDraft.tipsterDisplayName}
                     onChange={(event) =>
                       setAccessDraft((current) => ({
@@ -971,9 +2091,9 @@ export function AdminUserDetailClient() {
                     }
                   />
                 </Field>
-                <Field label="Tipster biography" className="sm:col-span-2">
+                <Field label="Tipster or author biography" className="sm:col-span-2">
                   <Textarea
-                    disabled={tipsterApplication?.status !== "approved"}
+                    disabled={!accessDraft.tipster && !accessDraft.blogPublish}
                     value={accessDraft.tipsterBiography}
                     onChange={(event) =>
                       setAccessDraft((current) => ({
@@ -1247,8 +2367,8 @@ export function AdminUserDetailClient() {
         <TabsContent value="commerce">
           <div className="grid gap-4 xl:grid-cols-2">
             <ActivityList
-              title="Purchases"
-              empty="No purchases."
+              title="Client purchases"
+              empty="This account has made no client purchases."
               rows={detail.purchases.map((purchase) => ({
                 id: purchase.id,
                 title:
@@ -1260,8 +2380,8 @@ export function AdminUserDetailClient() {
               }))}
             />
             <ActivityList
-              title="Subscriptions"
-              empty="No tipster subscriptions."
+              title="Client subscriptions"
+              empty="This account has no client subscriptions."
               rows={detail.subscriptions.map((subscription) => ({
                 id: subscription.id,
                 title: `${subscription.tipsterName} — ${subscription.packageName}`,
@@ -1270,8 +2390,8 @@ export function AdminUserDetailClient() {
               }))}
             />
             <ActivityList
-              title="Disputes"
-              empty="No disputes."
+              title="Client refund requests"
+              empty="This account has submitted no refund requests."
               rows={detail.disputes.map((dispute) => ({
                 id: dispute.id,
                 title: dispute.reason,
@@ -1284,6 +2404,26 @@ export function AdminUserDetailClient() {
 
         <TabsContent value="tipster">
           <div className="grid gap-4 xl:grid-cols-2">
+            <ActivityList
+              title="Packages offered"
+              empty="This tipster has no subscription packages in the database."
+              rows={(tipsterWorkspace?.packages ?? []).map((tipsterPackage) => ({
+                id: tipsterPackage.id,
+                title: tipsterPackage.name,
+                detail: `${tipsterPackage.durationMonths} month${tipsterPackage.durationMonths === 1 ? "" : "s"} · ${formatCredits(Number(tipsterPackage.priceCredits))} · ${tipsterPackage.active ? "active" : "inactive"}`,
+                date: tipsterPackage.updatedAt,
+              }))}
+            />
+            <ActivityList
+              title="Tipster sales"
+              empty="This tipster has no client sales in the database."
+              rows={(tipsterWorkspace?.sales ?? []).map((sale) => ({
+                id: sale.id,
+                title: `${sale.sourceLabel} — ${sale.buyerName || sale.buyerEmail}`,
+                detail: `${sale.type} · ${sale.status} · ${formatCredits(Number(sale.totalCredits))} (${formatCredits(Number(sale.purchasedCredits))} Purchased + ${formatCredits(Number(sale.rewardCredits))} Reward)`,
+                date: sale.createdAt,
+              }))}
+            />
             <ActivityList
               title="Meeting cards"
               empty="No tipster meeting cards."
@@ -1359,6 +2499,72 @@ export function AdminUserDetailClient() {
           </DialogFooter>
         </DialogContent>
       </Dialog>
+
+      <Dialog
+        open={verifyEmailDialogOpen}
+        onOpenChange={(open) => {
+          setVerifyEmailDialogOpen(open);
+          if (open) {
+            setEmailActionError("");
+          }
+        }}
+      >
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Verify email manually</DialogTitle>
+            <DialogDescription>
+              This bypasses the confirmation link for {detail.identity.email}. Use it only after independently verifying ownership of the address.
+            </DialogDescription>
+          </DialogHeader>
+          {emailActionError ? (
+            <Alert variant="destructive" aria-live="assertive">
+              <AlertCircle className="size-4" />
+              <AlertTitle>Verification did not complete</AlertTitle>
+              <AlertDescription>{emailActionError}</AlertDescription>
+            </Alert>
+          ) : null}
+          <div className="space-y-4">
+            <Field label="Required audit reason">
+              <Input
+                value={manualVerificationReason}
+                onChange={(event) => setManualVerificationReason(event.target.value)}
+              />
+            </Field>
+            <Field label='Type "VERIFY" to confirm'>
+              <Input
+                value={verifyEmailConfirmation}
+                onChange={(event) => setVerifyEmailConfirmation(event.target.value)}
+              />
+            </Field>
+          </div>
+          <DialogFooter>
+            <Button
+              type="button"
+              variant="outline"
+              disabled={processing === "email:verify_email"}
+              onClick={() => setVerifyEmailDialogOpen(false)}
+            >
+              Cancel
+            </Button>
+            <Button
+              type="button"
+              disabled={
+                processing === "email:verify_email" ||
+                verifyEmailConfirmation !== "VERIFY" ||
+                manualVerificationReason.trim().length < 10
+              }
+              onClick={() => void runEmailConfirmationAction("verify_email")}
+            >
+              {processing === "email:verify_email" ? (
+                <Loader2 className="size-4 animate-spin" />
+              ) : (
+                <ShieldCheck className="size-4" />
+              )}
+              Confirm manual verification
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }
@@ -1407,6 +2613,25 @@ function SummaryCard({ label, value }: { label: string; value: string }) {
         <CardTitle className="text-base">{value}</CardTitle>
       </CardHeader>
     </Card>
+  );
+}
+
+function DiagnosticValue({
+  label,
+  value,
+  mono = false,
+}: {
+  label: string;
+  value: React.ReactNode;
+  mono?: boolean;
+}) {
+  return (
+    <div className="rounded-lg border bg-background/40 p-3">
+      <p className="text-xs uppercase tracking-wide text-muted-foreground">{label}</p>
+      <div className={`mt-1 break-words text-sm font-medium ${mono ? "font-mono" : ""}`}>
+        {value}
+      </div>
+    </div>
   );
 }
 

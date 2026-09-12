@@ -2,17 +2,16 @@ import Image from "next/image";
 import type { Metadata } from "next";
 import Link from "next/link";
 import {
-  Activity,
   BadgeCheck,
   CalendarDays,
   ChevronRight,
-  ExternalLink,
   LockKeyhole,
   Sparkles,
   Trophy,
   Users,
   Wallet,
 } from "lucide-react";
+import { HomePinnedBlogPost } from "@/components/blog/home-pinned-blog-post";
 import { HomeCreditPackages } from "@/components/pricing/home-credit-packages";
 import { UpcomingMeetingBoard } from "@/components/racing/race-data-board";
 import { SiteFooter } from "@/components/site-footer";
@@ -26,14 +25,16 @@ import {
   CardHeader,
   CardTitle,
 } from "@/components/ui/card";
-import { affiliatePartners } from "@/lib/mock-data";
-import { publicMetadata } from "@/lib/metadata";
+import { publicMetadata, siteName } from "@/lib/metadata";
 
-export const metadata: Metadata = publicMetadata({
-  title: "South African Horse Racing Tips",
-  description: "Compare verified South African horse-racing tipsters, factual racecards, settled results, and transparent winner strike rates.",
-  path: "/",
-});
+export const metadata: Metadata = {
+  ...publicMetadata({
+    title: siteName,
+    description: "Compare verified South African horse-racing tipsters, factual racecards, settled results, and transparent winner and place strike rates.",
+    path: "/",
+  }),
+  title: { absolute: siteName },
+};
 
 export default function Home() {
   return (
@@ -92,7 +93,7 @@ export default function Home() {
                 <div className="mt-10 grid grid-cols-3 gap-3 text-sm">
                   {[
                     ["1", "racing category"],
-                    ["18+", "age gated"],
+                    ["Live", "database driven"],
                     ["Source", "audit trail"],
                   ].map(([value, label]) => (
                     <div
@@ -163,8 +164,8 @@ export default function Home() {
               </CardDescription>
             </CardHeader>
             <CardContent className="space-y-3 text-sm text-muted-foreground">
-              <p>Review race-by-race winner, best-place, and comment selections.</p>
-              <p>See the tipster&apos;s Exotic&apos;s and Multiples for the full meeting.</p>
+              <p>Review race-by-race Winner, Place Selection, and comment selections.</p>
+              <p>See every published selection and supporting note for the full meeting.</p>
               <p>Access corrections through the same entitlement without buying again.</p>
               <Button asChild variant="outline">
                 <Link href="/pricing/">How Credits work</Link>
@@ -178,12 +179,12 @@ export default function Home() {
                 Choose a verified tipster
               </CardTitle>
               <CardDescription>
-                Compare truthful winner strike rates and settled sample sizes.
+                Compare truthful winner and place strike rates with settled sample sizes.
               </CardDescription>
             </CardHeader>
             <CardContent className="space-y-3 text-sm text-muted-foreground">
               <p>Every profile has its own meeting prices and subscription options.</p>
-              <p>ROI stays hidden until authoritative odds or dividends support it.</p>
+              <p>Compare settled sample sizes and independently recorded strike rates.</p>
               <p>Favourite tipsters to keep their profiles easy to find.</p>
               <Button asChild>
                 <Link href="/tipsters/">Discover tipsters</Link>
@@ -192,46 +193,7 @@ export default function Home() {
           </Card>
         </section>
 
-        <section className="mx-auto w-full max-w-7xl px-4 py-12 sm:px-6 lg:px-8">
-          <div className="mb-6 max-w-3xl">
-            <Badge variant="outline">Affiliate partners</Badge>
-            <h2 className="mt-3 font-heading text-3xl text-white">
-              Open a bookmaker account with an MRC partner.
-            </h2>
-            <p className="mt-3 text-muted-foreground">
-              These are affiliate links. MRC Racing Tips may earn a commission when you
-              register or transact through a partner link, at no additional cost to you.
-            </p>
-          </div>
-          <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
-            {affiliatePartners.map((partner) => (
-              <a
-                key={partner.name}
-                href={partner.href}
-                target="_blank"
-                rel="sponsored noopener noreferrer"
-                aria-label={`Visit ${partner.name}`}
-                className="group relative aspect-[16/10] overflow-hidden rounded-xl border border-brand-gold/24 bg-brand-purple-deep transition hover:-translate-y-1 hover:border-brand-gold/65 hover:shadow-[0_18px_45px_rgba(0,0,0,0.28)]"
-              >
-                <Image
-                  src={partner.image}
-                  alt={`${partner.name} logo`}
-                  fill
-                  sizes="(max-width: 640px) 100vw, (max-width: 1024px) 50vw, 25vw"
-                  className="object-cover transition duration-300 group-hover:scale-105"
-                />
-                <div className="absolute inset-x-0 bottom-0 flex items-center justify-between bg-gradient-to-t from-black/86 via-black/55 to-transparent px-4 pt-10 pb-3 text-white">
-                  <span className="font-semibold">{partner.name}</span>
-                  <ExternalLink className="size-4 text-brand-cyan" />
-                </div>
-              </a>
-            ))}
-          </div>
-          <p className="mt-4 text-xs leading-5 text-muted-foreground">
-            18+ only. Betting involves risk. Affiliate placement does not change MRC&apos;s
-            independent tipster reporting or results history.
-          </p>
-        </section>
+        <HomePinnedBlogPost />
 
         <section className="mx-auto w-full max-w-7xl px-4 py-12 sm:px-6 lg:px-8">
           <div className="mb-6 flex flex-wrap items-end justify-between gap-4">
@@ -252,7 +214,7 @@ export default function Home() {
           <div className="grid gap-4 rounded-xl border border-brand-gold/30 bg-brand-purple-deep p-6 text-white shadow-[0_24px_70px_rgba(0,0,0,0.22)] md:grid-cols-[1fr_auto] md:items-center">
             <div>
               <p className="font-mono text-sm uppercase text-brand-cyan">
-                Responsible, auditable, horse-racing only
+                Transparent, auditable, horse-racing only
               </p>
               <h2 className="mt-2 font-heading text-2xl">
                 Follow tipsters without hiding the source or result history.
@@ -270,10 +232,7 @@ export default function Home() {
                 variant="outline"
                 className="border-brand-cyan/40 text-brand-cyan hover:bg-brand-cyan/10 hover:text-brand-cyan"
               >
-                <Link href="/responsible-gambling/">
-                  <Activity className="size-4" />
-                  Responsible gambling
-                </Link>
+                <Link href="/about/">How MRC works</Link>
               </Button>
             </div>
           </div>

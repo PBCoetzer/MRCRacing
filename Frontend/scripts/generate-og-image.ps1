@@ -17,7 +17,7 @@ $label = New-Object System.Drawing.Font "Arial", 22, ([System.Drawing.FontStyle]
 $graphics.DrawString("MRC RACING TIPS", $heading, $white, 70, 160)
 $graphics.DrawString("South African Horse Racing", $subheading, $gold, 74, 275)
 $graphics.DrawString("Verified tipsters  •  Factual racecards  •  Results history", $label, $cyan, 76, 365)
-$graphics.DrawString("18+  •  Gamble responsibly", $label, $white, 76, 455)
+$graphics.DrawString("Independent analysis  •  Transparent records", $label, $white, 76, 455)
 $bitmap.Save($output, [System.Drawing.Imaging.ImageFormat]::Png)
 $heading.Dispose(); $subheading.Dispose(); $label.Dispose()
 $purple.Dispose(); $gold.Dispose(); $cyan.Dispose(); $white.Dispose()

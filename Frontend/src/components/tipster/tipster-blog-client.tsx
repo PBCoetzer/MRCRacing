@@ -2,7 +2,7 @@
 
 import Image from "next/image";
 import { useCallback, useEffect, useState } from "react";
-import { Archive, FileImage, Loader2, Newspaper, Plus, Save, Send, Video } from "lucide-react";
+import { Archive, FileImage, Loader2, Newspaper, Plus, Save, Send, UserRoundCheck, Video } from "lucide-react";
 import { BlogVideo } from "@/components/blog/blog-video";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { Badge } from "@/components/ui/badge";
@@ -25,6 +25,18 @@ type BlogPost = {
   status: "draft" | "published" | "hidden" | "archived";
   published_at: string | null;
   updated_at: string;
+};
+
+type BlogAuthorAccess = {
+  requestId: string | null;
+  status: "not_requested" | "requested" | "approved" | "rejected" | "revoked";
+  requestReason: string | null;
+  reviewNote: string | null;
+  requestedAt: string | null;
+  reviewedAt: string | null;
+  tipsterId: string | null;
+  canPublish: boolean;
+  displayName: string;
 };
 
 const emptyDraft = { title: "", excerpt: "", body: "", coverPath: "", videoUrl: "" };
@@ -73,6 +85,8 @@ async function toWebp(file: File) {
 export function TipsterBlogClient() {
   const [tipsterId, setTipsterId] = useState("");
   const [canPublish, setCanPublish] = useState(false);
+  const [authorAccess, setAuthorAccess] = useState<BlogAuthorAccess | null>(null);
+  const [requestReason, setRequestReason] = useState("");
   const [posts, setPosts] = useState<BlogPost[]>([]);
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [draft, setDraft] = useState(emptyDraft);
@@ -85,20 +99,27 @@ export function TipsterBlogClient() {
     const supabase = createClient();
     if (!supabase) return;
     setLoading(true); setError("");
-    const { data: auth } = await supabase.auth.getUser();
-    if (!auth.user) { setError("Please sign in again."); setLoading(false); return; }
-    const { data: tipster, error: tipsterError } = await supabase
-      .from("tipsters").select("id,is_verified").eq("user_id", auth.user.id).maybeSingle();
-    if (tipsterError || !tipster?.id || !tipster.is_verified) {
-      setError(tipsterError?.message ?? "A verified tipster profile is required."); setLoading(false); return;
+    const { data: accessData, error: accessError } = await supabase.rpc(
+      "get_my_blog_author_access",
+    );
+    if (accessError || !accessData) {
+      setError(accessError?.message ?? "Could not load the blog author workspace.");
+      setLoading(false);
+      return;
     }
-    const [permissionResult, postResult] = await Promise.all([
-      supabase.from("tipster_blog_permissions").select("can_publish").eq("tipster_id", tipster.id).maybeSingle(),
-      supabase.from("blog_posts").select("id,title,excerpt,body_markdown,cover_image_path,video_url,slug,status,published_at,updated_at").eq("tipster_id", tipster.id).order("updated_at", { ascending: false }),
-    ]);
-    if (permissionResult.error || postResult.error) setError(permissionResult.error?.message ?? postResult.error?.message ?? "Could not load blog workspace.");
-    setTipsterId(tipster.id);
-    setCanPublish(permissionResult.data?.can_publish === true);
+    const loadedAccess = accessData as BlogAuthorAccess;
+    const postResult = loadedAccess.tipsterId
+      ? await supabase
+          .from("blog_posts")
+          .select("id,title,excerpt,body_markdown,cover_image_path,video_url,slug,status,published_at,updated_at")
+          .eq("tipster_id", loadedAccess.tipsterId)
+          .order("updated_at", { ascending: false })
+      : { data: [], error: null };
+    if (postResult.error) setError(postResult.error.message);
+    setAuthorAccess(loadedAccess);
+    setRequestReason(loadedAccess.requestReason ?? "");
+    setTipsterId(loadedAccess.tipsterId ?? "");
+    setCanPublish(loadedAccess.canPublish === true);
     setPosts((postResult.data ?? []) as BlogPost[]);
     setLoading(false);
   }, []);
@@ -115,6 +136,24 @@ export function TipsterBlogClient() {
   }
 
   function newPost() { setSelectedId(null); setDraft(emptyDraft); setMessage(""); setError(""); }
+
+  async function requestAuthorAccess() {
+    const supabase = createClient();
+    if (!supabase) return;
+    setBusy("request");
+    setError("");
+    setMessage("");
+    const { error: requestError } = await supabase.rpc("request_blog_author_access", {
+      p_reason: requestReason,
+    });
+    if (requestError) {
+      setError(requestError.message);
+    } else {
+      setMessage("Your blog author request was sent to the administrators for review.");
+      await load();
+    }
+    setBusy("");
+  }
 
   async function saveDraft() {
     const supabase = createClient();
@@ -197,7 +236,29 @@ export function TipsterBlogClient() {
     <div className="space-y-6">
       {error ? <Alert variant="destructive"><AlertTitle>Blog action failed</AlertTitle><AlertDescription>{error}</AlertDescription></Alert> : null}
       {message ? <Alert><AlertTitle>Blog updated</AlertTitle><AlertDescription>{message}</AlertDescription></Alert> : null}
-      {!canPublish ? <Alert><Newspaper className="size-4" /><AlertTitle>Blog author approval required</AlertTitle><AlertDescription>An administrator must enable “May publish blog posts” before you can create, edit, or publish articles.</AlertDescription></Alert> : null}
+      {!canPublish ? <Alert><Newspaper className="size-4" /><AlertTitle>Blog author approval required</AlertTitle><AlertDescription>Any registered client may request access. An administrator must verify and approve the request before articles can be created, edited, or published.</AlertDescription></Alert> : null}
+
+      {!canPublish ? (
+        <Card>
+          <CardHeader>
+            <CardTitle className="flex items-center gap-2"><UserRoundCheck className="size-5 text-brand-cyan" />Request blog author access</CardTitle>
+            <CardDescription>This permission is independent from Tipster access. Approval does not automatically create a public Tipster profile.</CardDescription>
+          </CardHeader>
+          <CardContent className="space-y-4">
+            <div className="flex flex-wrap items-center gap-2">
+              <Badge variant={authorAccess?.status === "requested" ? "default" : "outline"} className="capitalize">{(authorAccess?.status ?? "not_requested").replaceAll("_", " ")}</Badge>
+              {authorAccess?.requestedAt ? <span className="text-xs text-muted-foreground">Requested {new Date(authorAccess.requestedAt).toLocaleString("en-ZA")}</span> : null}
+            </div>
+            {authorAccess?.reviewNote ? <Alert><AlertTitle>Administrator review</AlertTitle><AlertDescription>{authorAccess.reviewNote}</AlertDescription></Alert> : null}
+            {authorAccess?.status !== "requested" ? (
+              <>
+                <div><Label htmlFor="blog-author-reason">Why would you like to publish?</Label><Textarea id="blog-author-reason" minLength={10} maxLength={1000} value={requestReason} onChange={(event) => setRequestReason(event.target.value)} placeholder="Describe the racing knowledge or information you plan to share." /></div>
+                <Button disabled={busy === "request" || requestReason.trim().length < 10} onClick={() => void requestAuthorAccess()}>{busy === "request" ? <Loader2 className="size-4 animate-spin" /> : <Send className="size-4" />}{authorAccess?.status === "rejected" || authorAccess?.status === "revoked" ? "Request review again" : "Send request"}</Button>
+              </>
+            ) : <p className="text-sm text-muted-foreground">Your request is waiting for administrator review. You can return here to see the decision.</p>}
+          </CardContent>
+        </Card>
+      ) : null}
 
       <div className="grid gap-6 xl:grid-cols-[320px_1fr]">
         <Card>

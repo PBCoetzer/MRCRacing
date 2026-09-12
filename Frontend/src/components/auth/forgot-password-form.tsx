@@ -8,7 +8,11 @@ import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import { CaptchaField, turnstileSiteKey } from "@/components/auth/captcha-field";
+import {
+  CaptchaField,
+  isCaptchaChallengeError,
+  turnstileSiteKey,
+} from "@/components/auth/captcha-field";
 import { createClient } from "@/lib/supabase/client";
 import { supabaseConfigMessage } from "@/lib/supabase/config";
 import { getSiteUrl } from "@/lib/site-url";
@@ -19,6 +23,7 @@ type FormState = {
 };
 
 export function ForgotPasswordForm() {
+  const submitLockRef = useRef(false);
   const turnstileRef = useRef<TurnstileInstance>(null);
   const [formState, setFormState] = useState<FormState>({
     kind: "idle",
@@ -50,10 +55,14 @@ export function ForgotPasswordForm() {
       return;
     }
 
-    if (!captchaToken) {
+    const currentCaptchaToken = turnstileRef.current?.getResponse() || captchaToken;
+
+    if (!currentCaptchaToken || turnstileRef.current?.isExpired() === true) {
+      resetCaptcha();
       setFormState({
         kind: "error",
-        message: "Please complete the human verification before requesting a reset link.",
+        message:
+          "Human verification expired and has been refreshed. Please complete it again before requesting a reset link.",
       });
       return;
     }
@@ -61,13 +70,18 @@ export function ForgotPasswordForm() {
     const formData = new FormData(event.currentTarget);
     const email = String(formData.get("email") ?? "").trim();
 
+    if (submitLockRef.current) {
+      return;
+    }
+
+    submitLockRef.current = true;
     setIsSubmitting(true);
     setFormState({ kind: "idle", message: "" });
 
     try {
       const { error } = await supabase.auth.resetPasswordForEmail(email, {
         redirectTo: `${getSiteUrl()}/reset-password/`,
-        captchaToken,
+        captchaToken: currentCaptchaToken,
       });
 
       if (error) {
@@ -84,11 +98,14 @@ export function ForgotPasswordForm() {
       setFormState({
         kind: "error",
         message:
-          error instanceof Error
-            ? error.message
-            : "Could not send the reset link. Please try again.",
+          isCaptchaChallengeError(error)
+            ? "Human verification expired or was already submitted. It has been refreshed; please complete it and request the link again."
+            : error instanceof Error
+              ? error.message
+              : "Could not send the reset link. Please try again.",
       });
     } finally {
+      submitLockRef.current = false;
       setIsSubmitting(false);
     }
   }

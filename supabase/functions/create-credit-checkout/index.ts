@@ -9,7 +9,7 @@ import {
   requireUser,
   safeMoney,
   signOzow,
-  signPayFast,
+  validateOzowPostFields,
 } from "../_shared/payments.ts";
 
 type CheckoutRequest = {
@@ -48,37 +48,25 @@ function checkoutConfiguration(provider: PaymentProvider) {
   const siteUrl = Deno.env.get("PAYMENT_SITE_URL") ??
     "https://www.mrcracing.co.za";
 
-  if (provider === "payfast") {
-    const merchantId = Deno.env.get("PAYFAST_MERCHANT_ID") ?? "";
-    const merchantKey = Deno.env.get("PAYFAST_MERCHANT_KEY") ?? "";
-    const passphrase = Deno.env.get("PAYFAST_PASSPHRASE") ?? "";
-    const mode = (Deno.env.get("PAYFAST_MODE") ?? "sandbox").toLowerCase();
-
-    if (!merchantId || !merchantKey || !passphrase) {
-      throw new Error("PayFast merchant configuration is incomplete.");
-    }
-
-    return {
-      merchantId,
-      merchantKey,
-      passphrase,
-      mode,
-      actionUrl: mode === "live"
-        ? "https://www.payfast.co.za/eng/process"
-        : "https://sandbox.payfast.co.za/eng/process",
-      notificationUrl: `${supabaseUrl}/functions/v1/payfast-itn`,
-      returnFunctionUrl,
-      siteUrl,
-    };
+  if (provider !== "ozow") {
+    throw new Error("Only Ozow checkout is currently available.");
   }
 
-  const siteCode = Deno.env.get("OZOW_SITE_CODE") ?? "";
-  const privateKey = Deno.env.get("OZOW_PRIVATE_KEY") ?? "";
-  const apiKey = Deno.env.get("OZOW_API_KEY") ?? "";
-  const mode = (Deno.env.get("OZOW_MODE") ?? "test").toLowerCase();
+  const siteCode = (Deno.env.get("OZOW_SITE_CODE") ?? "").trim();
+  const privateKey = (
+    Deno.env.get("OZOW_SECRET_KEY") ??
+      Deno.env.get("OZOW_PRIVATE_KEY") ??
+      ""
+  ).trim();
+  const apiKey = (Deno.env.get("OZOW_API_KEY") ?? "").trim();
+  const mode = (Deno.env.get("OZOW_MODE") ?? "live").trim().toLowerCase();
 
   if (!siteCode || !privateKey || !apiKey) {
     throw new Error("Ozow merchant configuration is incomplete.");
+  }
+
+  if (mode !== "live" && mode !== "test") {
+    throw new Error("OZOW_MODE must be either live or test.");
   }
 
   return {
@@ -127,8 +115,8 @@ Deno.serve(async (request: Request) => {
     const idempotencyKey =
       (request.headers.get("x-idempotency-key") ?? "").trim();
 
-    if (!["payfast", "ozow"].includes(provider ?? "")) {
-      return jsonResponse(request, { error: "Choose PayFast or Ozow." }, 400);
+    if (provider !== "ozow") {
+      return jsonResponse(request, { error: "Choose Ozow checkout." }, 400);
     }
 
     if (
@@ -176,113 +164,53 @@ Deno.serve(async (request: Request) => {
       (total, item) => total + item.quantity,
       0,
     );
-    const cartDescription = payment.items
-      .map((item) => `${item.quantity}× ${item.packageName}`)
-      .join(", ")
-      .slice(0, 250);
-    const userName = String(
-      user.user_metadata?.display_name ??
-        user.user_metadata?.full_name ??
-        "MRC Client",
-    ).trim();
-    const [firstName, ...surnameParts] = userName.split(/\s+/);
-    let actionUrl = configuration.actionUrl;
-    let fields: Record<string, string>;
-
-    if (provider === "payfast" && "merchantId" in configuration) {
-      const orderedFields: Array<[string, string]> = [
-        ["merchant_id", configuration.merchantId],
-        ["merchant_key", configuration.merchantKey],
-        [
-          "return_url",
-          paymentReturnUrl(
-            configuration.returnFunctionUrl,
-            payment.id,
-            "success",
-          ),
-        ],
-        [
-          "cancel_url",
-          paymentReturnUrl(
-            configuration.returnFunctionUrl,
-            payment.id,
-            "cancelled",
-          ),
-        ],
-        ["notify_url", configuration.notificationUrl],
-        ["name_first", firstName || "MRC"],
-        ["name_last", surnameParts.join(" ") || "Client"],
-        ["email_address", user.email ?? ""],
-        ["m_payment_id", payment.id],
-        ["amount", amount],
-        [
-          "item_name",
-          `${payment.purchasedCredits} MRC Credits + ${payment.rewardCredits} Reward Credits`,
-        ],
-        [
-          "item_description",
-          `MRC Racing basket (${packageQuantity} package${packageQuantity === 1 ? "" : "s"}): ${cartDescription}`,
-        ],
-      ];
-      const signature = signPayFast(
-        orderedFields,
-        configuration.passphrase,
-      );
-      fields = Object.fromEntries([...orderedFields, ["signature", signature]]);
-    } else if (provider === "ozow" && "siteCode" in configuration) {
-      const orderedFields: Array<[string, string]> = [
-        ["SiteCode", configuration.siteCode],
-        ["CountryCode", "ZA"],
-        ["CurrencyCode", "ZAR"],
-        ["Amount", amount],
-        ["TransactionReference", payment.id],
-        ["BankReference", `MRC-${payment.id.slice(0, 8)}`],
-        ["Optional1", user.id],
-        ["Optional2", payment.cartFingerprint],
-        ["Optional3", ""],
-        ["Optional4", ""],
-        ["Optional5", ""],
-        ["Customer", user.email ?? user.id],
-        [
-          "CancelUrl",
-          paymentReturnUrl(
-            configuration.returnFunctionUrl,
-            payment.id,
-            "cancelled",
-          ),
-        ],
-        [
-          "ErrorUrl",
-          paymentReturnUrl(
-            configuration.returnFunctionUrl,
-            payment.id,
-            "error",
-          ),
-        ],
-        [
-          "SuccessUrl",
-          paymentReturnUrl(
-            configuration.returnFunctionUrl,
-            payment.id,
-            "success",
-          ),
-        ],
-        ["NotifyUrl", configuration.notificationUrl],
-        ["IsTest", String(configuration.mode !== "live").toLowerCase()],
-      ];
-      const hash = await signOzow(
-        orderedFields.map(([, value]) => value),
-        configuration.privateKey,
-      );
-      fields = Object.fromEntries([...orderedFields, ["HashCheck", hash]]);
-    } else {
-      throw new Error("The selected provider is not configured.");
-    }
+    const orderedFields: Array<[string, string]> = [
+      ["SiteCode", configuration.siteCode],
+      ["CountryCode", "ZA"],
+      ["CurrencyCode", "ZAR"],
+      ["Amount", amount],
+      ["TransactionReference", payment.id],
+      ["BankReference", `MRC-${payment.id.slice(0, 8)}`],
+      ["Optional1", user.id],
+      ["Optional2", payment.cartFingerprint],
+      ["Optional3", ""],
+      ["Optional4", ""],
+      ["Optional5", ""],
+      ["Customer", user.email ?? user.id],
+      ["CancelUrl", `${configuration.siteUrl.replace(/\/+$/, "")}/pricing/`],
+      [
+        "ErrorUrl",
+        paymentReturnUrl(
+          configuration.returnFunctionUrl,
+          payment.id,
+          "error",
+        ),
+      ],
+      [
+        "SuccessUrl",
+        paymentReturnUrl(
+          configuration.returnFunctionUrl,
+          payment.id,
+          "success",
+        ),
+      ],
+      ["NotifyUrl", configuration.notificationUrl],
+      ["IsTest", String(configuration.mode !== "live").toLowerCase()],
+    ];
+    validateOzowPostFields(orderedFields);
+    const hash = await signOzow(
+      orderedFields.map(([, value]) => value),
+      configuration.privateKey,
+    );
+    const fields = Object.fromEntries([
+      ...orderedFields,
+      ["HashCheck", hash],
+    ]);
 
     return jsonResponse(request, {
       paymentId: payment.id,
       provider,
-      actionUrl,
+      actionUrl: configuration.actionUrl,
       fields,
       expiresAt,
       purchasedCredits: payment.purchasedCredits,

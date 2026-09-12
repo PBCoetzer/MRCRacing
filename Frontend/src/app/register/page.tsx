@@ -16,15 +16,15 @@ export default function RegisterPage() {
             Create a client account and prepare your credit wallet.
           </h1>
           <p className="mt-4 max-w-2xl text-lg leading-8 text-muted-foreground">
-            Registration will confirm age, terms acceptance, email ownership, and a default
-            client role before any premium tip can be unlocked.
+            Registration confirms your age declaration, terms acceptance, email ownership,
+            and a default client role before any premium tip can be unlocked.
           </p>
           <Alert className="mt-6 max-w-2xl">
             <ShieldCheck className="size-4" />
-            <AlertTitle>18+ and responsible use</AlertTitle>
+            <AlertTitle>Age declaration and secure access</AlertTitle>
             <AlertDescription>
-              MRC Racing Tips provides analysis and digital content only. Users remain responsible for
-              their own betting decisions.
+              You must be at least 18 years old. Confirm your email address before signing in
+              and keep your account credentials private.
             </AlertDescription>
           </Alert>
         </section>

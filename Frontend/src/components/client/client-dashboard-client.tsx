@@ -37,8 +37,14 @@ import {
 import { Input } from "@/components/ui/input";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { createClient } from "@/lib/supabase/client";
-import { formatCredits, formatRaceDateTime } from "@/lib/racing/format";
+import { formatCredits, formatMeetingCardPrice, formatRaceDateTime } from "@/lib/racing/format";
 import { meetingCardSalesOpen } from "@/lib/racing/availability";
+import {
+  tipsterThemeAccentStyle,
+  tipsterThemeButtonStyle,
+  tipsterThemeCardStyle,
+  tipsterThemePanelStyle,
+} from "@/lib/racing/tipster-theme";
 import type {
   ClientTipsterFavourite,
   MeetingBetOption,
@@ -73,6 +79,10 @@ type SubscriptionRow = {
   status: "active" | "expired" | "refunded";
 };
 
+type SubscriptionSummary = SubscriptionRow & {
+  segment_count: number;
+};
+
 type EntitlementRow = {
   id: string;
   tip_card_id: string;
@@ -98,8 +108,13 @@ type ProfileNotificationRow = {
   display_name: string | null;
   phone: string | null;
   sms_notifications_enabled: boolean;
-  accepted_terms_version: string | null;
-  premium_terms_accepted_at: string | null;
+};
+
+type PremiumTermsStatus = {
+  currentVersion: string;
+  hasAcceptedCurrent: boolean;
+  acceptedAt: string | null;
+  acceptedVia: string | null;
 };
 
 type CardAccessLicense = {
@@ -119,8 +134,6 @@ type CardOutcome = {
   evidence_hash: string;
   settled_at: string;
 };
-
-const premiumTermsVersion = "2026-08-20-premium-content";
 
 function messageFrom(error: unknown, fallback: string) {
   if (error instanceof Error) {
@@ -152,7 +165,7 @@ export function ClientDashboardClient() {
   const [termsConfirmed, setTermsConfirmed] = useState(false);
   const [termsDialogError, setTermsDialogError] = useState("");
   const [pendingPurchase, setPendingPurchase] = useState<PurchaseConfirmation | null>(null);
-  const [acceptedTermsVersion, setAcceptedTermsVersion] = useState("");
+  const [hasAcceptedCurrentTerms, setHasAcceptedCurrentTerms] = useState(false);
   const [profileDisplayName, setProfileDisplayName] = useState("MRC Client");
   const [cardAccessLicenses, setCardAccessLicenses] = useState<Record<string, CardAccessLicense>>({});
   const [cards, setCards] = useState<TipCard[]>([]);
@@ -210,6 +223,7 @@ export function ClientDashboardClient() {
         disputeResult,
         performanceResult,
         favouriteResult,
+        termsStatusResult,
       ] = await Promise.all([
         supabase
           .from("wallets")
@@ -218,7 +232,7 @@ export function ClientDashboardClient() {
           .maybeSingle(),
         supabase
           .from("profiles")
-          .select("display_name,phone,sms_notifications_enabled,accepted_terms_version,premium_terms_accepted_at")
+          .select("display_name,phone,sms_notifications_enabled")
           .eq("id", user.id)
           .maybeSingle(),
         supabase
@@ -232,8 +246,9 @@ export function ClientDashboardClient() {
           .order("first_race_at"),
         supabase
           .from("tipsters")
-          .select("id,user_id,display_name,biography,is_verified,commission_rate_override")
-          .eq("is_verified", true),
+          .select("id,slug,user_id,display_name,biography,is_verified,is_public,commission_rate_override,theme_primary_color,theme_secondary_color,theme_surface_color")
+          .eq("is_verified", true)
+          .eq("is_public", true),
         supabase
           .from("tipster_packages")
           .select("id,tipster_id,name,duration_months,coin_price,is_active,created_at")
@@ -242,28 +257,33 @@ export function ClientDashboardClient() {
         supabase
           .from("content_purchases")
           .select("id,purchase_type,tip_card_id,tipster_package_id,gross_coins,status,created_at")
+          .eq("user_id", user.id)
           .order("created_at", { ascending: false }),
         supabase
           .from("tipster_subscriptions")
           .select("id,tipster_id,package_id,starts_at,ends_at,status")
+          .eq("user_id", user.id)
           .order("created_at", { ascending: false }),
         supabase
           .from("tip_card_entitlements")
           .select("id,tip_card_id,source_type,revoked_at")
+          .eq("user_id", user.id)
           .is("revoked_at", null),
         supabase
           .from("purchase_disputes")
           .select("id,purchase_id,status,reason,created_at")
+          .eq("user_id", user.id)
           .order("created_at", { ascending: false }),
         supabase
           .from("tipster_performance_stats")
           .select(
-            "tipster_id,published_winner_tips,settled_winner_tips,winner_hits,winner_strike_rate,roi_percent,updated_at",
+            "tipster_id,published_winner_tips,settled_winner_tips,winner_hits,winner_strike_rate,published_place_tips,settled_place_tips,place_hits,place_strike_rate,roi_percent,updated_at",
           ),
         supabase
           .from("client_tipster_favourites")
           .select("user_id,tipster_id,created_at")
           .eq("user_id", user.id),
+        supabase.rpc("get_premium_terms_status"),
       ]);
 
       const firstError =
@@ -278,7 +298,8 @@ export function ClientDashboardClient() {
         entitlementResult.error ??
         disputeResult.error ??
         performanceResult.error ??
-        favouriteResult.error;
+        favouriteResult.error ??
+        termsStatusResult.error;
 
       if (firstError) {
         throw firstError;
@@ -287,7 +308,12 @@ export function ClientDashboardClient() {
       const loadedCards = (cardResult.data ?? []) as TipCard[];
       const loadedMeetings = (meetingResult.data ?? []) as RaceMeeting[];
       const loadedEntitlements = (entitlementResult.data ?? []) as EntitlementRow[];
-      const accessibleCardIds = new Set(loadedEntitlements.map((item) => item.tip_card_id));
+      const accessibleCardIds = new Set([
+        ...loadedEntitlements.map((item) => item.tip_card_id),
+        ...loadedCards
+          .filter((tipCard) => tipCard.coin_price === 0 && ["published", "settled"].includes(tipCard.status))
+          .map((tipCard) => tipCard.id),
+      ]);
       const accessibleCards = loadedCards.filter(
         (tipCard) => ["published", "settled"].includes(tipCard.status) && accessibleCardIds.has(tipCard.id),
       );
@@ -375,12 +401,13 @@ export function ClientDashboardClient() {
 
       const loadedWallet = walletResult.data as WalletRow | null;
       const loadedProfile = profileResult.data as ProfileNotificationRow | null;
+      const loadedTermsStatus = termsStatusResult.data as PremiumTermsStatus | null;
       setWalletBalance(Number(loadedWallet?.balance ?? 0));
       setPurchasedBalance(Number(loadedWallet?.purchased_balance ?? 0));
       setRewardBalance(Number(loadedWallet?.reward_balance ?? 0));
       setPhone(loadedProfile?.phone ?? "");
       setSmsNotificationsEnabled(Boolean(loadedProfile?.sms_notifications_enabled));
-      setAcceptedTermsVersion(loadedProfile?.accepted_terms_version ?? "");
+      setHasAcceptedCurrentTerms(Boolean(loadedTermsStatus?.hasAcceptedCurrent));
       setProfileDisplayName(loadedProfile?.display_name?.trim() || "MRC Client");
       const cardFromUrl = new URLSearchParams(window.location.search).get("card");
       if (cardFromUrl && accessibleCardIds.has(cardFromUrl)) {
@@ -452,16 +479,49 @@ export function ClientDashboardClient() {
     () => new Set(entitlements.map((item) => item.tip_card_id)),
     [entitlements],
   );
-  const activeSubscriptionTipsters = useMemo(
-    () => new Set(
-      subscriptions
-        .filter((subscription) =>
+  const activeSubscriptionSummaries = useMemo(() => {
+    const grouped = new Map<string, SubscriptionSummary>();
+
+    subscriptions
+      .filter(
+        (subscription) =>
           subscription.status === "active" &&
           new Date(subscription.ends_at).getTime() > loadedAt,
-        )
-        .map((subscription) => subscription.tipster_id),
-    ),
-    [loadedAt, subscriptions],
+      )
+      .forEach((subscription) => {
+        const current = grouped.get(subscription.tipster_id);
+
+        if (!current) {
+          grouped.set(subscription.tipster_id, {
+            ...subscription,
+            segment_count: 1,
+          });
+          return;
+        }
+
+        const subscriptionEndsLater =
+          new Date(subscription.ends_at).getTime() > new Date(current.ends_at).getTime();
+
+        grouped.set(subscription.tipster_id, {
+          ...current,
+          id: subscriptionEndsLater ? subscription.id : current.id,
+          package_id: subscriptionEndsLater ? subscription.package_id : current.package_id,
+          starts_at:
+            new Date(subscription.starts_at).getTime() < new Date(current.starts_at).getTime()
+              ? subscription.starts_at
+              : current.starts_at,
+          ends_at: subscriptionEndsLater ? subscription.ends_at : current.ends_at,
+          segment_count: current.segment_count + 1,
+        });
+      });
+
+    return [...grouped.values()].sort(
+      (left, right) => new Date(right.ends_at).getTime() - new Date(left.ends_at).getTime(),
+    );
+  }, [loadedAt, subscriptions]);
+  const activeSubscriptionTipsters = useMemo(
+    () => new Set(activeSubscriptionSummaries.map((subscription) => subscription.tipster_id)),
+    [activeSubscriptionSummaries],
   );
 
   async function purchaseMeeting(tipCard: TipCard) {
@@ -559,7 +619,7 @@ export function ClientDashboardClient() {
       }
 
       setDisputeReasons((current) => ({ ...current, [purchaseId]: "" }));
-      setMessage("Your dispute was submitted for administrator review.");
+      setMessage("Your refund request was submitted for administrator review. No Credits will be returned unless an administrator approves it.");
       await loadDashboard();
     } catch (disputeError) {
       setError(messageFrom(disputeError, "The dispute could not be submitted."));
@@ -609,7 +669,7 @@ export function ClientDashboardClient() {
       return;
     }
 
-    if (acceptedTermsVersion !== premiumTermsVersion && !acceptCurrentTerms) {
+    if (!hasAcceptedCurrentTerms && !acceptCurrentTerms) {
       setPendingCardId(tipCardId);
       setTermsConfirmed(false);
       setTermsDialogError("");
@@ -628,16 +688,35 @@ export function ClientDashboardClient() {
     setMessage("");
 
     try {
+      const clientContext = {
+        language: navigator.language,
+        screen: `${window.screen.width}x${window.screen.height}`,
+        timezone: Intl.DateTimeFormat().resolvedOptions().timeZone,
+      };
+
+      if (acceptCurrentTerms) {
+        const { data: termsStatus, error: termsError } = await supabase.rpc(
+          "accept_current_premium_terms",
+          { p_client_context: clientContext },
+        );
+
+        if (termsError) {
+          throw termsError;
+        }
+
+        if (!(termsStatus as PremiumTermsStatus | null)?.hasAcceptedCurrent) {
+          throw new Error("The current terms acceptance could not be saved.");
+        }
+
+        setHasAcceptedCurrentTerms(true);
+      }
+
       const { data, error: accessError } = await supabase.rpc(
         "record_tip_card_access",
         {
           p_tip_card_id: tipCardId,
-          p_terms_version: acceptCurrentTerms ? premiumTermsVersion : null,
-          p_client_context: {
-            language: navigator.language,
-            screen: `${window.screen.width}x${window.screen.height}`,
-            timezone: Intl.DateTimeFormat().resolvedOptions().timeZone,
-          },
+          p_terms_version: null,
+          p_client_context: clientContext,
         },
       );
 
@@ -657,7 +736,7 @@ export function ClientDashboardClient() {
           displayName: licence.displayName || profileDisplayName,
         },
       }));
-      setAcceptedTermsVersion(premiumTermsVersion);
+      setHasAcceptedCurrentTerms(true);
       setExpandedCardId(tipCardId);
       setTermsDialogOpen(false);
       setPendingCardId("");
@@ -670,13 +749,19 @@ export function ClientDashboardClient() {
       );
       if (acceptCurrentTerms) {
         setTermsDialogError(accessMessage);
+      } else if (accessMessage.toLowerCase().includes("accept the current terms")) {
+        setHasAcceptedCurrentTerms(false);
+        setPendingCardId(tipCardId);
+        setTermsConfirmed(false);
+        setTermsDialogError("");
+        setTermsDialogOpen(true);
       } else {
         setError(accessMessage);
       }
     } finally {
       setProcessingId("");
     }
-  }, [acceptedTermsVersion, expandedCardId, profileDisplayName]);
+  }, [expandedCardId, hasAcceptedCurrentTerms, profileDisplayName]);
 
   useEffect(() => {
     if (loading || !requestedCardId) {
@@ -704,11 +789,13 @@ export function ClientDashboardClient() {
   }
 
   const accessibleCards = cards.filter(
-    (tipCard) => ["published", "settled"].includes(tipCard.status) && entitlementIds.has(tipCard.id),
+    (tipCard) =>
+      ["published", "settled"].includes(tipCard.status) &&
+      (tipCard.coin_price === 0 || entitlementIds.has(tipCard.id)),
   );
   const marketplaceCards = cards.filter((tipCard) => {
     const meeting = meetingById.get(tipCard.meeting_id);
-    return ["coming_soon", "published"].includes(tipCard.status) &&
+    return tipCard.status === "published" &&
       meetingCardSalesOpen(meeting, loadedAt);
   });
 
@@ -732,7 +819,7 @@ export function ClientDashboardClient() {
       <div className="grid gap-4 md:grid-cols-4">
         {[
           { label: "Credit balance", value: walletBalance, icon: Coins },
-          { label: "Meeting access", value: entitlements.length, icon: TicketCheck },
+          { label: "Meeting access", value: accessibleCards.length, icon: TicketCheck },
           { label: "Active subscriptions", value: activeSubscriptionTipsters.size, icon: ShieldCheck },
           { label: "Open disputes", value: disputes.filter((item) => item.status === "open").length, icon: Bell },
         ].map((stat) => (
@@ -812,17 +899,11 @@ export function ClientDashboardClient() {
         <CardHeader>
           <CardTitle>My Subscribed Tipsters</CardTitle>
           <CardDescription>
-            Your active tipster relationships, package dates, and direct profile access.
+            One active relationship is shown per tipster. Subscription extensions are included in the final expiry date.
           </CardDescription>
         </CardHeader>
         <CardContent className="grid gap-4 md:grid-cols-2">
-          {subscriptions
-            .filter(
-              (subscription) =>
-                subscription.status === "active" &&
-                new Date(subscription.ends_at).getTime() > loadedAt,
-            )
-            .map((subscription) => {
+          {activeSubscriptionSummaries.map((subscription) => {
               const tipster = tipsterById.get(subscription.tipster_id);
               const tipsterPackage = packageById.get(subscription.package_id);
 
@@ -830,7 +911,12 @@ export function ClientDashboardClient() {
                 <div key={subscription.id} className="rounded-lg border bg-background/40 p-4">
                   <div className="flex items-start justify-between gap-3">
                     <div>
-                      <Badge>Active</Badge>
+                      <div className="flex flex-wrap gap-2">
+                        <Badge>Active</Badge>
+                        {subscription.segment_count > 1 ? (
+                          <Badge variant="outline">Extended</Badge>
+                        ) : null}
+                      </div>
                       <h3 className="mt-3 font-heading text-xl text-white">
                         {tipster?.display_name ?? "Verified tipster"}
                       </h3>
@@ -859,7 +945,7 @@ export function ClientDashboardClient() {
                 </div>
               );
             })}
-          {!activeSubscriptionTipsters.size ? (
+          {!activeSubscriptionSummaries.length ? (
             <p className="text-sm text-muted-foreground">
               You do not have an active tipster subscription. Browse profiles to compare
               each tipster&apos;s own packages.
@@ -888,12 +974,13 @@ export function ClientDashboardClient() {
             cardRaceSelections.find((selection) => selection.fixture_id === fixture.id)?.selection_status !== "skipped"
           );
           const cardMultiples = multiples.filter((multiple) => multiple.tip_card_id === tipCard.id);
+          const cardTipster = tipsterById.get(tipCard.tipster_id);
           const isExpanded = expandedCardId === tipCard.id;
           const accessLicence = cardAccessLicenses[tipCard.id];
           const isOpening = processingId === `access:${tipCard.id}`;
 
           return (
-            <Card key={tipCard.id} className="border-brand-cyan/35">
+            <Card key={tipCard.id} style={tipsterThemePanelStyle(cardTipster)}>
               <button
                 type="button"
                 className="w-full rounded-t-xl text-left transition-colors hover:bg-white/[0.03] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
@@ -905,7 +992,9 @@ export function ClientDashboardClient() {
                 <CardHeader className="flex-row items-center justify-between gap-4">
                   <div className="min-w-0">
                     <div className="flex flex-wrap items-center gap-2">
-                      <Badge>{tipCard.status === "settled" ? "Settled history" : "Published"}</Badge>
+                      <Badge style={tipsterThemeButtonStyle(cardTipster)}>
+                        {tipCard.status === "settled" ? "Settled history" : "Published"}
+                      </Badge>
                       <Badge variant="outline">Revision {tipCard.revision}</Badge>
                     </div>
                     <CardTitle className="mt-3 font-heading text-2xl text-white">{tipCard.title}</CardTitle>
@@ -914,7 +1003,10 @@ export function ClientDashboardClient() {
                       {` · ${visibleCardFixtures.length} tipped races`}
                     </CardDescription>
                   </div>
-                  <span className="flex shrink-0 items-center gap-2 text-sm text-brand-cyan">
+                  <span
+                    className="flex shrink-0 items-center gap-2 text-sm"
+                    style={tipsterThemeAccentStyle(cardTipster)}
+                  >
                     {isOpening ? (
                       <><Loader2 className="size-5 animate-spin" />Securing card</>
                     ) : isExpanded ? (
@@ -944,7 +1036,7 @@ export function ClientDashboardClient() {
                     </p>
                   ))}
                 </div>
-                <Alert className="relative z-30 border-brand-gold/35 bg-brand-gold/8">
+                <Alert className="relative z-30" style={tipsterThemeCardStyle(cardTipster)}>
                   <ShieldCheck className="size-4" />
                   <AlertTitle>Personal licensed access</AlertTitle>
                   <AlertDescription>
@@ -961,7 +1053,11 @@ export function ClientDashboardClient() {
                     const outcome = cardOutcomes.find((item) => item.tip_card_id === tipCard.id && item.fixture_id === fixture.id);
 
                     return (
-                      <div key={fixture.id} className="relative z-10 rounded-lg border bg-background/80 p-4">
+                      <div
+                        key={fixture.id}
+                        className="relative z-10 rounded-lg border p-4"
+                        style={tipsterThemeCardStyle(cardTipster)}
+                      >
                         <div className="flex flex-wrap items-start justify-between gap-2">
                           <div>
                             <p className="font-semibold">Race {fixture.race_number}: {fixture.title}</p>
@@ -970,57 +1066,78 @@ export function ClientDashboardClient() {
                         </div>
                         <dl className="mt-3 grid gap-2 text-sm">
                           <div><dt className="text-muted-foreground">Winner</dt><dd>{winner ? `${winner.saddle_number}. ${winner.horse_name}` : "No selection"}</dd></div>
-                          <div><dt className="text-muted-foreground">Best place</dt><dd>{place ? `${place.saddle_number}. ${place.horse_name}` : "No selection"}</dd></div>
+                          <div><dt className="text-muted-foreground">Place Selection</dt><dd>{place ? `${place.saddle_number}. ${place.horse_name}` : "No selection"}</dd></div>
                           <div><dt className="text-muted-foreground">Comments</dt><dd>{selection?.comments || "No comments"}</dd></div>
-                          {outcome ? <><div><dt className="text-muted-foreground">Winner outcome</dt><dd>{outcome.selected_winner_position == null ? "No winner selection graded" : outcome.winner_hit ? `Correct — finished 1st` : `Missed — finished ${outcome.selected_winner_position}`}</dd></div><div><dt className="text-muted-foreground">Best-place finish</dt><dd>{outcome.selected_place_position ?? "No official finishing position"}</dd></div><div><dt className="text-muted-foreground">Official result</dt><dd>{outcome.result_summary ?? fixture.result_summary ?? "Recorded"}</dd></div></> : null}
+                          {outcome ? <><div><dt className="text-muted-foreground">Winner outcome</dt><dd>{outcome.selected_winner_position == null ? "No winner selection graded" : outcome.winner_hit ? `Correct — finished 1st` : `Missed — finished ${outcome.selected_winner_position}`}</dd></div><div><dt className="text-muted-foreground">Place Selection finish</dt><dd>{outcome.selected_place_position ?? "No official finishing position"}</dd></div><div><dt className="text-muted-foreground">Official result</dt><dd>{outcome.result_summary ?? fixture.result_summary ?? "Recorded"}</dd></div></> : null}
                         </dl>
                       </div>
                     );
                   })}
                 </div>
-                <div className="relative z-10">
-                  <h3 className="font-heading text-xl text-white">Exotic&apos;s and Multiples</h3>
-                  <div className="mt-3 grid gap-3 lg:grid-cols-2">
-                    {cardMultiples.map((multiple) => {
-                      const option = optionById.get(multiple.bet_option_id);
-                      const selections = multipleSelections.filter((item) => item.multiple_id === multiple.id);
-                      const grouped = new Map<number, TipCardMultipleSelection[]>();
+                {cardMultiples.length ? (
+                  <div className="relative z-10">
+                    <h3 className="font-heading text-xl text-white">Exotic&apos;s and Multiples</h3>
+                    <div className="mt-3 grid gap-3 lg:grid-cols-2">
+                      {cardMultiples.map((multiple) => {
+                        const option = optionById.get(multiple.bet_option_id);
+                        const selections = multipleSelections.filter(
+                          (item) => item.multiple_id === multiple.id,
+                        );
+                        const grouped = new Map<number, TipCardMultipleSelection[]>();
 
-                      for (const selection of selections) {
-                        grouped.set(selection.leg_number, [
-                          ...(grouped.get(selection.leg_number) ?? []),
-                          selection,
-                        ]);
-                      }
+                        for (const selection of selections) {
+                          grouped.set(selection.leg_number, [
+                            ...(grouped.get(selection.leg_number) ?? []),
+                            selection,
+                          ]);
+                        }
 
-                      return (
-                        <div key={multiple.id} className="rounded-lg border p-4">
-                          <p className="font-semibold">{multiple.custom_name || option?.display_name || "Meeting bet"}</p>
-                          {multiple.tip_text ? (
-                            <p className="mt-3 whitespace-pre-wrap text-sm">{multiple.tip_text}</p>
-                          ) : (
-                            <div className="mt-3 space-y-2 text-sm">
-                              {[...grouped.entries()].sort(([left], [right]) => left - right).map(([legNumber, legSelections]) => {
-                                const fixture = fixtureById.get(legSelections[0]?.fixture_id ?? "");
-                                return (
-                                  <p key={legNumber}>
-                                    <span className="text-muted-foreground">Leg {legNumber}{fixture ? ` / Race ${fixture.race_number}` : ""}: </span>
-                                    {legSelections
-                                      .map((item) => entryById.get(item.entry_id))
-                                      .filter(Boolean)
-                                      .map((entry) => `${entry?.saddle_number}. ${entry?.horse_name}`)
-                                      .join(", ")}
-                                  </p>
-                                );
-                              })}
-                            </div>
-                          )}
-                          {multiple.comments ? <p className="mt-3 text-sm text-muted-foreground">{multiple.comments}</p> : null}
-                        </div>
-                      );
-                    })}
+                        return (
+                          <div
+                            key={multiple.id}
+                            className="rounded-lg border p-4"
+                            style={tipsterThemeCardStyle(cardTipster)}
+                          >
+                            <p className="font-semibold">
+                              {multiple.custom_name || option?.display_name || "Meeting option"}
+                            </p>
+                            {multiple.tip_text ? (
+                              <p className="mt-3 whitespace-pre-wrap text-sm">{multiple.tip_text}</p>
+                            ) : (
+                              <div className="mt-3 space-y-2 text-sm">
+                                {[...grouped.entries()]
+                                  .sort(([left], [right]) => left - right)
+                                  .map(([legNumber, legSelections]) => {
+                                    const fixture = fixtureById.get(
+                                      legSelections[0]?.fixture_id ?? "",
+                                    );
+                                    return (
+                                      <p key={legNumber}>
+                                        <span className="text-muted-foreground">
+                                          Leg {legNumber}
+                                          {fixture ? ` / Race ${fixture.race_number}` : ""}:{" "}
+                                        </span>
+                                        {legSelections
+                                          .map((item) => entryById.get(item.entry_id))
+                                          .filter(Boolean)
+                                          .map((entry) => `${entry?.saddle_number}. ${entry?.horse_name}`)
+                                          .join(", ")}
+                                      </p>
+                                    );
+                                  })}
+                              </div>
+                            )}
+                            {multiple.comments ? (
+                              <p className="mt-3 text-sm text-muted-foreground">
+                                {multiple.comments}
+                              </p>
+                            ) : null}
+                          </div>
+                        );
+                      })}
+                    </div>
                   </div>
-                </div>
+                ) : null}
               </CardContent>
               ) : null}
             </Card>
@@ -1031,7 +1148,7 @@ export function ClientDashboardClient() {
             <History className="size-4" />
             <AlertTitle>No published card access yet</AlertTitle>
             <AlertDescription>
-              Buy a listed meeting card or subscribe to a tipster. Coming Soon purchases unlock automatically after publication.
+              Buy a published meeting card or subscribe to a tipster. Subscriptions include every qualifying card published during the active period.
             </AlertDescription>
           </Alert>
         ) : null}
@@ -1041,7 +1158,7 @@ export function ClientDashboardClient() {
         <CardHeader>
           <CardTitle>Discover Tipsters</CardTitle>
           <CardDescription>
-            Favourites appear first, followed by verified winner strike rate. Visit a
+            Favourites appear first, followed by verified winner and place performance. Visit a
             profile to see only that tipster&apos;s subscriptions and meeting cards.
           </CardDescription>
         </CardHeader>
@@ -1066,10 +1183,17 @@ export function ClientDashboardClient() {
               const isFavourite = favouriteIds.has(tipster.id);
 
               return (
-                <div key={tipster.id} className="rounded-lg border bg-background/40 p-4">
+                <div
+                  key={tipster.id}
+                  className="rounded-lg border p-4"
+                  style={tipsterThemePanelStyle(tipster)}
+                >
                   <div className="flex items-start justify-between gap-3">
                     <div>
-                      <Badge variant={isFavourite ? "default" : "outline"}>
+                      <Badge
+                        variant={isFavourite ? "default" : "outline"}
+                        style={tipsterThemeButtonStyle(tipster)}
+                      >
                         {isFavourite ? "Favourite" : "Verified"}
                       </Badge>
                       <h3 className="mt-3 font-heading text-xl text-white">
@@ -1080,6 +1204,7 @@ export function ClientDashboardClient() {
                       type="button"
                       size="icon-sm"
                       variant={isFavourite ? "default" : "outline"}
+                      style={isFavourite ? tipsterThemeButtonStyle(tipster) : undefined}
                       disabled={processingId === `favourite:${tipster.id}`}
                       onClick={() => void toggleFavourite(tipster.id)}
                       aria-label={isFavourite ? "Remove favourite" : "Add favourite"}
@@ -1102,12 +1227,30 @@ export function ClientDashboardClient() {
                       </p>
                     </div>
                     <div>
-                      <p className="text-muted-foreground">Settled sample</p>
+                      <p className="text-muted-foreground">Place strike rate</p>
+                      <p className="font-mono text-lg font-semibold">
+                        {stats?.place_strike_rate === null ||
+                        stats?.place_strike_rate === undefined
+                          ? "—"
+                          : `${Number(stats.place_strike_rate).toFixed(1)}%`}
+                      </p>
+                    </div>
+                    <div>
+                      <p className="text-muted-foreground">Settled winner tips</p>
                       <p className="font-mono text-lg font-semibold">
                         {stats?.settled_winner_tips ?? 0}
                       </p>
                     </div>
+                    <div>
+                      <p className="text-muted-foreground">Settled place selections</p>
+                      <p className="font-mono text-lg font-semibold">
+                        {stats?.settled_place_tips ?? 0}
+                      </p>
+                    </div>
                   </div>
+                  <p className="mt-3 text-xs text-muted-foreground">
+                    Place strike rate counts official top-three finishes across settled selections.
+                  </p>
                   <Button asChild className="mt-4 w-full" variant="outline">
                     <Link href={`/tipsters/profile/?tipster=${tipster.id}`}>
                       View profile and packages
@@ -1124,8 +1267,7 @@ export function ClientDashboardClient() {
           <div>
             <CardTitle>Meeting Card Marketplace</CardTitle>
             <CardDescription>
-              A one-off purchase unlocks the complete venue/date card. Coming Soon cards
-              support pre-purchase.
+              Published meeting cards may be free, included in a subscription, or available as a one-off purchase.
             </CardDescription>
           </div>
           <Button type="button" variant="outline" onClick={() => void loadDashboard()}>
@@ -1137,7 +1279,16 @@ export function ClientDashboardClient() {
           {marketplaceCards.map((tipCard) => {
             const meeting = meetingById.get(tipCard.meeting_id);
             const tipster = tipsterById.get(tipCard.tipster_id);
-            const entitled = entitlementIds.has(tipCard.id);
+            const isFree = tipCard.coin_price === 0;
+            const coveredBySubscription = Boolean(
+              meeting && subscriptions.some((subscription) =>
+                subscription.tipster_id === tipCard.tipster_id &&
+                subscription.status === "active" &&
+                new Date(meeting.first_race_at).getTime() >= new Date(subscription.starts_at).getTime() &&
+                new Date(meeting.first_race_at).getTime() < new Date(subscription.ends_at).getTime(),
+              ),
+            );
+            const entitled = entitlementIds.has(tipCard.id) || coveredBySubscription;
 
             return (
               <div key={tipCard.id} className="rounded-lg border bg-background/40 p-4">
@@ -1146,7 +1297,9 @@ export function ClientDashboardClient() {
                     {tipCard.status.replace("_", " ")}
                   </Badge>
                   {meeting?.is_test ? <Badge variant="outline">Private test</Badge> : null}
-                  {entitled ? <Badge variant="outline">Purchased</Badge> : null}
+                  {isFree ? <Badge variant="outline">Free access</Badge> : null}
+                  {coveredBySubscription ? <Badge variant="outline">Included in subscription</Badge> : null}
+                  {!isFree && !coveredBySubscription && entitled ? <Badge variant="outline">Purchased</Badge> : null}
                 </div>
                 <h3 className="mt-3 font-heading text-xl text-white">{tipCard.title}</h3>
                 <Link
@@ -1165,9 +1318,22 @@ export function ClientDashboardClient() {
                 </p>
                 <div className="mt-4 flex flex-wrap items-center justify-between gap-3">
                   <span className="font-mono font-semibold">
-                    {formatCredits(tipCard.coin_price)}
+                    {formatMeetingCardPrice(tipCard.coin_price)}
                   </span>
-                  {entitled ? (
+                  {isFree ? (
+                    <Button
+                      disabled={processingId === tipCard.id}
+                      type="button"
+                      onClick={() => void openPremiumCard(tipCard.id)}
+                    >
+                      {processingId === tipCard.id ? (
+                        <Loader2 className="size-4 animate-spin" />
+                      ) : (
+                        <Eye className="size-4" />
+                      )}
+                      Open free card
+                    </Button>
+                  ) : entitled ? (
                     <Badge>
                       <Eye className="size-3" />
                       Access above
@@ -1201,7 +1367,7 @@ export function ClientDashboardClient() {
           })}
           {!marketplaceCards.length ? (
             <p className="text-sm text-muted-foreground">
-              No cards are listed for sale yet.
+              No meeting cards are currently available.
             </p>
           ) : null}
         </CardContent>
@@ -1209,9 +1375,9 @@ export function ClientDashboardClient() {
 
       <Card id="purchases" className="scroll-mt-24">
         <CardHeader>
-          <CardTitle>Purchases and disputes</CardTitle>
+          <CardTitle>Purchases and refund requests</CardTitle>
           <CardDescription>
-            Unpublished or cancelled meeting cards refund automatically. Subscription purchases are reviewed manually.
+            Meeting-card and subscription purchases remain active unless you request a refund review and an administrator approves it.
           </CardDescription>
         </CardHeader>
         <CardContent>
@@ -1243,7 +1409,7 @@ export function ClientDashboardClient() {
                       ) : purchase.status === "active" ? (
                         <div className="flex min-w-64 gap-2">
                           <Input
-                            placeholder="Reason for dispute"
+                            placeholder="Reason for refund request"
                             value={disputeReasons[purchase.id] ?? ""}
                             onChange={(event) => setDisputeReasons((current) => ({
                               ...current,
@@ -1256,7 +1422,7 @@ export function ClientDashboardClient() {
                             variant="outline"
                             onClick={() => void submitDispute(purchase.id)}
                           >
-                            Submit
+                            Request review
                           </Button>
                         </div>
                       ) : (
@@ -1309,7 +1475,8 @@ export function ClientDashboardClient() {
             <DialogTitle>Accept the premium-content licence</DialogTitle>
             <DialogDescription>
               Meeting-card selections are licensed for your personal, non-transferable use.
-              Each opening receives a visible trace code linked to your account-access record.
+              You accept each Terms version once for your account. We ask again only after the
+              Terms change. Each opening receives a visible trace code linked to your account-access record.
             </DialogDescription>
           </DialogHeader>
           <div className="space-y-3 text-sm text-muted-foreground">
@@ -1376,7 +1543,7 @@ export function ClientDashboardClient() {
               ) : (
                 <ShieldCheck className="size-4" />
               )}
-              Accept and open card
+              Accept once and open card
             </Button>
           </DialogFooter>
         </DialogContent>

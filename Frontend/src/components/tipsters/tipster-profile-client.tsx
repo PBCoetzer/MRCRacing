@@ -26,8 +26,14 @@ import {
   PurchaseConfirmationDialog,
   type PurchaseConfirmation,
 } from "@/components/purchases/purchase-confirmation-dialog";
-import { formatCredits, formatRaceDateTime } from "@/lib/racing/format";
+import { formatCredits, formatMeetingCardPrice, formatRaceDateTime } from "@/lib/racing/format";
 import { meetingCardSalesOpen } from "@/lib/racing/availability";
+import {
+  tipsterThemeAccentStyle,
+  tipsterThemeButtonStyle,
+  tipsterThemeCardStyle,
+  tipsterThemePanelStyle,
+} from "@/lib/racing/tipster-theme";
 import type {
   RaceMeeting,
   TipCard,
@@ -37,7 +43,7 @@ import type {
 } from "@/lib/racing/types";
 import { createClient } from "@/lib/supabase/client";
 
-export function TipsterProfileClient() {
+export function TipsterProfileClient({ tipsterSlug: suppliedTipsterSlug }: { tipsterSlug?: string } = {}) {
   const [loadedAt] = useState(() => Date.now());
   const [loading, setLoading] = useState(true);
   const [processing, setProcessing] = useState("");
@@ -57,7 +63,9 @@ export function TipsterProfileClient() {
   const loadProfile = useCallback(async () => {
     const searchParams = new URLSearchParams(window.location.search);
     const tipsterId = searchParams.get("tipster");
-    const tipsterSlug = searchParams.get("slug");
+    const path = window.location.pathname.split("/").filter(Boolean);
+    const pathSlug = path[0] === "tipsters" && path[1] && path[1] !== "profile" ? path[1] : "";
+    const tipsterSlug = suppliedTipsterSlug?.trim() || searchParams.get("slug")?.trim() || pathSlug;
     const supabase = createClient();
 
     if ((!tipsterId && !tipsterSlug) || !supabase) {
@@ -71,9 +79,10 @@ export function TipsterProfileClient() {
     const tipsterQuery = supabase
       .from("tipsters")
       .select(
-        "id,slug,user_id,display_name,biography,photo_path,is_verified,ranking,commission_rate_override",
+        "id,slug,user_id,display_name,biography,photo_path,is_verified,is_public,ranking,commission_rate_override,theme_primary_color,theme_secondary_color,theme_surface_color",
       )
-      .eq("is_verified", true);
+      .eq("is_verified", true)
+      .eq("is_public", true);
     const tipsterResult = tipsterId
       ? await tipsterQuery.eq("id", tipsterId).maybeSingle()
       : await tipsterQuery.eq("slug", tipsterSlug ?? "").maybeSingle();
@@ -97,12 +106,13 @@ export function TipsterProfileClient() {
       favouriteResult,
       purchaseResult,
       subscriptionResult,
+      entitlementResult,
     ] =
       await Promise.all([
         supabase
           .from("tipster_performance_stats")
           .select(
-            "tipster_id,published_winner_tips,settled_winner_tips,winner_hits,winner_strike_rate,roi_percent,updated_at",
+            "tipster_id,published_winner_tips,settled_winner_tips,winner_hits,winner_strike_rate,published_place_tips,settled_place_tips,place_hits,place_strike_rate,roi_percent,updated_at",
           )
           .eq("tipster_id", resolvedTipsterId)
           .maybeSingle(),
@@ -148,6 +158,13 @@ export function TipsterProfileClient() {
               .gt("ends_at", new Date().toISOString())
               .order("ends_at", { ascending: false })
           : Promise.resolve({ data: [], error: null }),
+        user
+          ? supabase
+              .from("tip_card_entitlements")
+              .select("tip_card_id,source_type")
+              .eq("user_id", user.id)
+              .is("revoked_at", null)
+          : Promise.resolve({ data: [], error: null }),
       ]);
     const firstError =
       statsResult.error ??
@@ -155,7 +172,8 @@ export function TipsterProfileClient() {
       cardResult.error ??
       favouriteResult.error ??
       purchaseResult.error ??
-      subscriptionResult.error;
+      subscriptionResult.error ??
+      entitlementResult.error;
     const loadedCards = (cardResult.data ?? []) as TipCard[];
     let loadedMeetings: RaceMeeting[] = [];
     let loadError = firstError?.message ?? "";
@@ -184,15 +202,19 @@ export function TipsterProfileClient() {
     setCards(loadedCards);
     setMeetings(loadedMeetings);
     setFavourite(Boolean(favouriteResult.data));
-    setOwnedCardIds(
-      ((purchaseResult.data ?? []) as Array<{ tip_card_id: string | null }>)
-        .map((purchase) => purchase.tip_card_id)
-        .filter((cardId): cardId is string => Boolean(cardId)),
-    );
+    setOwnedCardIds([
+      ...new Set([
+        ...((purchaseResult.data ?? []) as Array<{ tip_card_id: string | null }>)
+          .map((purchase) => purchase.tip_card_id)
+          .filter((cardId): cardId is string => Boolean(cardId)),
+        ...((entitlementResult.data ?? []) as Array<{ tip_card_id: string }>)
+          .map((entitlement) => entitlement.tip_card_id),
+      ]),
+    ]);
     setActiveSubscriptionEndsAt(subscriptionResult.data?.[0]?.ends_at ?? null);
     setError(loadError);
     setLoading(false);
-  }, []);
+  }, [suppliedTipsterSlug]);
 
   useEffect(() => {
     const timeoutId = window.setTimeout(() => {
@@ -252,6 +274,11 @@ export function TipsterProfileClient() {
 
   function requestMeetingPurchase(card: TipCard) {
     if (!requireClient("meeting")) {
+      return;
+    }
+
+    if (card.status !== "published" || !card.published_at) {
+      setError("Meeting cards can only be purchased after the tipster has published the tips.");
       return;
     }
 
@@ -363,10 +390,13 @@ export function TipsterProfileClient() {
         </Alert>
       ) : null}
 
-      <Card className="overflow-hidden border-brand-gold/30 bg-brand-purple-deep text-white">
+      <Card
+        className="overflow-hidden text-white"
+        style={tipsterThemePanelStyle(tipster)}
+      >
         <CardContent className="grid gap-8 p-7 lg:grid-cols-[1fr_auto] lg:items-center">
           <div>
-            <Badge className="bg-brand-gold text-brand-purple-deep">
+            <Badge style={tipsterThemeButtonStyle(tipster)}>
               <BadgeCheck className="size-3" />
               Verified tipster
             </Badge>
@@ -386,15 +416,31 @@ export function TipsterProfileClient() {
               </p>
             </div>
             <div className="rounded-lg border border-white/12 bg-white/8 p-4">
-              <p className="text-xs text-white/62">Settled tips</p>
+              <p className="text-xs text-white/62">Place strike rate</p>
+              <p className="mt-1 font-mono text-2xl font-bold">
+                {stats?.place_strike_rate === null ||
+                stats?.place_strike_rate === undefined
+                  ? "—"
+                  : `${Number(stats.place_strike_rate).toFixed(1)}%`}
+              </p>
+            </div>
+            <div className="rounded-lg border border-white/12 bg-white/8 p-4">
+              <p className="text-xs text-white/62">Settled winner tips</p>
               <p className="mt-1 font-mono text-2xl font-bold">
                 {stats?.settled_winner_tips ?? 0}
+              </p>
+            </div>
+            <div className="rounded-lg border border-white/12 bg-white/8 p-4">
+              <p className="text-xs text-white/62">Settled place selections</p>
+              <p className="mt-1 font-mono text-2xl font-bold">
+                {stats?.settled_place_tips ?? 0}
               </p>
             </div>
             <Button
               type="button"
               variant={favourite ? "default" : "outline"}
               className="col-span-2"
+              style={favourite ? tipsterThemeButtonStyle(tipster) : undefined}
               disabled={processing === "favourite"}
               onClick={() => void toggleFavourite()}
             >
@@ -413,26 +459,31 @@ export function TipsterProfileClient() {
         <BadgeCheck className="size-4" />
         <AlertTitle>Truthful performance reporting</AlertTitle>
         <AlertDescription>
-          Winner strike rate uses resulted races only. ROI remains hidden until
-          authoritative odds or dividends support a verified unit-stake calculation.
+          Winner strike rate uses officially resulted winner selections. Place strike rate
+          counts Place Selections finishing in the official top three. Every displayed rate
+          includes its settled sample size.
         </AlertDescription>
       </Alert>
 
       <section>
         <h2 className="flex items-center gap-2 font-heading text-2xl text-white">
-          <CalendarDays className="size-5 text-brand-gold" />
+          <CalendarDays className="size-5" style={tipsterThemeAccentStyle(tipster)} />
           Upcoming meeting cards
         </h2>
         <div className="mt-5 grid gap-4 lg:grid-cols-2">
           {availableCards.map((card) => {
             const meeting = meetingById.get(card.meeting_id);
+            const isFree = card.coin_price === 0;
+            const hasAccess = isFree || ownedCardIdSet.has(card.id);
 
             return (
-              <Card key={card.id}>
+              <Card key={card.id} style={tipsterThemeCardStyle(tipster)}>
                 <CardHeader>
                   <div className="flex flex-wrap gap-2">
-                    <Badge>{card.status.replace("_", " ")}</Badge>
-                    <Badge variant="outline">{formatCredits(card.coin_price)}</Badge>
+                    <Badge style={tipsterThemeButtonStyle(tipster)}>
+                      {card.status.replace("_", " ")}
+                    </Badge>
+                    <Badge variant="outline">{formatMeetingCardPrice(card.coin_price)}</Badge>
                   </div>
                   <CardTitle>{card.title}</CardTitle>
                   <CardDescription>
@@ -445,18 +496,38 @@ export function TipsterProfileClient() {
                   <p className="text-sm text-muted-foreground">
                     {card.summary || "Complete premium meeting analysis."}
                   </p>
-                  <Button
-                    className="mt-5"
-                    disabled={processing === card.id}
-                    onClick={() => requestMeetingPurchase(card)}
-                  >
-                    {processing === card.id ? (
-                      <Loader2 className="size-4 animate-spin" />
-                    ) : (
-                      <CreditCard className="size-4" />
-                    )}
-                    {ownedCardIdSet.has(card.id) ? "Already unlocked" : "Unlock full meeting"}
-                  </Button>
+                  {hasAccess && card.status === "published" ? (
+                    <Button asChild className="mt-5" style={tipsterThemeButtonStyle(tipster)}>
+                      <Link href={`/client/?card=${card.id}`}>
+                        <ShieldCheck className="size-4" />
+                        {isFree ? "Open free meeting card" : "View full meeting card"}
+                      </Link>
+                    </Button>
+                  ) : hasAccess ? (
+                    <Button className="mt-5" disabled>
+                      <ShieldCheck className="size-4" />
+                      Included with your access
+                    </Button>
+                  ) : card.status !== "published" ? (
+                    <Button className="mt-5" disabled>
+                      <CalendarDays className="size-4" />
+                      Tips not published yet
+                    </Button>
+                  ) : (
+                    <Button
+                      className="mt-5"
+                      style={tipsterThemeButtonStyle(tipster)}
+                      disabled={processing === card.id}
+                      onClick={() => requestMeetingPurchase(card)}
+                    >
+                      {processing === card.id ? (
+                        <Loader2 className="size-4 animate-spin" />
+                      ) : (
+                        <CreditCard className="size-4" />
+                      )}
+                      Unlock full meeting
+                    </Button>
+                  )}
                 </CardContent>
               </Card>
             );
@@ -471,7 +542,7 @@ export function TipsterProfileClient() {
 
       <section>
         <h2 className="flex items-center gap-2 font-heading text-2xl text-white">
-          <ShieldCheck className="size-5 text-brand-cyan" />
+          <ShieldCheck className="size-5" style={tipsterThemeAccentStyle(tipster)} />
           Subscription options
         </h2>
         <p className="mt-2 text-sm text-muted-foreground">
@@ -480,7 +551,7 @@ export function TipsterProfileClient() {
         </p>
         <div className="mt-5 grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
           {packages.map((tipsterPackage) => (
-            <Card key={tipsterPackage.id}>
+            <Card key={tipsterPackage.id} style={tipsterThemeCardStyle(tipster)}>
               <CardHeader>
                 <Badge className="w-fit" variant="outline">
                   {tipsterPackage.duration_months} month
@@ -494,6 +565,7 @@ export function TipsterProfileClient() {
               <CardContent>
                 <Button
                   className="w-full"
+                  style={tipsterThemeButtonStyle(tipster)}
                   disabled={processing === tipsterPackage.id}
                   onClick={() => requestSubscriptionPurchase(tipsterPackage)}
                 >

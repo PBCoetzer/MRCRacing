@@ -7,7 +7,7 @@ export default function TermsPage() {
     <InfoPage
       badge="Terms"
       title="Terms and conditions"
-      description="Terms for accounts, Credits, digital racing content, and participation on MRC Racing Tips. Effective 20 August 2026."
+      description="Terms for accounts, Credits, digital racing content, and participation on MRC Racing Tips. Effective 3 September 2026."
       sections={[
         {
           title: "Website operator",
@@ -15,15 +15,15 @@ export default function TermsPage() {
         },
         {
           title: "Service scope",
-          body: <p>MRC Racing Tips provides horse-racing analysis, tipster content, ratings, selections, opinions, factual race information, and result history for informational purposes. MRC does not accept bets, hold betting deposits, or pay gambling winnings.</p>,
+          body: <p>MRC Racing Tips provides horse-racing analysis, tipster content, ratings, selections, opinions, factual race information, and result history for informational purposes.</p>,
         },
         {
           title: "Credits",
-          body: <p>Purchased Credits and promotional Reward Credits unlock eligible digital content. They have no cash value, cannot be withdrawn, transferred outside the platform, or used to place bets. Purchased Credits are issued only after a payment provider confirms payment. Reward Credits may be issued through an advertised package or promotion, remain separately recorded, and do not create tipster earnings or horse-care contribution accrual.</p>,
+          body: <p>Purchased Credits and promotional Reward Credits unlock eligible digital content. They have no cash value and cannot be withdrawn or transferred outside the platform. Purchased Credits are issued only after a payment provider confirms payment. Reward Credits may be issued through an advertised package or promotion, remain separately recorded, and do not create tipster earnings or horse-care contribution accrual.</p>,
         },
         {
           title: "No guarantee",
-          body: <p>Past performance does not guarantee future outcomes. Users make decisions independently and at their own risk. You must be at least 18 years old and comply with the laws that apply to you.</p>,
+          body: <p>Past performance does not guarantee future outcomes. Users make decisions independently and remain responsible for complying with the laws that apply to them.</p>,
         },
         {
           title: "Content availability and conduct",

@@ -1,6 +1,5 @@
 "use client";
 
-import Link from "next/link";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import {
   AlertTriangle,
@@ -25,6 +24,11 @@ import type {
   TipsterPerformanceStats,
   TipsterProfile,
 } from "@/lib/racing/types";
+import {
+  tipsterThemeButtonStyle,
+  tipsterThemeCardStyle,
+  tipsterThemePanelStyle,
+} from "@/lib/racing/tipster-theme";
 import { createClient } from "@/lib/supabase/client";
 
 function TipsterCard({
@@ -39,10 +43,10 @@ function TipsterCard({
   onFavourite: (tipsterId: string, favourite: boolean) => void;
 }) {
   return (
-    <Card className="flex h-full flex-col">
+    <Card className="flex h-full flex-col" style={tipsterThemePanelStyle(tipster)}>
       <CardHeader>
         <div className="flex items-start justify-between gap-3">
-          <Badge className="w-fit">
+          <Badge className="w-fit" style={tipsterThemeButtonStyle(tipster)}>
             <BadgeCheck className="size-3" />
             Verified
           </Badge>
@@ -62,7 +66,7 @@ function TipsterCard({
         </CardDescription>
       </CardHeader>
       <CardContent className="mt-auto">
-        <div className="grid grid-cols-2 gap-3 rounded-lg border bg-background/45 p-3">
+        <div className="grid grid-cols-2 gap-3 rounded-lg border p-3" style={tipsterThemeCardStyle(tipster)}>
           <div>
             <p className="text-xs text-muted-foreground">Winner strike rate</p>
             <p className="mt-1 font-mono text-xl font-bold">
@@ -73,17 +77,32 @@ function TipsterCard({
             </p>
           </div>
           <div>
-            <p className="text-xs text-muted-foreground">Settled sample</p>
+            <p className="text-xs text-muted-foreground">Place strike rate</p>
+            <p className="mt-1 font-mono text-xl font-bold">
+              {stats?.place_strike_rate === null ||
+              stats?.place_strike_rate === undefined
+                ? "—"
+                : `${Number(stats.place_strike_rate).toFixed(1)}%`}
+            </p>
+          </div>
+          <div>
+            <p className="text-xs text-muted-foreground">Settled winner tips</p>
             <p className="mt-1 font-mono text-xl font-bold">
               {stats?.settled_winner_tips ?? 0}
             </p>
           </div>
+          <div>
+            <p className="text-xs text-muted-foreground">Settled place selections</p>
+            <p className="mt-1 font-mono text-xl font-bold">
+              {stats?.settled_place_tips ?? 0}
+            </p>
+          </div>
         </div>
         <p className="mt-3 text-xs text-muted-foreground">
-          ROI is not shown until authoritative dividends support a verified calculation.
+          Place strike rate counts official top-three finishes across settled selections.
         </p>
-        <Button asChild className="mt-4 w-full">
-          <Link href={`/tipsters/${tipster.slug}/`}>View profile</Link>
+        <Button asChild className="mt-4 w-full" style={tipsterThemeButtonStyle(tipster)}>
+          <a href={`/tipsters/${tipster.slug}/`}>View profile</a>
         </Button>
       </CardContent>
     </Card>
@@ -115,14 +134,15 @@ export function TipsterDirectoryClient() {
       supabase
         .from("tipsters")
         .select(
-          "id,slug,user_id,display_name,biography,photo_path,is_verified,ranking,commission_rate_override",
+          "id,slug,user_id,display_name,biography,photo_path,is_verified,is_public,ranking,commission_rate_override,theme_primary_color,theme_secondary_color,theme_surface_color",
         )
         .eq("is_verified", true)
+        .eq("is_public", true)
         .order("ranking", { ascending: true, nullsFirst: false }),
       supabase
         .from("tipster_performance_stats")
         .select(
-          "tipster_id,published_winner_tips,settled_winner_tips,winner_hits,winner_strike_rate,roi_percent,updated_at",
+          "tipster_id,published_winner_tips,settled_winner_tips,winner_hits,winner_strike_rate,published_place_tips,settled_place_tips,place_hits,place_strike_rate,roi_percent,updated_at",
         ),
       user
         ? supabase
@@ -236,7 +256,7 @@ export function TipsterDirectoryClient() {
             Discover horse-racing tipsters
           </h1>
           <p className="mt-4 max-w-3xl text-lg leading-8 text-white/72">
-            Compare settled winner strike rates, meeting prices, and each tipster&apos;s
+            Compare settled winner and place strike rates, meeting prices, and each tipster&apos;s
             own non-renewing subscription packages.
           </p>
         </div>
@@ -271,10 +291,10 @@ export function TipsterDirectoryClient() {
               <section>
                 <h2 className="flex items-center gap-2 font-heading text-2xl text-white">
                   <Trophy className="size-5 text-brand-gold" />
-                  Best verified winner strike rates
+                  Best verified tipster strike rates
                 </h2>
                 <p className="mt-2 text-sm text-muted-foreground">
-                  Ranked only from resulted races, with the settled sample shown.
+                  Ranked from resulted races, with winner and place samples shown.
                 </p>
                 <div className="mt-5">{renderGrid(topTipsters)}</div>
               </section>

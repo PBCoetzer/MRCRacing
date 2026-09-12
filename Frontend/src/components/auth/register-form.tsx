@@ -16,7 +16,11 @@ import {
 } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import { CaptchaField, turnstileSiteKey } from "@/components/auth/captcha-field";
+import {
+  CaptchaField,
+  isCaptchaChallengeError,
+  turnstileSiteKey,
+} from "@/components/auth/captcha-field";
 import { createClient } from "@/lib/supabase/client";
 import { supabaseConfigMessage } from "@/lib/supabase/config";
 import { getSiteUrl } from "@/lib/site-url";
@@ -26,11 +30,10 @@ type FormState = {
   message: string;
 };
 
-const currentTermsVersion = "2026-08-20-premium-content";
-
 export function RegisterForm() {
   const router = useRouter();
   const formRef = useRef<HTMLFormElement>(null);
+  const submitLockRef = useRef(false);
   const turnstileRef = useRef<TurnstileInstance>(null);
   const [formState, setFormState] = useState<FormState>({
     kind: "idle",
@@ -84,8 +87,14 @@ export function RegisterForm() {
       return;
     }
 
-    if (!captchaToken) {
-      showResult("error", "Please complete the human verification before registering.");
+    const currentCaptchaToken = turnstileRef.current?.getResponse() || captchaToken;
+
+    if (!currentCaptchaToken || turnstileRef.current?.isExpired() === true) {
+      resetCaptcha();
+      showResult(
+        "error",
+        "Human verification expired and has been refreshed. Please complete it again before registering.",
+      );
       return;
     }
 
@@ -100,20 +109,33 @@ export function RegisterForm() {
     const confirmedOver18 = formData.get("confirmedOver18") === "on";
 
     if (!acceptedTerms || !confirmedOver18) {
-      showResult("error", "Please confirm the terms and 18+ responsible-use declaration.");
+      showResult("error", "Please accept the platform terms and confirm the age declaration.");
       return;
     }
 
+    if (submitLockRef.current) {
+      return;
+    }
+
+    submitLockRef.current = true;
     setIsSubmitting(true);
     setFormState({ kind: "idle", message: "" });
 
     try {
+      const { data: currentTermsVersion, error: termsVersionError } = await supabase.rpc(
+        "get_current_premium_terms_version",
+      );
+
+      if (termsVersionError || typeof currentTermsVersion !== "string" || !currentTermsVersion) {
+        throw new Error("The current Terms version could not be verified. Please try again.");
+      }
+
       const { data, error } = await supabase.auth.signUp({
         email,
         password,
         options: {
           emailRedirectTo: `${getSiteUrl()}/auth/callback/`,
-          captchaToken,
+          captchaToken: currentCaptchaToken,
           data: {
             accepted_terms: acceptedTerms,
             accepted_terms_version: currentTermsVersion,
@@ -151,9 +173,14 @@ export function RegisterForm() {
       resetCaptcha();
       showResult(
         "error",
-        error instanceof Error ? error.message : "Registration failed. Please try again.",
+        isCaptchaChallengeError(error)
+          ? "Human verification expired or was already submitted. It has been refreshed; please complete it and press Create account once more."
+          : error instanceof Error
+            ? error.message
+            : "Registration failed. Please try again.",
       );
     } finally {
+      submitLockRef.current = false;
       setIsSubmitting(false);
     }
   }
@@ -200,20 +227,19 @@ export function RegisterForm() {
           />
         </div>
         <label className="flex items-start gap-3 rounded-lg border border-brand-gold/25 bg-background/60 p-3 text-sm text-muted-foreground">
-          <input name="confirmedOver18" type="checkbox" required className="mt-1 accent-primary" />
-          I confirm that I am 18 or older and understand that betting decisions remain my responsibility.
-        </label>
-        <label className="flex items-start gap-3 rounded-lg border border-brand-gold/25 bg-background/60 p-3 text-sm text-muted-foreground">
           <input name="acceptedTerms" type="checkbox" required className="mt-1 accent-primary" />
           <span>
             I accept the MRC Racing Tips <Link href="/terms/" className="text-brand-cyan underline">terms</Link>,{" "}
             <Link href="/privacy/" className="text-brand-cyan underline">privacy policy</Link>,{" "}
             <Link href="/refund-policy/" className="text-brand-cyan underline">refund policy</Link>,{" "}
-            <Link href="/cancellation-policy/" className="text-brand-cyan underline">cancellation policy</Link>, and{" "}
-            <Link href="/responsible-gambling/" className="text-brand-cyan underline">responsible gambling guidance</Link>.
+            and <Link href="/cancellation-policy/" className="text-brand-cyan underline">cancellation policy</Link>.
             I understand that paid meeting-card content is licensed personally, may be
             visibly watermarked, and may not be shared, republished, or resold.
           </span>
+        </label>
+        <label className="flex items-start gap-3 rounded-lg border border-brand-gold/25 bg-background/60 p-3 text-sm text-muted-foreground">
+          <input name="confirmedOver18" type="checkbox" required className="mt-1 accent-primary" />
+          <span>I confirm that I am 18 years old or older.</span>
         </label>
         <CaptchaField
           ref={turnstileRef}

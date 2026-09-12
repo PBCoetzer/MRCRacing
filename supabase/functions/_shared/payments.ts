@@ -16,7 +16,8 @@ export function corsHeaders(request: Request) {
     "Access-Control-Allow-Origin": allowedOrigins.has(origin)
       ? origin
       : "https://www.mrcracing.co.za",
-    "Access-Control-Allow-Headers": "authorization, apikey, content-type, x-idempotency-key",
+    "Access-Control-Allow-Headers":
+      "authorization, x-client-info, apikey, content-type, x-retry-count, x-idempotency-key",
     "Access-Control-Allow-Methods": "GET, POST, OPTIONS",
     Vary: "Origin",
   };
@@ -124,6 +125,156 @@ export async function signOzow(
   return sha512Hex(`${orderedValues.join("")}${privateKey}`.toLowerCase());
 }
 
+type OzowPaymentRequestPayload = {
+  errorMessage?: unknown;
+  ErrorMessage?: unknown;
+  title?: unknown;
+  errors?: unknown;
+  paymentRequestId?: unknown;
+  PaymentRequestId?: unknown;
+  url?: unknown;
+  Url?: unknown;
+};
+
+export type OzowPaymentRequestResult = {
+  paymentRequestId: string;
+  url: string;
+};
+
+function sanitizedOzowMessage(value: unknown) {
+  if (typeof value !== "string") {
+    return "";
+  }
+
+  return value.replace(/[\r\n\t]+/g, " ").replace(/\s+/g, " ").trim()
+    .slice(0, 240);
+}
+
+function ozowProviderMessage(payload: OzowPaymentRequestPayload) {
+  const directMessage = sanitizedOzowMessage(
+    payload.errorMessage ?? payload.ErrorMessage,
+  );
+
+  if (directMessage) {
+    return directMessage;
+  }
+
+  if (payload.errors && typeof payload.errors === "object") {
+    const validationMessages = Object.entries(
+      payload.errors as Record<string, unknown>,
+    ).flatMap(([field, value]) => {
+      const messages = Array.isArray(value) ? value : [value];
+
+      return messages.map((message) => {
+        const safeMessage = sanitizedOzowMessage(message);
+        return safeMessage ? `${field}: ${safeMessage}` : "";
+      });
+    }).filter(Boolean);
+
+    if (validationMessages.length) {
+      return validationMessages.join("; ").slice(0, 240);
+    }
+  }
+
+  return sanitizedOzowMessage(payload.title);
+}
+
+export async function createOzowPaymentRequest(
+  fields: Record<string, string>,
+  apiKey: string,
+  fetcher: typeof fetch = fetch,
+): Promise<OzowPaymentRequestResult> {
+  const response = await fetcher(
+    "https://api.ozow.com/PostPaymentRequest",
+    {
+      method: "POST",
+      headers: {
+        Accept: "application/json",
+        ApiKey: apiKey,
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify(fields),
+      signal: AbortSignal.timeout(15_000),
+    },
+  );
+  const responseText = await response.text();
+  let payload: OzowPaymentRequestPayload = {};
+
+  try {
+    payload = responseText ? JSON.parse(responseText) : {};
+  } catch {
+    throw new Error(
+      `Ozow returned an unreadable payment response (HTTP ${response.status}).`,
+    );
+  }
+
+  const providerMessage = ozowProviderMessage(payload);
+
+  if (!response.ok || providerMessage) {
+    throw new Error(
+      providerMessage
+        ? `Ozow rejected checkout: ${providerMessage}`
+        : `Ozow rejected the payment request (HTTP ${response.status}). Check the Site Code and API Key in Ozow Merchant Details.`,
+    );
+  }
+
+  const paymentRequestId = String(
+    payload.paymentRequestId ?? payload.PaymentRequestId ?? "",
+  ).trim();
+  const urlValue = String(payload.url ?? payload.Url ?? "").trim();
+
+  if (!paymentRequestId || !urlValue) {
+    throw new Error("Ozow did not return a secure payment URL.");
+  }
+
+  let paymentUrl: URL;
+
+  try {
+    paymentUrl = new URL(urlValue);
+  } catch {
+    throw new Error("Ozow returned an invalid payment URL.");
+  }
+
+  if (paymentUrl.protocol !== "https:" || paymentUrl.hostname !== "pay.ozow.com") {
+    throw new Error("Ozow returned an untrusted payment URL.");
+  }
+
+  return {
+    paymentRequestId,
+    url: paymentUrl.toString(),
+  };
+}
+
+export function validateOzowPostFields(fields: Array<[string, string]>) {
+  const maximumLengths: Record<string, number> = {
+    SiteCode: 50,
+    CountryCode: 2,
+    CurrencyCode: 3,
+    TransactionReference: 50,
+    BankReference: 20,
+    Optional1: 50,
+    Optional2: 50,
+    Optional3: 50,
+    Optional4: 50,
+    Optional5: 50,
+    Customer: 100,
+    CancelUrl: 50,
+    ErrorUrl: 150,
+    SuccessUrl: 150,
+    NotifyUrl: 150,
+  };
+
+  for (const [name, value] of fields) {
+    const maximumLength = maximumLengths[name];
+
+    if (maximumLength && value.length > maximumLength) {
+      throw new Error(
+        `Ozow ${name} exceeds the permitted ${maximumLength} characters.`,
+      );
+    }
+  }
+}
+
 export function safeMoney(cents: number) {
   return (cents / 100).toFixed(2);
 }
@@ -225,4 +376,29 @@ export function providerReferenceFromPayload(
     payload.TransactionId ||
     payload.transactionId ||
     "";
+}
+
+export function selectOzowVerificationRecord(
+  payload: unknown,
+  transactionReference: string,
+  transactionId: string,
+) {
+  const records = Array.isArray(payload) ? payload : [payload];
+
+  return records.find((record): record is Record<string, unknown> => {
+    if (!record || typeof record !== "object") {
+      return false;
+    }
+
+    const item = record as Record<string, unknown>;
+    const verifiedReference = String(
+      item.transactionReference ?? item.TransactionReference ?? "",
+    );
+    const verifiedTransactionId = String(
+      item.transactionId ?? item.TransactionId ?? "",
+    );
+
+    return verifiedReference === transactionReference &&
+      (!verifiedTransactionId || verifiedTransactionId === transactionId);
+  }) ?? null;
 }

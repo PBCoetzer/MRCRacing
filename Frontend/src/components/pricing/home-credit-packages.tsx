@@ -18,7 +18,7 @@ export function HomeCreditPackages() {
   const router = useRouter();
   const { packages, loading, error } = useActiveCreditPackages();
 
-  function addToBasket(creditPackage: CreditPackage) {
+  function addToCart(creditPackage: CreditPackage) {
     try {
       const cart = addCreditPackageToCart(readCreditCart(), creditPackage.id);
       writeCreditCart(cart);
@@ -40,7 +40,7 @@ export function HomeCreditPackages() {
       <CreditPackageCatalog
         packages={packages}
         loading={loading}
-        onAdd={addToBasket}
+        onAdd={addToCart}
       />
     </>
   );

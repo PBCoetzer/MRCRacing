@@ -1,7 +1,7 @@
 import type { Metadata } from "next";
 
 export const canonicalSiteUrl = "https://www.mrcracing.co.za";
-export const siteName = "MRC Racing Tips";
+export const siteName = "MrC Racing Tips";
 export const defaultDescription =
   "South African horse-racing tips, verified tipster performance, factual racecards, results history, and responsible racing analysis.";
 export const defaultShareImage = "/images/mrc-racing-og.png";

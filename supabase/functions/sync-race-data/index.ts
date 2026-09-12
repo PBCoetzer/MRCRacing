@@ -12,6 +12,8 @@ import {
   type SearchContext,
   type WorkerConfiguration,
 } from "./providers.ts";
+import { mrcRaceDisplayTitle } from "../_shared/race-presentation.ts";
+import { inferRaceStatus } from "./status.ts";
 
 type JsonRecord = Record<string, unknown>;
 type ServiceClient = SupabaseClient;
@@ -98,6 +100,7 @@ type CalendarExtraction = {
 
 type ScheduleRace = {
   raceNumber: number;
+  sourceTitle?: string | null;
   title: string;
   startsAt: string;
   distanceMetres: number | null;
@@ -125,6 +128,7 @@ type NormalizedRunner = {
 type NormalizedRace = {
   externalId: string;
   raceNumber: number;
+  sourceTitle: string | null;
   title: string;
   startsAt: string;
   distanceMetres: number | null;
@@ -139,7 +143,7 @@ type ExtractedRunner = Omit<NormalizedRunner, "externalId">;
 
 type RaceDetailExtraction = {
   meeting: CalendarMeeting;
-  race: Omit<NormalizedRace, "externalId" | "sourceUpdatedAt" | "runners"> & {
+  race: Omit<NormalizedRace, "externalId" | "sourceTitle" | "sourceUpdatedAt" | "runners"> & {
     runners: ExtractedRunner[];
   };
   conflicts: Conflict[];
@@ -511,12 +515,15 @@ function normalizeSchedule(extraction: MeetingScheduleExtraction) {
       throw new Error(`Race ${race.raceNumber} does not start on the meeting date in Johannesburg.`);
     }
 
+    const sourceTitle = race.title.trim() || null;
+    const raceClass = race.raceClass?.trim() || null;
     return {
       raceNumber: race.raceNumber,
-      title: race.title.trim() || `Race ${race.raceNumber}`,
+      sourceTitle,
+      title: mrcRaceDisplayTitle(sourceTitle, race.raceNumber, raceClass),
       startsAt: new Date(race.startsAt).toISOString(),
       distanceMetres: race.distanceMetres == null ? null : Math.round(race.distanceMetres),
-      raceClass: race.raceClass?.trim() || null,
+      raceClass,
       status: race.status,
     };
   }).sort((left, right) => left.raceNumber - right.raceNumber);
@@ -614,15 +621,19 @@ function normalizeRaceDetail(extraction: RaceDetailExtraction, expected?: {
     throw new Error("Race must contain between one and sixty runners.");
   }
 
+  const sourceTitle = race.title.trim() || null;
+  const raceClass = race.raceClass?.trim() || null;
+  const resultSummary = race.resultSummary?.trim() || null;
   const normalizedRace: NormalizedRace = {
     externalId: normalizedRaceId,
     raceNumber: race.raceNumber,
-    title: race.title.trim() || `Race ${race.raceNumber}`,
+    sourceTitle,
+    title: mrcRaceDisplayTitle(sourceTitle, race.raceNumber, raceClass),
     startsAt: new Date(race.startsAt).toISOString(),
     distanceMetres: race.distanceMetres == null ? null : Math.round(race.distanceMetres),
-    raceClass: race.raceClass?.trim() || null,
-    status: race.status,
-    resultSummary: race.resultSummary?.trim() || null,
+    raceClass,
+    status: inferRaceStatus(race.status, resultSummary, runners),
+    resultSummary,
     sourceUpdatedAt: new Date().toISOString(),
     runners,
   };
@@ -845,12 +856,12 @@ function buildWeeklyPrompt(task: RaceFeedTask, settings: FeedSettings) {
 
 function buildSchedulePrompt(task: RaceFeedTask) {
   const additional = String(task.task_payload.additionalInformation ?? "").trim();
-  return `Find the complete race schedule for the South African horse-racing meeting at ${task.venue} on ${task.meeting_date}. Return every race number, local start time, distance, race title/class and status. Do not return runners, odds or betting products. Cross-check multiple independent public sources. ${additional}`.trim();
+  return `Find the complete race schedule for the South African horse-racing meeting at ${task.venue} on ${task.meeting_date}. Return every race number, local start time, distance, factual race class/conditions and status. Exclude sponsors, advertisements, slogans, phone numbers, hashtags, URLs and source branding from race titles. Do not return runners, odds or betting products. Cross-check multiple independent public sources. ${additional}`.trim();
 }
 
 function buildRacePrompt(task: RaceFeedTask, resultOnly = false) {
   const additional = String(task.task_payload.additionalInformation ?? "").trim();
-  return `Find ${resultOnly ? "the official result and current runner details" : "the complete current runner list"} for ${task.venue} Race ${task.race_number} on ${task.meeting_date}. Return race time, distance, title/class, saddle number, horse, jockey, trainer, draw, carried weight, scratch/withdrawal status${resultOnly ? ", result summary and official finishing positions" : ""}. Use null when a factual field is unavailable. Do not return odds, dividends, payouts or betting controls. Cross-check multiple independent public sources and explicitly describe contradictions. ${additional}`.trim();
+  return `Find ${resultOnly ? "the official result and current runner details" : "the complete current runner list"} for ${task.venue} Race ${task.race_number} on ${task.meeting_date}. Return race time, distance, factual race class/conditions, saddle number, horse, jockey, trainer, draw, carried weight, scratch/withdrawal status${resultOnly ? ", result summary and official finishing positions" : ""}. Exclude sponsors, advertisements, slogans, phone numbers, hashtags, URLs and source branding from race titles. Use null when a factual field is unavailable. Do not return odds, dividends, payouts or betting controls. Cross-check multiple independent public sources and explicitly describe contradictions. ${additional}`.trim();
 }
 
 async function insertFragment(
@@ -1168,6 +1179,7 @@ async function handleMeetingSchedule(
   const externalId = meetingExternalId(meeting.venue, meeting.meetingDate);
   const discoveredRaces = discovered.times.map((time, index) => ({
     raceNumber: index + 1,
+    sourceTitle: null,
     title: "",
     startsAt: new Date(`${meeting.meetingDate}T${time}:00+02:00`).toISOString(),
     distanceMetres: null,
@@ -1241,6 +1253,7 @@ async function assembleStagedMeeting(
     const detail = detailsByRace.get(race.raceNumber)!.race;
     return {
       ...detail,
+      sourceTitle: race.sourceTitle || detail.sourceTitle,
       title: race.title || detail.title,
       startsAt: race.startsAt,
       distanceMetres: race.distanceMetres ?? detail.distanceMetres,
@@ -1405,6 +1418,7 @@ async function loadMeetingSnapshot(serviceClient: ServiceClient, meetingId: stri
   const races: NormalizedRace[] = (fixtures ?? []).map((fixture) => ({
     externalId: String(fixture.external_id ?? raceExternalId(String(meeting.external_id), Number(fixture.race_number))),
     raceNumber: Number(fixture.race_number),
+    sourceTitle: null,
     title: String(fixture.title),
     startsAt: new Date(String(fixture.starts_at)).toISOString(),
     distanceMetres: fixture.distance_m == null ? null : Number(fixture.distance_m),
@@ -1877,7 +1891,7 @@ async function extractBestSchedule(
       const extraction = await extractStructured<MeetingScheduleExtraction>(
         configuration,
         scheduleSchema,
-        `Extract only races explicitly detailed for exactly ${venue}, South Africa, on ${meetingDate}. A page may list other race times in navigation: never apply the current page title or distance to those navigation times. Include a race only when the supplied evidence supports that same race number, start time, title and distance. Do not include runners and do not infer missing facts.`,
+        `Extract only races explicitly detailed for exactly ${venue}, South Africa, on ${meetingDate}. A page may list other race times in navigation: never apply the current page title or distance to those navigation times. Include a race only when the supplied evidence supports that same race number, start time, factual class and distance. Exclude sponsors, advertisements, slogans, phone numbers, hashtags, URLs and source branding from the title. Do not include runners and do not infer missing facts.`,
         searchFromEvidence(evidence),
         {
           maxCompletionTokens: 650,
@@ -1933,10 +1947,6 @@ async function extractBestSchedule(
   if (sortedRaces.length < 6 || sortedRaces.some((race, index) => race.raceNumber !== index + 1)) {
     throw new Error("The merged schedule is incomplete or has non-contiguous race numbers.");
   }
-  const normalizedTitles = sortedRaces.map((race) => slugify(race.title));
-  if (new Set(normalizedTitles).size !== normalizedTitles.length) {
-    throw new Error("The merged schedule repeats a race title and may contain inferred navigation data.");
-  }
   const normalized = {
     meeting: { ...first, races: sortedRaces },
     conflicts,
@@ -1969,7 +1979,7 @@ async function extractBestRaceDetail(
         await extractStructured<RaceDetailExtraction>(
           configuration,
           raceDetailSchema,
-          `Extract exactly race ${expected.raceNumber} at ${expected.venue}, South Africa, on ${expected.meetingDate}, including every evidenced runner. Racecard pages may repeat each runner in desktop and mobile layouts: return each saddle number exactly once. Do not infer missing runners, jockeys, trainers, draws, weights, scratches or results.`,
+          `Extract exactly race ${expected.raceNumber} at ${expected.venue}, South Africa, on ${expected.meetingDate}, including every evidenced runner. Return only a factual race class/condition as the title; exclude sponsors, advertisements, slogans, phone numbers, hashtags, URLs and source branding. Racecard pages may repeat each runner in desktop and mobile layouts: return each saddle number exactly once. Do not infer missing runners, jockeys, trainers, draws, weights, scratches or results.`,
           searchFromEvidence([evidence]),
           {
             maxCompletionTokens: 1_200,
@@ -2503,17 +2513,34 @@ Deno.serve(async (request: Request) => {
     ? requestBody.trigger === "retry" ? "retry" : "manual"
     : "cron";
   const workerId = `sync-race-data:${crypto.randomUUID()}`;
-  const claimRpc = ["result_refresh", "results"].includes(hermesDelegationMode())
-    ? "claim_race_feed_result_task_plan"
-    : "claim_race_feed_task_plan";
-  const { data: claimed, error: claimError } = await serviceClient.rpc(claimRpc, {
-    p_worker_id: workerId,
-    p_trigger: trigger,
-  });
+  const { data: resultClaim, error: resultClaimError } = await serviceClient.rpc(
+    "claim_race_feed_result_task_plan",
+    {
+      p_worker_id: workerId,
+      p_trigger: trigger,
+    },
+  );
 
-  if (claimError) {
-    return jsonResponse(request, { error: sanitizeError(claimError) }, 500);
+  if (resultClaimError) {
+    return jsonResponse(request, { error: sanitizeError(resultClaimError) }, 500);
   }
+
+  let claimed = resultClaim;
+  if (!claimed) {
+    const { data: regularClaim, error: regularClaimError } = await serviceClient.rpc(
+      "claim_race_feed_task_plan",
+      {
+        p_worker_id: workerId,
+        p_trigger: trigger,
+      },
+    );
+
+    if (regularClaimError) {
+      return jsonResponse(request, { error: sanitizeError(regularClaimError) }, 500);
+    }
+    claimed = regularClaim;
+  }
+
   if (!claimed) {
     return jsonResponse(request, { status: "idle", message: "No race-feed task is due." });
   }

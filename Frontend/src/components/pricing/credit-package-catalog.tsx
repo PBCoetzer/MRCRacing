@@ -132,7 +132,7 @@ export function CreditPackageCatalog({
                 onClick={() => onAdd(creditPackage)}
               >
                 <ShoppingCart className="size-4" />
-                Add to basket
+                Add to Shopping Cart
               </Button>
             </div>
           </CardContent>

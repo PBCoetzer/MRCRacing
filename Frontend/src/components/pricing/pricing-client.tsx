@@ -2,10 +2,11 @@
 
 import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
+import { FunctionsHttpError } from "@supabase/supabase-js";
 import {
   AlertTriangle,
+  ArrowRight,
   BadgeCheck,
-  Banknote,
   Building2,
   CheckCircle2,
   CreditCard,
@@ -14,7 +15,6 @@ import {
   Minus,
   Plus,
   ShoppingCart,
-  Store,
   Ticket,
   Trash2,
   WalletCards,
@@ -42,11 +42,39 @@ import {
 } from "@/lib/credit-commerce";
 import { createClient } from "@/lib/supabase/client";
 
-type Provider = "payfast" | "ozow";
+type Provider = "ozow";
+
+const checkoutProviders = [
+  {
+    id: "ozow",
+    title: "Ozow Pay by Bank",
+    description: "Pay securely from a supported South African bank.",
+    status: "Available now",
+    enabled: true,
+    icon: Building2,
+  },
+  {
+    id: "vouchers",
+    title: "Vouchers",
+    description: "1Voucher, OTT Voucher and Blu Voucher support is being prepared.",
+    status: "Coming soon",
+    enabled: false,
+    icon: Ticket,
+  },
+  {
+    id: "paystack",
+    title: "Paystack",
+    description: "Card and alternative payment support is planned for a future release.",
+    status: "Planned",
+    enabled: false,
+    icon: CreditCard,
+  },
+] as const;
 
 type CheckoutResponse = {
-  actionUrl: string;
-  fields: Record<string, string>;
+  actionUrl?: string;
+  redirectUrl?: string;
+  fields?: Record<string, string>;
   paymentId: string;
 };
 
@@ -68,6 +96,22 @@ function submitProviderForm(actionUrl: string, fields: Record<string, string>) {
   form.submit();
 }
 
+async function getCheckoutErrorMessage(error: unknown) {
+  if (error instanceof FunctionsHttpError) {
+    const payload = await error.context.json().catch(() => null) as
+      | { error?: unknown }
+      | null;
+
+    if (typeof payload?.error === "string" && payload.error.trim()) {
+      return payload.error;
+    }
+  }
+
+  return error instanceof Error
+    ? error.message
+    : "Checkout could not be started.";
+}
+
 export function PricingClient() {
   const router = useRouter();
   const { packages, loading, error: packageError } = useActiveCreditPackages();
@@ -75,6 +119,8 @@ export function PricingClient() {
   const [error, setError] = useState("");
   const [cart, setCart] = useState<CreditCartState>({});
   const [cartLoaded, setCartLoaded] = useState(false);
+  const [checkoutOpen, setCheckoutOpen] = useState(false);
+  const [selectedProvider, setSelectedProvider] = useState<Provider>("ozow");
 
   useEffect(() => {
     const timeoutId = window.setTimeout(() => {
@@ -136,6 +182,23 @@ export function PricingClient() {
     0,
   );
 
+  function openCheckout() {
+    setError("");
+
+    if (!cartItems.length) {
+      setError("Add at least one Credit package to your Shopping Cart.");
+      return;
+    }
+
+    setCheckoutOpen(true);
+    window.requestAnimationFrame(() => {
+      document.getElementById("payment-methods")?.scrollIntoView({
+        behavior: "smooth",
+        block: "start",
+      });
+    });
+  }
+
   async function startCheckout(provider: Provider) {
     const supabase = createClient();
 
@@ -146,14 +209,14 @@ export function PricingClient() {
 
     if (!paymentsEnabled) {
       setError(
-        "Online Credit purchases are not live yet. PayFast and Ozow will be enabled after the merchant credentials are approved.",
+        "Online Credit purchases are not live yet. Ozow will be enabled after the live merchant configuration is verified.",
       );
       return;
     }
 
     setError("");
     if (!cartItems.length) {
-      setError("Add at least one Credit package to your basket.");
+      setError("Add at least one Credit package to your Shopping Cart.");
       return;
     }
 
@@ -192,17 +255,18 @@ export function PricingClient() {
 
       const checkout = data as CheckoutResponse;
 
+      if (checkout.redirectUrl) {
+        window.location.assign(checkout.redirectUrl);
+        return;
+      }
+
       if (!checkout.actionUrl || !checkout.fields) {
         throw new Error("The payment provider did not return a checkout form.");
       }
 
       submitProviderForm(checkout.actionUrl, checkout.fields);
     } catch (checkoutError) {
-      setError(
-        checkoutError instanceof Error
-          ? checkoutError.message
-          : "Checkout could not be started.",
-      );
+      setError(await getCheckoutErrorMessage(checkoutError));
       setProcessing("");
     }
   }
@@ -239,7 +303,7 @@ export function PricingClient() {
               </p>
               <p className="flex gap-2">
                 <LockKeyhole className="mt-0.5 size-4 shrink-0 text-brand-gold" />
-                Digital racing analysis only; Credits cannot place bets or be withdrawn.
+                Credits unlock eligible digital content and cannot be withdrawn.
               </p>
             </CardContent>
           </Card>
@@ -252,17 +316,17 @@ export function PricingClient() {
             <AlertTriangle className="size-4" />
             <AlertTitle>Secure payment setup in progress</AlertTitle>
             <AlertDescription>
-              PayFast and Ozow checkout infrastructure is installed, but live purchases
-              remain disabled until the merchant accounts and signing credentials are
-              configured. No payment can be charged from this page yet.
+              Ozow checkout infrastructure is installed, but live purchases remain
+              disabled until the merchant configuration and notification endpoint are
+              verified. No payment can be charged from this page yet.
             </AlertDescription>
           </Alert>
         ) : null}
-        {error || packageError ? (
+        {packageError ? (
           <Alert variant="destructive" className="mb-8">
             <AlertTriangle className="size-4" />
             <AlertTitle>Checkout unavailable</AlertTitle>
-            <AlertDescription>{error || packageError}</AlertDescription>
+            <AlertDescription>{packageError}</AlertDescription>
           </Alert>
         ) : null}
 
@@ -291,10 +355,10 @@ export function PricingClient() {
               <div>
                 <CardTitle className="flex items-center gap-2">
                   <ShoppingCart className="size-5 text-brand-gold" />
-                  Your Credit basket
+                  Your Shopping Cart
                 </CardTitle>
                 <CardDescription>
-                  Stack packages, then choose one payment provider for the complete order.
+                  Review your Credit packages, then proceed to choose a payment method.
                 </CardDescription>
               </div>
               <Badge variant="outline">
@@ -344,7 +408,7 @@ export function PricingClient() {
                         type="button"
                         size="icon-sm"
                         variant="ghost"
-                        aria-label={`Remove ${creditPackage.name} from basket`}
+                        aria-label={`Remove ${creditPackage.name} from Shopping Cart`}
                         onClick={() => setCartQuantity(creditPackage.id, 0)}
                       >
                         <Trash2 className="size-4" />
@@ -355,7 +419,7 @@ export function PricingClient() {
               </div>
             ) : (
               <div className="rounded-lg border border-dashed p-6 text-center text-sm text-muted-foreground">
-                Your basket is empty. Add one or more Credit packages above.
+                Your Shopping Cart is empty. Add one or more Credit packages above.
               </div>
             )}
 
@@ -374,23 +438,15 @@ export function PricingClient() {
               </div>
             </div>
 
-            <div className="grid gap-3 sm:grid-cols-2">
+            <div>
               <Button
                 type="button"
-                disabled={!paymentsEnabled || !cartItems.length || Boolean(processing)}
-                onClick={() => void startCheckout("payfast")}
+                className="w-full"
+                disabled={!cartItems.length || Boolean(processing)}
+                onClick={openCheckout}
               >
-                {processing === "payfast" ? <Loader2 className="size-4 animate-spin" /> : <CreditCard className="size-4" />}
-                Checkout with PayFast
-              </Button>
-              <Button
-                type="button"
-                variant="outline"
-                disabled={!paymentsEnabled || !cartItems.length || Boolean(processing)}
-                onClick={() => void startCheckout("ozow")}
-              >
-                {processing === "ozow" ? <Loader2 className="size-4 animate-spin" /> : <Building2 className="size-4" />}
-                Checkout with Ozow
+                Proceed to Checkout
+                <ArrowRight className="size-4" />
               </Button>
             </div>
             <p className="text-xs text-muted-foreground">
@@ -400,123 +456,121 @@ export function PricingClient() {
           </CardContent>
         </Card>
 
-        <div className="mt-10 grid gap-4 md:grid-cols-3">
-          {[
-            {
-              title: "PayFast",
-              description: "Cards and Instant EFT through PayFast.",
-              icon: WalletCards,
-            },
-            {
-              title: "Ozow",
-              description: "Independent secure pay-by-bank checkout.",
-              icon: Building2,
-            },
-            {
-              title: "Webhook verified",
-              description:
-                "Credits are issued only after the payment provider confirms payment.",
-              icon: CheckCircle2,
-            },
-          ].map((item) => (
-            <Card key={item.title}>
-              <CardHeader>
-                <item.icon className="size-5 text-brand-cyan" />
-                <CardTitle>{item.title}</CardTitle>
-                <CardDescription>{item.description}</CardDescription>
-              </CardHeader>
-            </Card>
-          ))}
-        </div>
+        {checkoutOpen ? (
+          <Card
+            id="payment-methods"
+            className="mt-8 scroll-mt-24 border-brand-cyan/40"
+          >
+            <CardHeader>
+              <div className="flex flex-wrap items-start justify-between gap-3">
+                <div>
+                  <CardTitle className="flex items-center gap-2">
+                    <WalletCards className="size-5 text-brand-cyan" />
+                    Choose your payment method
+                  </CardTitle>
+                  <CardDescription>
+                    Select one provider for this {formatRand(cartPriceCents)} order.
+                  </CardDescription>
+                </div>
+                <Badge variant="outline">Secure checkout</Badge>
+              </div>
+            </CardHeader>
+            <CardContent className="space-y-5">
+              <div
+                className="grid gap-3 md:grid-cols-3"
+                role="radiogroup"
+                aria-label="Payment provider"
+              >
+                {checkoutProviders.map((provider) => {
+                  const isSelected = provider.id === selectedProvider;
+                  const ProviderIcon = provider.icon;
 
-        <div className="mt-12">
-          <div className="max-w-3xl">
-            <Badge variant="outline">South African payment access</Badge>
-            <h2 className="mt-3 font-heading text-3xl text-white">More ways to pay</h2>
-            <p className="mt-2 text-muted-foreground">
-              The secure PayFast checkout can expose enabled bank, card, wallet, QR, and
-              cash-assisted methods from one verified payment flow. Voucher providers need
-              separate merchant approval before MRC may redeem a PIN.
-            </p>
-          </div>
+                  return (
+                    <button
+                      key={provider.id}
+                      type="button"
+                      role="radio"
+                      aria-checked={isSelected}
+                      disabled={!provider.enabled}
+                      onClick={() => {
+                        if (provider.id === "ozow") {
+                          setSelectedProvider("ozow");
+                          setError("");
+                        }
+                      }}
+                      className={`rounded-xl border p-4 text-left transition-colors ${
+                        isSelected
+                          ? "border-brand-gold bg-brand-gold/10"
+                          : "border-border bg-background/45"
+                      } disabled:cursor-not-allowed disabled:opacity-55`}
+                    >
+                      <div className="flex items-start justify-between gap-3">
+                        <ProviderIcon className="size-5 text-brand-cyan" />
+                        <Badge variant={provider.enabled ? "default" : "outline"}>
+                          {provider.status}
+                        </Badge>
+                      </div>
+                      <p className="mt-4 font-semibold">{provider.title}</p>
+                      <p className="mt-1 text-sm text-muted-foreground">
+                        {provider.description}
+                      </p>
+                    </button>
+                  );
+                })}
+              </div>
 
-          <div className="mt-6 grid gap-4 md:grid-cols-2 xl:grid-cols-5">
-            {[
-              {
-                title: "Bank apps and wallets",
-                status: "Via PayFast",
-                description:
-                  "Instant EFT, Capitec Pay, cards, QR, Apple Pay, Google Pay, and other methods appear when enabled on the MRC merchant profile.",
-                href: "https://payfast.io/features/payment-methods/",
-                icon: Banknote,
-              },
-              {
-                title: "Cash-assisted checkout",
-                status: "Provider activation",
-                description:
-                  "PayFast offers options such as MukuruPay and other cash-access methods on eligible merchant configurations.",
-                href: "https://payfast.io/features/payment-methods/",
-                icon: Store,
-              },
-              {
-                title: "1Voucher",
-                status: "Merchant onboarding",
-                description:
-                  "Customers can buy 1Voucher through supported banking apps and participating retailers. MRC needs approved Flash API access and settlement terms before redemption goes live.",
-                href: "https://www.1voucher.co.za/support",
-                icon: Ticket,
-              },
-              {
-                title: "OTT Voucher",
-                status: "Merchant onboarding",
-                description:
-                  "OTT Voucher serves cash customers through banking apps and a broad retail network. MRC will enable redemption only after approved merchant credentials are active.",
-                href: "https://ottvoucher.com/business/",
-                icon: Ticket,
-              },
-              {
-                title: "Blu Voucher",
-                status: "Merchant onboarding",
-                description:
-                  "Blu Voucher supports approved third-party online partners. MRC is preparing the secure payment boundary while commercial and API access are reviewed.",
-                href: "https://www.bluelabeltelecoms.co.za/blu-label-distribution.php",
-                icon: WalletCards,
-              },
-            ].map((method) => (
-              <Card key={method.title}>
-                <CardHeader>
-                  <method.icon className="size-5 text-brand-cyan" />
-                  <div className="flex flex-wrap items-center gap-2">
-                    <CardTitle>{method.title}</CardTitle>
-                    <Badge variant="outline">{method.status}</Badge>
-                  </div>
-                  <CardDescription>{method.description}</CardDescription>
-                </CardHeader>
-                <CardContent>
-                  <a
-                    href={method.href}
-                    target="_blank"
-                    rel="noopener noreferrer"
-                    className="text-sm font-semibold text-brand-cyan hover:underline"
-                  >
-                    Provider information
-                  </a>
-                </CardContent>
-              </Card>
-            ))}
-          </div>
+              <div className="grid gap-4 rounded-lg border border-brand-cyan/25 bg-brand-cyan/5 p-4 sm:grid-cols-2">
+                <div>
+                  <p className="text-xs uppercase tracking-wide text-muted-foreground">
+                    Credits after payment
+                  </p>
+                  <p className="font-mono text-xl font-bold">
+                    {(cartPurchasedCredits + cartRewardCredits).toLocaleString("en-ZA")}
+                  </p>
+                </div>
+                <div>
+                  <p className="text-xs uppercase tracking-wide text-muted-foreground">
+                    Pay now
+                  </p>
+                  <p className="font-mono text-xl font-bold">
+                    {formatRand(cartPriceCents)}
+                  </p>
+                </div>
+              </div>
 
-          <Alert className="mt-6 border-brand-cyan/35 bg-brand-cyan/8">
-            <LockKeyhole className="size-4" />
-            <AlertTitle>Voucher PIN safety</AlertTitle>
-            <AlertDescription>
-              Voucher redemption is not live yet. Never send a voucher PIN by email,
-              Telegram, comments, or support messages. When enabled, a PIN will be submitted
-              only to a dedicated server endpoint and never stored in the browser or public
-              database.
-            </AlertDescription>
-          </Alert>
-        </div>
+              <Button
+                type="button"
+                className="w-full"
+                disabled={!paymentsEnabled || !cartItems.length || Boolean(processing)}
+                onClick={() => void startCheckout(selectedProvider)}
+              >
+                {processing === selectedProvider ? (
+                  <Loader2 className="size-4 animate-spin" />
+                ) : (
+                  <Building2 className="size-4" />
+                )}
+                Continue with Ozow
+              </Button>
+
+              {error ? (
+                <Alert variant="destructive" role="alert">
+                  <AlertTriangle className="size-4" />
+                  <AlertTitle>Checkout could not start</AlertTitle>
+                  <AlertDescription>{error}</AlertDescription>
+                </Alert>
+              ) : null}
+
+              <Alert className="border-brand-cyan/35 bg-brand-cyan/8">
+                <CheckCircle2 className="size-4" />
+                <AlertTitle>Verified payment confirmation</AlertTitle>
+                <AlertDescription>
+                  Credits are issued only after the provider confirms payment. A
+                  successful order automatically clears your Shopping Cart.
+                </AlertDescription>
+              </Alert>
+            </CardContent>
+          </Card>
+        ) : null}
       </section>
     </main>
   );

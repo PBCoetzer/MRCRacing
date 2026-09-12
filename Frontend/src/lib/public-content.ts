@@ -25,8 +25,20 @@ export type PublicBlogArticle = {
   publishedAt: string;
   updatedAt: string;
   author: string;
-  authorSlug: string;
+  authorSlug: string | null;
   authorPhotoPath: string | null;
+};
+
+export type PublicPinnedBlogPost = {
+  id: string;
+  slug: string;
+  title: string;
+  excerpt: string;
+  coverImagePath: string | null;
+  publishedAt: string;
+  updatedAt: string;
+  author: string;
+  authorSlug: string | null;
 };
 
 export type PublicTipsterProfile = {
@@ -36,9 +48,15 @@ export type PublicTipsterProfile = {
   biography: string | null;
   photoPath: string | null;
   ranking: number | null;
+  themePrimaryColor: string;
+  themeSecondaryColor: string;
+  themeSurfaceColor: string;
   winnerStrikeRate: number | null;
   settledWinnerTips: number;
   winnerHits: number;
+  placeStrikeRate: number | null;
+  settledPlaceTips: number;
+  placeHits: number;
   statsUpdatedAt: string | null;
   updatedAt: string;
 };

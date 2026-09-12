@@ -1,6 +1,7 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useSearchParams } from "next/navigation";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   Activity,
   AlertTriangle,
@@ -193,7 +194,21 @@ function proposalCounts(proposal: FeedProposal) {
   };
 }
 
+const proposalIdPattern = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
+const proposalColumns = "id,parent_proposal_id,meeting_key,meeting_external_id,venue,meeting_date,proposal_version,change_type,status,snapshot,current_diff,validation_outcome,confidence_score,confidence_breakdown,distinct_source_count,approved_source_count,has_critical_conflict,conflict_summary,auto_approval_eligible,research_guidance,review_note,created_at,reviewed_at,applied_at";
+
 export function AdminRaceFeedClient() {
+  const searchParams = useSearchParams();
+  const proposalParam = searchParams.get("proposal")?.trim() ?? "";
+  const requestedProposalId = proposalIdPattern.test(proposalParam)
+    ? proposalParam.toLowerCase()
+    : null;
+  const decisionParam = searchParams.get("decision");
+  const requestedDecision = decisionParam === "approve" || decisionParam === "reject"
+    ? decisionParam
+    : null;
+  const handledDeepLink = useRef("");
+  const [activeTab, setActiveTab] = useState("proposals");
   const [settings, setSettings] = useState<FeedSettings | null>(null);
   const [settingsDraft, setSettingsDraft] = useState<FeedSettings | null>(null);
   const [proposals, setProposals] = useState<FeedProposal[]>([]);
@@ -227,7 +242,7 @@ export function AdminRaceFeedClient() {
         changeResult,
       ] = await Promise.all([
         supabase.from("race_feed_settings").select("confidence_threshold,minimum_approved_sources,auto_approve_new_meetings,auto_approve_routine_changes,auto_approve_results,future_lookahead_days,daily_search_limit,last_weekly_discovery_at").single(),
-        supabase.from("race_feed_proposals").select("id,parent_proposal_id,meeting_key,meeting_external_id,venue,meeting_date,proposal_version,change_type,status,snapshot,current_diff,validation_outcome,confidence_score,confidence_breakdown,distinct_source_count,approved_source_count,has_critical_conflict,conflict_summary,auto_approval_eligible,research_guidance,review_note,created_at,reviewed_at,applied_at").order("created_at", { ascending: false }).limit(40),
+        supabase.from("race_feed_proposals").select(proposalColumns).order("created_at", { ascending: false }).limit(40),
         supabase.from("race_source_domains").select("id,domain,display_name,status,reliability_score,reuse_basis,direct_fetch_allowed,can_auto_approve,last_reviewed_at").order("domain", { ascending: true }),
         supabase.from("race_feed_tasks").select("id,fixture_id,task_type,state,venue,meeting_date,race_number,due_at,attempts,last_error,last_completed_at").order("created_at", { ascending: false }).limit(60),
         supabase.from("race_feed_fragments").select("id,fragment_type,meeting_key,venue,meeting_date,race_number,created_at").eq("is_current", true).order("created_at", { ascending: false }).limit(100),
@@ -243,7 +258,31 @@ export function AdminRaceFeedClient() {
         ?? changeResult.error;
       if (firstError) throw firstError;
 
-      const loadedProposals = (proposalResult.data ?? []) as FeedProposal[];
+      let loadedProposals = (proposalResult.data ?? []) as FeedProposal[];
+      if (
+        requestedProposalId &&
+        !loadedProposals.some((proposal) => proposal.id.toLowerCase() === requestedProposalId)
+      ) {
+        const targetedResult = await supabase
+          .from("race_feed_proposals")
+          .select(proposalColumns)
+          .eq("id", requestedProposalId)
+          .maybeSingle();
+        if (targetedResult.error) throw targetedResult.error;
+        if (targetedResult.data) {
+          loadedProposals = [...loadedProposals, targetedResult.data as FeedProposal];
+        }
+      }
+      if (requestedProposalId) {
+        const linkedProposal = loadedProposals.find(
+          (proposal) => proposal.id.toLowerCase() === requestedProposalId,
+        );
+        setActiveTab(
+          linkedProposal && !["pending", "quarantined"].includes(linkedProposal.status)
+            ? "history"
+            : "proposals",
+        );
+      }
       const proposalIds = loadedProposals.map((proposal) => proposal.id);
       const evidenceResult = proposalIds.length
         ? await supabase.from("race_feed_evidence").select("id,proposal_id,source_url,source_title,retrieved_at,evidence_excerpt,fact_scope,domain_id").in("proposal_id", proposalIds).order("retrieved_at", { ascending: false })
@@ -275,7 +314,7 @@ export function AdminRaceFeedClient() {
     } finally {
       setLoading(false);
     }
-  }, []);
+  }, [requestedProposalId, setActiveTab, setDomainDrafts, setSettingsDraft]);
 
   useEffect(() => {
     const timeoutId = window.setTimeout(() => void loadDashboard(true), 0);
@@ -291,12 +330,31 @@ export function AdminRaceFeedClient() {
     [domains],
   );
   const pendingProposals = proposals.filter((proposal) => ["pending", "quarantined"].includes(proposal.status));
+  const requestedProposal = requestedProposalId
+    ? proposals.find((proposal) => proposal.id.toLowerCase() === requestedProposalId) ?? null
+    : null;
+  const requestedProposalStatus = requestedProposal?.status ?? null;
   const failedTasks = tasks.filter((task) => task.state === "failed");
   const searchesToday = runs
     .filter((run) => new Date(run.started_at).toDateString() === new Date().toDateString())
     .reduce((total, run) => total + run.search_query_count, 0);
   const latestRun = runs[0] ?? null;
   const quotaBlocked = runs.some((run) => run.error_message?.toLowerCase().includes("quota"));
+
+  useEffect(() => {
+    if (loading || !requestedProposalId) return;
+    const deepLinkKey = `${requestedProposalId}:${requestedDecision ?? "review"}`;
+    if (handledDeepLink.current === deepLinkKey) return;
+    handledDeepLink.current = deepLinkKey;
+
+    if (!requestedProposalStatus) return;
+    const timeoutId = window.setTimeout(() => {
+      const element = document.getElementById(`proposal-${requestedProposalId}`);
+      element?.scrollIntoView({ behavior: "smooth", block: "center" });
+      element?.focus({ preventScroll: true });
+    }, 100);
+    return () => window.clearTimeout(timeoutId);
+  }, [loading, requestedDecision, requestedProposalId, requestedProposalStatus]);
 
   async function invokeWorker(trigger: "manual" | "retry" = "manual") {
     const supabase = createRequiredClient();
@@ -352,7 +410,10 @@ export function AdminRaceFeedClient() {
   }
 
   async function reviewProposal(proposalId: string, decision: "approve" | "reject") {
-    const note = reviewNotes[proposalId]?.trim() ?? "";
+    const enteredNote = reviewNotes[proposalId]?.trim() ?? "";
+    const note = enteredNote || (decision === "approve"
+      ? "Approved after reviewing the complete normalized race layout."
+      : "");
     if (note.length < 5) {
       setError("A review note of at least five characters is required.");
       return;
@@ -458,6 +519,27 @@ export function AdminRaceFeedClient() {
           <AlertDescription>{success}</AlertDescription>
         </Alert>
       ) : null}
+      {proposalParam && !requestedProposalId ? (
+        <Alert variant="destructive">
+          <AlertTriangle className="size-4" />
+          <AlertTitle>Invalid proposal link</AlertTitle>
+          <AlertDescription>The proposal identifier was invalid, so no review intent was loaded.</AlertDescription>
+        </Alert>
+      ) : null}
+      {requestedProposalId && !requestedProposal ? (
+        <Alert>
+          <SearchCheck className="size-4" />
+          <AlertTitle>Proposal is no longer in recent history</AlertTitle>
+          <AlertDescription>No action was taken. Refresh the notification from the race-feed audit history if review is still required.</AlertDescription>
+        </Alert>
+      ) : null}
+      {requestedProposal && !["pending", "quarantined"].includes(requestedProposal.status) ? (
+        <Alert>
+          <ShieldCheck className="size-4" />
+          <AlertTitle>Proposal already {requestedProposal.status.replaceAll("_", " ")}</AlertTitle>
+          <AlertDescription>The Telegram link only carried review intent; it did not change this proposal.</AlertDescription>
+        </Alert>
+      ) : null}
       {quotaBlocked ? (
         <Alert variant="destructive">
           <Bot className="size-4" />
@@ -517,7 +599,7 @@ export function AdminRaceFeedClient() {
         </CardContent>
       </Card>
 
-      <Tabs defaultValue="proposals" className="gap-4">
+      <Tabs value={activeTab} onValueChange={setActiveTab} className="gap-4">
         <TabsList className="h-auto flex-wrap justify-start">
           <TabsTrigger value="proposals">Proposals</TabsTrigger>
           <TabsTrigger value="pipeline">Pipeline</TabsTrigger>
@@ -530,8 +612,14 @@ export function AdminRaceFeedClient() {
           {pendingProposals.length ? pendingProposals.map((proposal) => {
             const counts = proposalCounts(proposal);
             const proposalEvidence = evidence.filter((item) => item.proposal_id === proposal.id);
+            const isRequestedProposal = requestedProposalId === proposal.id.toLowerCase();
             return (
-              <Card key={proposal.id} className={proposal.has_critical_conflict ? "border-destructive/50" : "border-brand-gold/40"}>
+              <Card
+                key={proposal.id}
+                id={isRequestedProposal ? `proposal-${proposal.id.toLowerCase()}` : undefined}
+                tabIndex={isRequestedProposal ? -1 : undefined}
+                className={`${proposal.has_critical_conflict ? "border-destructive/50" : "border-brand-gold/40"}${isRequestedProposal ? " ring-2 ring-brand-cyan ring-offset-4 ring-offset-background" : ""}`}
+              >
                 <CardHeader>
                   <div className="flex flex-wrap items-start justify-between gap-3">
                     <div>
@@ -545,6 +633,15 @@ export function AdminRaceFeedClient() {
                   </div>
                 </CardHeader>
                 <CardContent className="grid gap-4">
+                  {isRequestedProposal ? (
+                    <Alert>
+                      <ShieldCheck className="size-4" />
+                      <AlertTitle>Telegram review shortcut opened</AlertTitle>
+                      <AlertDescription>
+                        {requestedDecision === "approve" ? "Approval" : requestedDecision === "reject" ? "Rejection" : "Review"} was suggested only. Inspect the evidence, enter the required audit note, and confirm below; nothing is applied automatically.
+                      </AlertDescription>
+                    </Alert>
+                  ) : null}
                   {proposal.has_critical_conflict ? (
                     <Alert variant="destructive">
                       <AlertTriangle className="size-4" />
@@ -578,9 +675,10 @@ export function AdminRaceFeedClient() {
                   </details>
                   <div className="grid gap-2">
                     <Label htmlFor={`review-${proposal.id}`}>Required review note</Label>
-                    <Textarea id={`review-${proposal.id}`} value={reviewNotes[proposal.id] ?? ""} onChange={(event) => setReviewNotes((current) => ({ ...current, [proposal.id]: event.target.value }))} placeholder="Explain why the normalized meeting is accepted or rejected." />
+                    <Textarea id={`review-${proposal.id}`} value={reviewNotes[proposal.id] ?? ""} onChange={(event) => setReviewNotes((current) => ({ ...current, [proposal.id]: event.target.value }))} placeholder="Optional for approval. Explain any rejection or add a custom approval note." />
+                    <p className="text-xs text-muted-foreground">Approval uses a standard audit note when this field is empty. Rejection still requires your reason.</p>
                     <div className="flex flex-wrap gap-2">
-                      <Button onClick={() => void reviewProposal(proposal.id, "approve")} disabled={Boolean(busyKey) || (reviewNotes[proposal.id]?.trim().length ?? 0) < 5}><CheckCircle2 className="size-4" />Approve and apply</Button>
+                      <Button onClick={() => void reviewProposal(proposal.id, "approve")} disabled={Boolean(busyKey)}><CheckCircle2 className="size-4" />Approve and add to database</Button>
                       <Button variant="destructive" onClick={() => void reviewProposal(proposal.id, "reject")} disabled={Boolean(busyKey) || (reviewNotes[proposal.id]?.trim().length ?? 0) < 5}><XCircle className="size-4" />Reject</Button>
                     </div>
                   </div>
@@ -696,13 +794,22 @@ export function AdminRaceFeedClient() {
           <Card>
             <CardHeader><CardTitle className="flex items-center gap-2"><ShieldCheck className="size-5 text-brand-cyan" />Proposal history</CardTitle><CardDescription>Every approval, rejection, retry, and proposal version remains immutable.</CardDescription></CardHeader>
             <CardContent className="grid gap-2">
-              {proposals.length ? proposals.map((proposal) => (
-                <div key={proposal.id} className="rounded-xl border border-border/70 p-3">
+              {proposals.length ? proposals.map((proposal) => {
+                const isRequestedHistory = requestedProposalId === proposal.id.toLowerCase()
+                  && !["pending", "quarantined"].includes(proposal.status);
+                return (
+                <div
+                  key={proposal.id}
+                  id={isRequestedHistory ? `proposal-${proposal.id.toLowerCase()}` : undefined}
+                  tabIndex={isRequestedHistory ? -1 : undefined}
+                  className={`rounded-xl border border-border/70 p-3${isRequestedHistory ? " ring-2 ring-brand-cyan ring-offset-4 ring-offset-background" : ""}`}
+                >
                   <div className="flex flex-wrap items-center justify-between gap-2"><span className="font-medium">{proposal.venue} · {proposal.meeting_date} · v{proposal.proposal_version}</span><Badge variant={statusVariant(proposal.status)}>{proposal.status.replaceAll("_", " ")}</Badge></div>
                   <p className="mt-1 text-xs text-muted-foreground">{proposal.change_type.replaceAll("_", " ")} · {proposal.confidence_score}% · created {formatDateTime(proposal.created_at)}{proposal.reviewed_at ? ` · reviewed ${formatDateTime(proposal.reviewed_at)}` : ""}</p>
                   {proposal.review_note ? <p className="mt-2 text-sm text-muted-foreground">{proposal.review_note}</p> : null}
                 </div>
-              )) : <p className="text-sm text-muted-foreground">No proposal history yet.</p>}
+                );
+              }) : <p className="text-sm text-muted-foreground">No proposal history yet.</p>}
             </CardContent>
           </Card>
           <Card>

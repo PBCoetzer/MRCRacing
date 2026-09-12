@@ -1,3 +1,5 @@
+import { mrcRaceDisplayTitle } from "../_shared/race-presentation.ts";
+
 export type JsonRecord = Record<string, unknown>;
 
 export const taskTypes = [
@@ -183,7 +185,12 @@ export function proposalSnapshotForResult(
   const replacementRace: JsonRecord = {
     ...currentRace,
     raceNumber,
-    title: textOrNull(localRace.raceName) ?? currentRace.title,
+    sourceTitle: textOrNull(localRace.raceName) ?? currentRace.sourceTitle ?? currentRace.title,
+    title: mrcRaceDisplayTitle(
+      textOrNull(localRace.raceName) ?? textOrNull(currentRace.sourceTitle) ?? textOrNull(currentRace.title),
+      raceNumber,
+      textOrNull(currentRace.raceClass),
+    ),
     distanceMetres: finiteNumber(localRace.distanceMeters) ??
       finiteNumber(currentRace.distanceMetres),
     status: "completed",

@@ -3,8 +3,13 @@
 
 # Next.js build output
 Frontend/.next/
+Frontend/.next-stale-*/
 Frontend/out/
 Frontend/build/
+frontend-app/.next/
+frontend-app/out/
+/output/
+/tmp/
 
 # Local environment files
 .env

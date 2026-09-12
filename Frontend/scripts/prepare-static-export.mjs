@@ -1,4 +1,4 @@
-import { copyFile, mkdir, readdir } from "node:fs/promises";
+import { copyFile, mkdir, readFile, readdir, writeFile } from "node:fs/promises";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 
@@ -24,8 +24,22 @@ async function findFiles(directory) {
 
 const exportedFiles = await findFiles(outputDirectory);
 let copiedPayloads = 0;
+let cleanedHtmlFiles = 0;
 
 for (const sourcePath of exportedFiles) {
+  if (sourcePath.endsWith(".html")) {
+    const html = await readFile(sourcePath, "utf8");
+    const cleanedHtml = html.replace(
+      /<link rel="icon" href="\/favicon\.ico(?:\?[^"}]*)?"[^>]*\/>/g,
+      "",
+    );
+
+    if (cleanedHtml !== html) {
+      await writeFile(sourcePath, cleanedHtml, "utf8");
+      cleanedHtmlFiles += 1;
+    }
+  }
+
   const relativeParts = path.relative(outputDirectory, sourcePath).split(path.sep);
   const nextPayloadIndex = relativeParts.findIndex((part) =>
     part.startsWith("__next."),
@@ -48,5 +62,5 @@ for (const sourcePath of exportedFiles) {
 }
 
 console.log(
-  `Prepared ${copiedPayloads} flattened Next payload aliases for static Apache hosting.`,
+  `Prepared ${copiedPayloads} flattened Next payload aliases and removed legacy favicons from ${cleanedHtmlFiles} HTML files.`,
 );

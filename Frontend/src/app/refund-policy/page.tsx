@@ -19,15 +19,15 @@ export default function RefundPolicyPage() {
         },
         {
           title: "Meeting-card protection",
-          body: <p>New meeting-card purchases close 30 minutes before Race 1. If a purchased pre-publication card is not published before Race 1, or the meeting is cancelled or abandoned, the platform returns the affected Credits automatically. A reversal is recorded in the customer, tipster, and charity ledgers so the audit history remains accurate.</p>,
+          body: <p>A meeting card can be purchased individually only after the tipster has published its tips, and purchases close 30 minutes before Race 1. If a paid card is later withdrawn, or its meeting is cancelled or abandoned, the client may request a refund review. Credits are returned only after an administrator approves the request, and the reversal is recorded in the customer, tipster, and charity ledgers.</p>,
         },
         {
           title: "Delivered digital content and subscriptions",
-          body: <p>Credits already spent on accessible digital content are normally not refundable merely because selections were unsuccessful or the customer changed their mind after access was supplied. Fixed-term tipster subscriptions do not auto-renew. We will still investigate duplicate fulfilment, material technical failure, misdescription, unauthorised transactions, and any refund right required by South African law.</p>,
+          body: <p>Credits already spent on accessible digital content are normally not refundable merely because selections were unsuccessful or the customer changed their mind after access was supplied. Fixed-term tipster subscriptions do not auto-renew and are not automatically refunded when a meeting has no tips. They remain active for the purchased term unless the client requests a refund review. We will still investigate duplicate fulfilment, material technical failure, misdescription, unauthorised transactions, and any refund right required by South African law.</p>,
         },
         {
           title: "How to request a review",
-          body: <p>Email <a href={`mailto:${businessDetails.supportEmail}`} className="text-brand-cyan underline">{businessDetails.supportEmail}</a>, telephone <a href={businessDetails.telephoneHref} className="text-brand-cyan underline">{businessDetails.telephoneDisplay}</a>, or use the <Link href="/contact/" className="text-brand-cyan underline">contact page</Link>. Include your account email, payment or purchase reference, amount, date, and reason. Do not send card details, banking credentials, OTPs, or voucher PINs. Approved external-payment refunds are returned through the original provider where supported; provider and bank processing times apply.</p>,
+          body: <p>Use the refund-request control in your Client dashboard, email <a href={`mailto:${businessDetails.supportEmail}`} className="text-brand-cyan underline">{businessDetails.supportEmail}</a>, telephone <a href={businessDetails.telephoneHref} className="text-brand-cyan underline">{businessDetails.telephoneDisplay}</a>, or use the <Link href="/contact/" className="text-brand-cyan underline">contact page</Link>. Include your purchase reference and reason. Do not send card details, banking credentials, OTPs, or voucher PINs. A request does not guarantee a refund; only an administrator approval confirms it.</p>,
         },
         {
           title: "Statutory rights",

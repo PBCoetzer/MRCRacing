@@ -1,7 +1,18 @@
 "use client";
 
 import { useCallback, useEffect, useMemo, useState } from "react";
-import { Eye, EyeOff, Loader2, MessageSquareWarning, Newspaper, RefreshCw, ShieldCheck } from "lucide-react";
+import {
+  Eye,
+  EyeOff,
+  Loader2,
+  MessageSquareWarning,
+  Newspaper,
+  Pin,
+  PinOff,
+  RefreshCw,
+  ShieldCheck,
+  UserRoundCheck,
+} from "lucide-react";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -10,15 +21,77 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { createClient } from "@/lib/supabase/client";
 
-type Tipster = { id: string; user_id: string; display_name: string; is_verified: boolean };
-type Permission = { tipster_id: string; can_publish: boolean; reason: string | null; updated_at: string };
-type Post = { id: string; tipster_id: string; title: string; status: string; published_at: string | null; moderation_note: string | null; updated_at: string };
-type Comment = { id: string; post_id: string; body: string; status: string; moderation_note: string | null; created_at: string };
-type Report = { id: string; comment_id: string; reason: string; status: string; created_at: string };
+type Tipster = {
+  id: string;
+  user_id: string;
+  display_name: string;
+  is_verified: boolean;
+  is_public: boolean;
+};
+
+type Permission = {
+  tipster_id: string;
+  can_publish: boolean;
+  reason: string | null;
+  updated_at: string;
+};
+
+type AuthorRequest = {
+  requestId: string;
+  userId: string;
+  email: string;
+  displayName: string;
+  status: "requested" | "approved" | "rejected" | "revoked";
+  requestReason: string;
+  reviewNote: string | null;
+  requestedAt: string;
+  reviewedAt: string | null;
+  tipsterId: string | null;
+  canPublish: boolean;
+  isTipster: boolean;
+  isPublic: boolean;
+};
+
+type Post = {
+  id: string;
+  tipster_id: string;
+  title: string;
+  status: string;
+  published_at: string | null;
+  is_pinned: boolean;
+  moderation_note: string | null;
+  updated_at: string;
+};
+
+type Comment = {
+  id: string;
+  post_id: string;
+  body: string;
+  status: string;
+  moderation_note: string | null;
+  created_at: string;
+};
+
+type Report = {
+  id: string;
+  comment_id: string;
+  reason: string;
+  status: string;
+  created_at: string;
+};
+
+function formatDateTime(value: string | null) {
+  if (!value) return "Not reviewed";
+  return new Intl.DateTimeFormat("en-ZA", {
+    dateStyle: "medium",
+    timeStyle: "short",
+  }).format(new Date(value));
+}
 
 export function AdminBlogClient() {
   const [tipsters, setTipsters] = useState<Tipster[]>([]);
   const [permissions, setPermissions] = useState<Permission[]>([]);
+  const [authorRequests, setAuthorRequests] = useState<AuthorRequest[]>([]);
   const [posts, setPosts] = useState<Post[]>([]);
   const [comments, setComments] = useState<Comment[]>([]);
   const [reports, setReports] = useState<Report[]>([]);
@@ -29,19 +102,52 @@ export function AdminBlogClient() {
   const [message, setMessage] = useState("");
 
   const load = useCallback(async () => {
-    const supabase = createClient(); if (!supabase) return;
-    setLoading(true); setError("");
-    const [tipsterResult, permissionResult, postResult, commentResult, reportResult] = await Promise.all([
-      supabase.from("tipsters").select("id,user_id,display_name,is_verified").eq("is_verified", true).order("display_name"),
-      supabase.from("tipster_blog_permissions").select("tipster_id,can_publish,reason,updated_at"),
-      supabase.from("blog_posts").select("id,tipster_id,title,status,published_at,moderation_note,updated_at").order("updated_at", { ascending: false }),
-      supabase.from("blog_comments").select("id,post_id,body,status,moderation_note,created_at").order("created_at", { ascending: false }).limit(100),
-      supabase.from("blog_comment_reports").select("id,comment_id,reason,status,created_at").order("created_at", { ascending: false }).limit(100),
+    const supabase = createClient();
+    if (!supabase) return;
+    setLoading(true);
+    setError("");
+    const [
+      tipsterResult,
+      permissionResult,
+      requestResult,
+      postResult,
+      commentResult,
+      reportResult,
+    ] = await Promise.all([
+      supabase
+        .from("tipsters")
+        .select("id,user_id,display_name,is_verified,is_public")
+        .order("display_name"),
+      supabase
+        .from("tipster_blog_permissions")
+        .select("tipster_id,can_publish,reason,updated_at"),
+      supabase.rpc("admin_list_blog_author_requests"),
+      supabase
+        .from("blog_posts")
+        .select("id,tipster_id,title,status,published_at,is_pinned,moderation_note,updated_at")
+        .order("updated_at", { ascending: false }),
+      supabase
+        .from("blog_comments")
+        .select("id,post_id,body,status,moderation_note,created_at")
+        .order("created_at", { ascending: false })
+        .limit(100),
+      supabase
+        .from("blog_comment_reports")
+        .select("id,comment_id,reason,status,created_at")
+        .order("created_at", { ascending: false })
+        .limit(100),
     ]);
-    const firstError = tipsterResult.error ?? permissionResult.error ?? postResult.error ?? commentResult.error ?? reportResult.error;
+    const firstError =
+      tipsterResult.error ??
+      permissionResult.error ??
+      requestResult.error ??
+      postResult.error ??
+      commentResult.error ??
+      reportResult.error;
     if (firstError) setError(firstError.message);
     setTipsters((tipsterResult.data ?? []) as Tipster[]);
     setPermissions((permissionResult.data ?? []) as Permission[]);
+    setAuthorRequests((requestResult.data ?? []) as AuthorRequest[]);
     setPosts((postResult.data ?? []) as Post[]);
     setComments((commentResult.data ?? []) as Comment[]);
     setReports((reportResult.data ?? []) as Report[]);
@@ -52,53 +158,467 @@ export function AdminBlogClient() {
     const timeoutId = window.setTimeout(() => void load(), 0);
     return () => window.clearTimeout(timeoutId);
   }, [load]);
-  const permissionByTipster = useMemo(() => new Map(permissions.map((item) => [item.tipster_id, item])), [permissions]);
-  const tipsterById = useMemo(() => new Map(tipsters.map((item) => [item.id, item])), [tipsters]);
-  const postById = useMemo(() => new Map(posts.map((item) => [item.id, item])), [posts]);
+
+  const permissionByTipster = useMemo(
+    () => new Map(permissions.map((item) => [item.tipster_id, item])),
+    [permissions],
+  );
+  const tipsterById = useMemo(
+    () => new Map(tipsters.map((item) => [item.id, item])),
+    [tipsters],
+  );
+  const postById = useMemo(
+    () => new Map(posts.map((item) => [item.id, item])),
+    [posts],
+  );
   const openReportsByComment = useMemo(() => {
     const map = new Map<string, Report[]>();
-    reports.filter((item) => item.status === "open").forEach((item) => map.set(item.comment_id, [...(map.get(item.comment_id) ?? []), item]));
+    reports
+      .filter((item) => item.status === "open")
+      .forEach((item) =>
+        map.set(item.comment_id, [...(map.get(item.comment_id) ?? []), item]),
+      );
     return map;
   }, [reports]);
 
+  async function reviewAuthorRequest(
+    request: AuthorRequest,
+    action: "approve" | "reject" | "revoke",
+  ) {
+    const supabase = createClient();
+    if (!supabase) return;
+    const note =
+      notes[`request:${request.requestId}`]?.trim() ||
+      `Administrator ${action} action after reviewing the blog author request.`;
+    setBusy(`request:${request.requestId}`);
+    setError("");
+    setMessage("");
+    const { error: actionError } = await supabase.rpc(
+      "admin_review_blog_author_request",
+      {
+        p_request_id: request.requestId,
+        p_action: action,
+        p_note: note,
+      },
+    );
+    if (actionError) {
+      setError(actionError.message);
+    } else {
+      const completedAction = action === "approve" ? "approved" : action === "reject" ? "rejected" : "revoked";
+      setMessage(`${request.displayName}'s blog author request was ${completedAction} and audit logged.`);
+      await load();
+    }
+    setBusy("");
+  }
+
   async function setPermission(tipster: Tipster, enabled: boolean) {
-    const supabase = createClient(); if (!supabase) return;
-    const reason = notes[`permission:${tipster.id}`]?.trim() || (enabled ? "Approved by administrator for direct blog publishing." : "Blog author permission revoked by administrator.");
-    setBusy(`permission:${tipster.id}`); setError(""); setMessage("");
-    const { error: actionError } = await supabase.rpc("admin_set_tipster_blog_permission", { p_user_id: tipster.user_id, p_can_publish: enabled, p_reason: reason });
-    if (actionError) setError(actionError.message); else { setMessage(`${tipster.display_name} ${enabled ? "may now publish" : "can no longer create or edit"} blog posts.`); await load(); }
+    const supabase = createClient();
+    if (!supabase) return;
+    const reason =
+      notes[`permission:${tipster.id}`]?.trim() ||
+      (enabled
+        ? "Approved by administrator for direct blog publishing."
+        : "Blog author permission revoked by administrator.");
+    setBusy(`permission:${tipster.id}`);
+    setError("");
+    setMessage("");
+    const { error: actionError } = await supabase.rpc(
+      "admin_set_tipster_blog_permission",
+      {
+        p_user_id: tipster.user_id,
+        p_can_publish: enabled,
+        p_reason: reason,
+      },
+    );
+    if (actionError) {
+      setError(actionError.message);
+    } else {
+      setMessage(
+        `${tipster.display_name} ${enabled ? "may now publish" : "can no longer create or edit"} blog posts.`,
+      );
+      await load();
+    }
     setBusy("");
   }
 
   async function moderatePost(post: Post, action: "hide" | "restore" | "archive") {
-    const supabase = createClient(); if (!supabase) return;
-    const note = notes[`post:${post.id}`]?.trim() || `Administrator ${action} action after content review.`;
-    setBusy(`post:${post.id}`); setError("");
-    const { error: actionError } = await supabase.rpc("admin_moderate_blog_post", { p_post_id: post.id, p_action: action, p_note: note });
-    if (actionError) setError(actionError.message); else await load();
+    const supabase = createClient();
+    if (!supabase) return;
+    const note =
+      notes[`post:${post.id}`]?.trim() ||
+      `Administrator ${action} action after content review.`;
+    setBusy(`post:${post.id}`);
+    setError("");
+    const { error: actionError } = await supabase.rpc("admin_moderate_blog_post", {
+      p_post_id: post.id,
+      p_action: action,
+      p_note: note,
+    });
+    if (actionError) setError(actionError.message);
+    else await load();
+    setBusy("");
+  }
+
+  async function setPinnedPost(post: Post, pinned: boolean) {
+    const supabase = createClient();
+    if (!supabase) return;
+    const note =
+      notes[`post:${post.id}`]?.trim() ||
+      (pinned
+        ? "Administrator selected this published article for the homepage."
+        : "Administrator removed this article from the homepage.");
+    setBusy(`pin:${post.id}`);
+    setError("");
+    setMessage("");
+    const { error: actionError } = await supabase.rpc("admin_set_pinned_blog_post", {
+      p_post_id: post.id,
+      p_pinned: pinned,
+      p_note: note,
+    });
+    if (actionError) {
+      setError(actionError.message);
+    } else {
+      setMessage(
+        pinned
+          ? `“${post.title}” is now the pinned homepage article.`
+          : `“${post.title}” was removed from the homepage.`,
+      );
+      await load();
+    }
     setBusy("");
   }
 
   async function moderateComment(comment: Comment, action: "hide" | "restore") {
-    const supabase = createClient(); if (!supabase) return;
-    const note = notes[`comment:${comment.id}`]?.trim() || `Administrator ${action} action after comment review.`;
-    setBusy(`comment:${comment.id}`); setError("");
-    const { error: actionError } = await supabase.rpc("admin_moderate_blog_comment", { p_comment_id: comment.id, p_action: action, p_note: note });
-    if (actionError) setError(actionError.message); else await load();
+    const supabase = createClient();
+    if (!supabase) return;
+    const note =
+      notes[`comment:${comment.id}`]?.trim() ||
+      `Administrator ${action} action after comment review.`;
+    setBusy(`comment:${comment.id}`);
+    setError("");
+    const { error: actionError } = await supabase.rpc("admin_moderate_blog_comment", {
+      p_comment_id: comment.id,
+      p_action: action,
+      p_note: note,
+    });
+    if (actionError) setError(actionError.message);
+    else await load();
     setBusy("");
   }
 
-  if (loading) return <Card><CardContent className="flex min-h-52 items-center justify-center gap-2"><Loader2 className="size-5 animate-spin" />Loading blog controls…</CardContent></Card>;
+  if (loading) {
+    return (
+      <Card>
+        <CardContent className="flex min-h-52 items-center justify-center gap-2">
+          <Loader2 className="size-5 animate-spin" />
+          Loading blog controls…
+        </CardContent>
+      </Card>
+    );
+  }
 
-  return <div className="space-y-6">
-    {error ? <Alert variant="destructive"><AlertTitle>Blog administration failed</AlertTitle><AlertDescription>{error}</AlertDescription></Alert> : null}
-    {message ? <Alert><AlertTitle>Permission updated</AlertTitle><AlertDescription>{message}</AlertDescription></Alert> : null}
-    <div className="flex justify-end"><Button variant="outline" onClick={() => load()}><RefreshCw className="size-4" />Refresh</Button></div>
+  return (
+    <div className="space-y-6">
+      {error ? (
+        <Alert variant="destructive">
+          <AlertTitle>Blog administration failed</AlertTitle>
+          <AlertDescription>{error}</AlertDescription>
+        </Alert>
+      ) : null}
+      {message ? (
+        <Alert>
+          <AlertTitle>Blog access updated</AlertTitle>
+          <AlertDescription>{message}</AlertDescription>
+        </Alert>
+      ) : null}
+      <div className="flex justify-end">
+        <Button variant="outline" onClick={() => load()}>
+          <RefreshCw className="size-4" />
+          Refresh
+        </Button>
+      </div>
 
-    <Card><CardHeader><CardTitle className="flex items-center gap-2"><ShieldCheck className="size-5 text-brand-cyan" />Approved blog authors</CardTitle><CardDescription>This permission is separate from tipster verification. Revocation blocks new posts and edits without silently hiding published work.</CardDescription></CardHeader><CardContent className="grid gap-4 lg:grid-cols-2">{tipsters.map((tipster) => { const enabled = permissionByTipster.get(tipster.id)?.can_publish === true; return <div key={tipster.id} className="rounded-lg border p-4"><div className="flex items-center justify-between gap-3"><div><p className="font-semibold text-white">{tipster.display_name}</p><Badge variant={enabled ? "default" : "outline"}>{enabled ? "May publish" : "Not approved"}</Badge></div><Button variant={enabled ? "destructive" : "default"} disabled={busy === `permission:${tipster.id}`} onClick={() => setPermission(tipster, !enabled)}>{enabled ? "Revoke" : "Approve"}</Button></div><Label htmlFor={`permission-${tipster.id}`} className="mt-3">Audit reason</Label><Input id={`permission-${tipster.id}`} value={notes[`permission:${tipster.id}`] ?? ""} onChange={(event) => setNotes((current) => ({ ...current, [`permission:${tipster.id}`]: event.target.value }))} placeholder="Optional custom reason" /></div>; })}</CardContent></Card>
+      <Card>
+        <CardHeader>
+          <CardTitle className="flex items-center gap-2">
+            <UserRoundCheck className="size-5 text-brand-cyan" />
+            Blog author requests
+          </CardTitle>
+          <CardDescription>
+            Any registered account may request author access. Approval creates a private author
+            profile without granting Tipster access or public Tipster visibility.
+          </CardDescription>
+        </CardHeader>
+        <CardContent className="space-y-4">
+          {authorRequests.map((request) => (
+            <div key={request.requestId} className="rounded-lg border p-4">
+              <div className="flex flex-wrap items-start justify-between gap-3">
+                <div>
+                  <p className="font-semibold text-white">{request.displayName}</p>
+                  <p className="text-sm text-muted-foreground">{request.email}</p>
+                  <div className="mt-2 flex flex-wrap gap-2">
+                    <Badge variant={request.status === "requested" ? "default" : "outline"}>
+                      {request.status}
+                    </Badge>
+                    {request.isTipster ? <Badge variant="outline">Tipster</Badge> : null}
+                    {request.isPublic ? <Badge variant="outline">Public profile</Badge> : null}
+                  </div>
+                </div>
+                <p className="text-xs text-muted-foreground">
+                  Requested {formatDateTime(request.requestedAt)}
+                </p>
+              </div>
+              <p className="mt-3 text-sm">{request.requestReason}</p>
+              {request.reviewNote ? (
+                <p className="mt-2 text-xs text-muted-foreground">
+                  Last review: {request.reviewNote} · {formatDateTime(request.reviewedAt)}
+                </p>
+              ) : null}
+              <Label htmlFor={`request-${request.requestId}`} className="mt-3">
+                Required review note
+              </Label>
+              <Input
+                id={`request-${request.requestId}`}
+                value={notes[`request:${request.requestId}`] ?? ""}
+                onChange={(event) =>
+                  setNotes((current) => ({
+                    ...current,
+                    [`request:${request.requestId}`]: event.target.value,
+                  }))
+                }
+                placeholder="Record what was verified"
+              />
+              <div className="mt-3 flex flex-wrap gap-2">
+                {request.status !== "approved" ? (
+                  <Button
+                    size="sm"
+                    disabled={busy === `request:${request.requestId}`}
+                    onClick={() => reviewAuthorRequest(request, "approve")}
+                  >
+                    Approve author
+                  </Button>
+                ) : (
+                  <Button
+                    size="sm"
+                    variant="destructive"
+                    disabled={busy === `request:${request.requestId}`}
+                    onClick={() => reviewAuthorRequest(request, "revoke")}
+                  >
+                    Revoke author
+                  </Button>
+                )}
+                {request.status === "requested" ? (
+                  <Button
+                    size="sm"
+                    variant="outline"
+                    disabled={busy === `request:${request.requestId}`}
+                    onClick={() => reviewAuthorRequest(request, "reject")}
+                  >
+                    Reject request
+                  </Button>
+                ) : null}
+              </div>
+            </div>
+          ))}
+          {!authorRequests.length ? (
+            <p className="text-sm text-muted-foreground">No blog author requests yet.</p>
+          ) : null}
+        </CardContent>
+      </Card>
 
-    <Card><CardHeader><CardTitle className="flex items-center gap-2"><Newspaper className="size-5 text-brand-cyan" />Post moderation</CardTitle><CardDescription>Hide, restore, or archive without permanent deletion.</CardDescription></CardHeader><CardContent className="space-y-3">{posts.map((post) => <div key={post.id} className="rounded-lg border p-4"><div className="flex flex-wrap items-start justify-between gap-3"><div><p className="font-semibold text-white">{post.title}</p><p className="text-xs text-muted-foreground">{tipsterById.get(post.tipster_id)?.display_name ?? "Tipster"} · {post.status}</p></div><div className="flex gap-2">{post.status === "hidden" ? <Button size="sm" onClick={() => moderatePost(post, "restore")}><Eye className="size-3" />Restore</Button> : <Button size="sm" variant="outline" onClick={() => moderatePost(post, "hide")}><EyeOff className="size-3" />Hide</Button>}<Button size="sm" variant="ghost" onClick={() => moderatePost(post, "archive")}>Archive</Button></div></div><Input className="mt-3" value={notes[`post:${post.id}`] ?? ""} onChange={(event) => setNotes((current) => ({ ...current, [`post:${post.id}`]: event.target.value }))} placeholder="Moderation note" /></div>)}{!posts.length ? <p className="text-sm text-muted-foreground">No blog posts yet.</p> : null}</CardContent></Card>
+      <Card>
+        <CardHeader>
+          <CardTitle className="flex items-center gap-2">
+            <ShieldCheck className="size-5 text-brand-cyan" />
+            Approved blog authors
+          </CardTitle>
+          <CardDescription>
+            Author permission is independent from Tipster access and public profile visibility.
+            Revocation blocks new posts and edits without hiding published work.
+          </CardDescription>
+        </CardHeader>
+        <CardContent className="grid gap-4 lg:grid-cols-2">
+          {tipsters.map((tipster) => {
+            const enabled = permissionByTipster.get(tipster.id)?.can_publish === true;
+            return (
+              <div key={tipster.id} className="rounded-lg border p-4">
+                <div className="flex items-center justify-between gap-3">
+                  <div>
+                    <p className="font-semibold text-white">{tipster.display_name}</p>
+                    <div className="mt-1 flex flex-wrap gap-2">
+                      <Badge variant={enabled ? "default" : "outline"}>
+                        {enabled ? "May publish" : "Not approved"}
+                      </Badge>
+                      {tipster.is_verified ? <Badge variant="outline">Tipster</Badge> : null}
+                      {tipster.is_public ? <Badge variant="outline">Public</Badge> : null}
+                    </div>
+                  </div>
+                  <Button
+                    variant={enabled ? "destructive" : "default"}
+                    disabled={busy === `permission:${tipster.id}`}
+                    onClick={() => setPermission(tipster, !enabled)}
+                  >
+                    {enabled ? "Revoke" : "Approve"}
+                  </Button>
+                </div>
+                <Label htmlFor={`permission-${tipster.id}`} className="mt-3">
+                  Audit reason
+                </Label>
+                <Input
+                  id={`permission-${tipster.id}`}
+                  value={notes[`permission:${tipster.id}`] ?? ""}
+                  onChange={(event) =>
+                    setNotes((current) => ({
+                      ...current,
+                      [`permission:${tipster.id}`]: event.target.value,
+                    }))
+                  }
+                  placeholder="Optional custom reason"
+                />
+              </div>
+            );
+          })}
+        </CardContent>
+      </Card>
 
-    <Card><CardHeader><CardTitle className="flex items-center gap-2"><MessageSquareWarning className="size-5 text-brand-cyan" />Comment moderation</CardTitle><CardDescription>Reported comments are highlighted. Authors cannot moderate comments on their own posts.</CardDescription></CardHeader><CardContent className="space-y-3">{comments.map((comment) => { const openReports = openReportsByComment.get(comment.id) ?? []; return <div key={comment.id} className={`rounded-lg border p-4 ${openReports.length ? "border-destructive/60" : ""}`}><div className="flex flex-wrap justify-between gap-3"><div><p className="text-sm leading-6">{comment.body}</p><p className="mt-1 text-xs text-muted-foreground">On “{postById.get(comment.post_id)?.title ?? "Unknown post"}” · {comment.status}{openReports.length ? ` · ${openReports.length} open report(s)` : ""}</p>{openReports.map((report) => <p key={report.id} className="mt-1 text-xs text-destructive">Report: {report.reason}</p>)}</div><div>{comment.status === "hidden" ? <Button size="sm" onClick={() => moderateComment(comment, "restore")}>Restore</Button> : <Button size="sm" variant="outline" onClick={() => moderateComment(comment, "hide")}>Hide</Button>}</div></div><Input className="mt-3" value={notes[`comment:${comment.id}`] ?? ""} onChange={(event) => setNotes((current) => ({ ...current, [`comment:${comment.id}`]: event.target.value }))} placeholder="Moderation note" /></div>; })}{!comments.length ? <p className="text-sm text-muted-foreground">No comments yet.</p> : null}</CardContent></Card>
-  </div>;
+      <Card>
+        <CardHeader>
+          <CardTitle className="flex items-center gap-2">
+            <Newspaper className="size-5 text-brand-cyan" />
+            Post moderation
+          </CardTitle>
+          <CardDescription>
+            Pin one published article to the homepage, or hide, restore, and archive content.
+          </CardDescription>
+        </CardHeader>
+        <CardContent className="space-y-3">
+          {posts.map((post) => (
+            <div key={post.id} className="rounded-lg border p-4">
+              <div className="flex flex-wrap items-start justify-between gap-3">
+                <div>
+                  <div className="flex flex-wrap items-center gap-2">
+                    <p className="font-semibold text-white">{post.title}</p>
+                    {post.is_pinned ? <Badge>Pinned on home</Badge> : null}
+                  </div>
+                  <p className="text-xs text-muted-foreground">
+                    {tipsterById.get(post.tipster_id)?.display_name ?? "Author"} · {post.status}
+                  </p>
+                </div>
+                <div className="flex flex-wrap gap-2">
+                  {post.status === "published" ? (
+                    <Button
+                      size="sm"
+                      variant={post.is_pinned ? "secondary" : "outline"}
+                      disabled={Boolean(busy)}
+                      onClick={() => setPinnedPost(post, !post.is_pinned)}
+                    >
+                      {busy === `pin:${post.id}` ? (
+                        <Loader2 className="size-3 animate-spin" />
+                      ) : post.is_pinned ? (
+                        <PinOff className="size-3" />
+                      ) : (
+                        <Pin className="size-3" />
+                      )}
+                      {post.is_pinned ? "Unpin from home" : "Pin to home"}
+                    </Button>
+                  ) : null}
+                  {post.status === "hidden" ? (
+                    <Button size="sm" onClick={() => moderatePost(post, "restore")}>
+                      <Eye className="size-3" />
+                      Restore
+                    </Button>
+                  ) : (
+                    <Button size="sm" variant="outline" onClick={() => moderatePost(post, "hide")}>
+                      <EyeOff className="size-3" />
+                      Hide
+                    </Button>
+                  )}
+                  <Button size="sm" variant="ghost" onClick={() => moderatePost(post, "archive")}>
+                    Archive
+                  </Button>
+                </div>
+              </div>
+              <Input
+                className="mt-3"
+                value={notes[`post:${post.id}`] ?? ""}
+                onChange={(event) =>
+                  setNotes((current) => ({
+                    ...current,
+                    [`post:${post.id}`]: event.target.value,
+                  }))
+                }
+                placeholder="Moderation note"
+              />
+            </div>
+          ))}
+          {!posts.length ? <p className="text-sm text-muted-foreground">No blog posts yet.</p> : null}
+        </CardContent>
+      </Card>
+
+      <Card>
+        <CardHeader>
+          <CardTitle className="flex items-center gap-2">
+            <MessageSquareWarning className="size-5 text-brand-cyan" />
+            Comment moderation
+          </CardTitle>
+          <CardDescription>
+            Reported comments are highlighted. Authors cannot moderate comments on their own posts.
+          </CardDescription>
+        </CardHeader>
+        <CardContent className="space-y-3">
+          {comments.map((comment) => {
+            const openReports = openReportsByComment.get(comment.id) ?? [];
+            return (
+              <div
+                key={comment.id}
+                className={`rounded-lg border p-4 ${openReports.length ? "border-destructive/60" : ""}`}
+              >
+                <div className="flex flex-wrap justify-between gap-3">
+                  <div>
+                    <p className="text-sm leading-6">{comment.body}</p>
+                    <p className="mt-1 text-xs text-muted-foreground">
+                      On “{postById.get(comment.post_id)?.title ?? "Unknown post"}” · {comment.status}
+                      {openReports.length ? ` · ${openReports.length} open report(s)` : ""}
+                    </p>
+                    {openReports.map((report) => (
+                      <p key={report.id} className="mt-1 text-xs text-destructive">
+                        Report: {report.reason}
+                      </p>
+                    ))}
+                  </div>
+                  <div>
+                    {comment.status === "hidden" ? (
+                      <Button size="sm" onClick={() => moderateComment(comment, "restore")}>
+                        Restore
+                      </Button>
+                    ) : (
+                      <Button
+                        size="sm"
+                        variant="outline"
+                        onClick={() => moderateComment(comment, "hide")}
+                      >
+                        Hide
+                      </Button>
+                    )}
+                  </div>
+                </div>
+                <Input
+                  className="mt-3"
+                  value={notes[`comment:${comment.id}`] ?? ""}
+                  onChange={(event) =>
+                    setNotes((current) => ({
+                      ...current,
+                      [`comment:${comment.id}`]: event.target.value,
+                    }))
+                  }
+                  placeholder="Moderation note"
+                />
+              </div>
+            );
+          })}
+          {!comments.length ? <p className="text-sm text-muted-foreground">No comments yet.</p> : null}
+        </CardContent>
+      </Card>
+    </div>
+  );
 }

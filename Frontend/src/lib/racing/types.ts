@@ -123,8 +123,12 @@ export type TipsterProfile = {
   biography: string | null;
   photo_path?: string | null;
   is_verified: boolean;
+  is_public?: boolean;
   ranking?: number | null;
   commission_rate_override: number | null;
+  theme_primary_color?: string;
+  theme_secondary_color?: string;
+  theme_surface_color?: string;
 };
 
 export type TipsterPerformanceStats = {
@@ -133,6 +137,10 @@ export type TipsterPerformanceStats = {
   settled_winner_tips: number;
   winner_hits: number;
   winner_strike_rate: number | null;
+  published_place_tips: number;
+  settled_place_tips: number;
+  place_hits: number;
+  place_strike_rate: number | null;
   roi_percent: number | null;
   updated_at: string;
 };

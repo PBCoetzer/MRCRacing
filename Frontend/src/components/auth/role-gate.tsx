@@ -43,6 +43,9 @@ function isMissingAuthSession(error: unknown) {
 export function RoleGate({ allowedRoles, children, description, title }: RoleGateProps) {
   const [gateState, setGateState] = useState<RoleGateState>("loading");
   const [message, setMessage] = useState("Checking your Supabase session.");
+  const loginHref = typeof window === "undefined"
+    ? "/login/"
+    : `/login/?next=${encodeURIComponent(`${window.location.pathname}${window.location.search}${window.location.hash}`)}`;
 
   useEffect(() => {
     let isMounted = true;
@@ -187,7 +190,7 @@ export function RoleGate({ allowedRoles, children, description, title }: RoleGat
           {gateState === "signed-out" ? (
             <div className="flex flex-wrap gap-3">
               <Button asChild>
-                <Link href="/login/">Login</Link>
+                <Link href={loginHref}>Login</Link>
               </Button>
               <Button asChild variant="outline">
                 <Link href="/register/">Create account</Link>

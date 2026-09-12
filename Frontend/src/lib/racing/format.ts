@@ -23,4 +23,8 @@ export function formatCredits(value: number | string) {
   })} Credits`;
 }
 
+export function formatMeetingCardPrice(value: number | string) {
+  return Number(value) === 0 ? "Free" : formatCredits(value);
+}
+
 export const formatCoins = formatCredits;

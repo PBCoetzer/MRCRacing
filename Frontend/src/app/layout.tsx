@@ -24,17 +24,22 @@ const jetBrainsMono = JetBrains_Mono({
 
 export const metadata: Metadata = {
   metadataBase: new URL(canonicalSiteUrl),
-  title: { default: "MRC Racing Tips | South African Horse Racing", template: `%s | ${siteName}` },
+  title: { default: siteName, template: `%s | ${siteName}` },
   description: defaultDescription,
   applicationName: siteName,
+  icons: {
+    icon: [{ url: "/icon.svg", type: "image/svg+xml" }],
+    shortcut: ["/icon.svg"],
+    apple: [{ url: "/images/mrc-racing-tips-logo.jpeg", type: "image/jpeg" }],
+  },
   alternates: { canonical: "/" },
   openGraph: {
     type: "website", locale: "en_ZA", siteName,
-    title: "MRC Racing Tips | South African Horse Racing",
+    title: siteName,
     description: defaultDescription, url: "/",
     images: [{ url: defaultShareImage, width: 1200, height: 630, alt: "MRC Racing Tips — South African horse racing" }],
   },
-  twitter: { card: "summary_large_image", title: "MRC Racing Tips", description: defaultDescription, images: [defaultShareImage] },
+  twitter: { card: "summary_large_image", title: siteName, description: defaultDescription, images: [defaultShareImage] },
   verification: process.env.NEXT_PUBLIC_GOOGLE_SITE_VERIFICATION
     ? { google: process.env.NEXT_PUBLIC_GOOGLE_SITE_VERIFICATION }
     : undefined,

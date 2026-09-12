@@ -24,7 +24,6 @@ http://localhost:3000
 - `/pricing`
 - `/faq`
 - `/contact`
-- `/responsible-gambling`
 - `/privacy`
 - `/terms`
 - `/login`
