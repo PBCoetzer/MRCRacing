@@ -14,6 +14,7 @@ import {
   Heart,
   History,
   Loader2,
+  Mail,
   RefreshCw,
   ShieldCheck,
   TicketCheck,
@@ -108,6 +109,8 @@ type ProfileNotificationRow = {
   display_name: string | null;
   phone: string | null;
   sms_notifications_enabled: boolean;
+  email_marketing_consented_at: string | null;
+  email_marketing_withdrawn_at: string | null;
 };
 
 type PremiumTermsStatus = {
@@ -158,6 +161,7 @@ export function ClientDashboardClient() {
   const [rewardBalance, setRewardBalance] = useState(0);
   const [phone, setPhone] = useState("");
   const [smsNotificationsEnabled, setSmsNotificationsEnabled] = useState(false);
+  const [emailMarketingEnabled, setEmailMarketingEnabled] = useState(false);
   const [expandedCardId, setExpandedCardId] = useState("");
   const [requestedCardId, setRequestedCardId] = useState("");
   const [pendingCardId, setPendingCardId] = useState("");
@@ -232,7 +236,7 @@ export function ClientDashboardClient() {
           .maybeSingle(),
         supabase
           .from("profiles")
-          .select("display_name,phone,sms_notifications_enabled")
+          .select("display_name,phone,sms_notifications_enabled,email_marketing_consented_at,email_marketing_withdrawn_at")
           .eq("id", user.id)
           .maybeSingle(),
         supabase
@@ -407,6 +411,12 @@ export function ClientDashboardClient() {
       setRewardBalance(Number(loadedWallet?.reward_balance ?? 0));
       setPhone(loadedProfile?.phone ?? "");
       setSmsNotificationsEnabled(Boolean(loadedProfile?.sms_notifications_enabled));
+      setEmailMarketingEnabled(Boolean(
+        loadedProfile?.email_marketing_consented_at &&
+        (!loadedProfile.email_marketing_withdrawn_at ||
+          new Date(loadedProfile.email_marketing_consented_at).getTime() >
+            new Date(loadedProfile.email_marketing_withdrawn_at).getTime()),
+      ));
       setHasAcceptedCurrentTerms(Boolean(loadedTermsStatus?.hasAcceptedCurrent));
       setProfileDisplayName(loadedProfile?.display_name?.trim() || "MRC Client");
       const cardFromUrl = new URLSearchParams(window.location.search).get("card");
@@ -660,6 +670,30 @@ export function ClientDashboardClient() {
     }
   }
 
+  async function toggleEmailMarketing() {
+    const supabase = createClient();
+    if (!supabase || !userId) return;
+
+    const nextEnabled = !emailMarketingEnabled;
+    setProcessingId("email-marketing-preferences");
+    setError("");
+    setMessage("");
+    try {
+      const { error: preferenceError } = await supabase.rpc("set_email_marketing_consent", {
+        p_enabled: nextEnabled,
+      });
+      if (preferenceError) throw preferenceError;
+      setEmailMarketingEnabled(nextEnabled);
+      setMessage(nextEnabled
+        ? "New meeting-card email announcements are enabled."
+        : "New meeting-card email announcements are disabled.");
+    } catch (preferenceError) {
+      setError(messageFrom(preferenceError, "Email announcement preferences could not be updated."));
+    } finally {
+      setProcessingId("");
+    }
+  }
+
   const openPremiumCard = useCallback(async (
     tipCardId: string,
     acceptCurrentTerms = false,
@@ -890,6 +924,37 @@ export function ClientDashboardClient() {
             </Button>
             <p className="text-xs text-muted-foreground">
               This consent covers service notifications only. Marketing SMS requires separate consent.
+            </p>
+          </CardContent>
+        </Card>
+
+        <Card>
+          <CardHeader>
+            <CardTitle className="flex items-center gap-2">
+              <Mail className="size-5 text-primary" />
+              New meeting-card email announcements
+            </CardTitle>
+            <CardDescription>
+              Choose whether any tipster may email you when a new meeting card is published.
+            </CardDescription>
+          </CardHeader>
+          <CardContent className="space-y-4">
+            <Button
+              type="button"
+              variant={emailMarketingEnabled ? "outline" : "default"}
+              disabled={processingId === "email-marketing-preferences"}
+              onClick={() => void toggleEmailMarketing()}
+            >
+              {processingId === "email-marketing-preferences" ? (
+                <Loader2 className="size-4 animate-spin" />
+              ) : (
+                <Mail className="size-4" />
+              )}
+              {emailMarketingEnabled ? "Disable email announcements" : "Enable email announcements"}
+            </Button>
+            <p className="text-xs text-muted-foreground">
+              This optional marketing consent is separate from purchase receipts, security messages,
+              account notices, and card updates you are already entitled to receive.
             </p>
           </CardContent>
         </Card>
