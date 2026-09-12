@@ -1,166 +1,120 @@
 # Production Deployment Guide
 
-Status: initial strategy
+Status: audited local release process; production deployment requires explicit approval
 
-Confirmed cloud resource map: `Deployment/GitHub Supabase Xneelo Plan.md`
+## Production Map
 
-## Hosting
+- Source worktree: `C:\Users\coetz\OneDrive\Documents\MRC Website Hermes Bridge`
+- Frontend: Next.js static export hosted from Xneelo `public_html`
+- Backend: Supabase project `MRCRacing` (`cjgfvqgiqrphmakruqnk`)
+- Deployment workflow: database migrations, Edge Functions, static frontend, smoke tests
+- Rollback: forward-only database compensation plus the timestamped Xneelo backup produced by the deploy helper
 
-The current live-testing path is:
+Never store credentials, customer data, provider payloads, deployment archives, or environment files in Git. Generated exports, archives, local secrets, and backups are already ignored.
 
-- GitHub repository: `PBCoetzer/MRCRacing`.
-- Supabase project: `MRCRacing`.
-- Xneelo Volume Plan hosting for the static frontend export.
+## Release Gate
 
-The preferred final production path is:
+Production remains blocked until all of the following are true:
 
-- Vercel for the Next.js application.
-- Supabase for PostgreSQL, Auth, and Storage.
+1. `AUDIT/FINAL-REPORT.md` has no open critical or high finding that affects the release.
+2. The working tree contains only the reviewed commits intended for release.
+3. The linked migration list has been reconciled and every new migration has been reviewed.
+4. The complete local verification suite passes.
+5. A database backup or Supabase point-in-time recovery window is confirmed for risky data changes.
+6. The Xneelo credential and SSH host key are available outside Git.
+7. The user explicitly approves production deployment after reviewing the final report.
 
-Alternative Node.js-compatible hosting can work if it supports:
+An earlier approval for a different change does not approve this audit release.
 
-- Node.js runtime.
-- Environment variables.
-- HTTPS.
-- Background-safe webhook route handling.
-- Next.js standalone output or managed Next.js deployment.
-
-Examples to evaluate later:
-
-- Xneelo
-- Afrihost
-- Domains.co.za
-- VPS provider with Node.js support
-
-## Xneelo Web Hosting Static Deployment
-
-Xneelo's standard Web Hosting and Managed Server environments are LAMP based: Linux, Apache, MariaDB/MySQL, and PHP. This means the current web hosting package is suitable for a static export of the Next.js frontend, but not for running a persistent Next.js Node.js server.
-
-Use this path for public UI testing:
-
-1. Build the static site locally.
+## Local Verification
 
 ```powershell
-cd "C:\Users\coetz\OneDrive\MRC Website\Frontend"
-npm run build:static
+Set-Location "C:\Users\coetz\OneDrive\Documents\MRC Website Hermes Bridge\Frontend"
+npm ci
+npm audit --omit=dev --audit-level=high
+npm run verify:local
+Set-Location ..
+npx supabase migration list --linked
 ```
 
-2. Confirm the exported site exists in:
+`npm run verify:local` runs ESLint, TypeScript, all Deno Edge tests, terminology validation, the 69-route static build, and static artifact verification. Database contract tests run in CI against a fresh isolated Supabase instance with every migration applied.
 
-```text
-C:\Users\coetz\OneDrive\MRC Website\Frontend\out
-```
+Before release, also rerun the Supabase security and performance advisors and record any accepted residual finding in `AUDIT/FINAL-REPORT.md`.
 
-3. Upload the contents of `out` to the Xneelo website root, usually `public_html`, using Xneelo File Manager, FTP, or SFTP.
+## Release Artifact
 
-4. Make sure `index.html` is directly inside the web root, not nested inside an extra `out` folder.
+Use `Frontend/out` only after the verification command succeeds. If a ZIP is required for manual inspection, create it outside the repository, include the commit SHA in its filename, calculate SHA-256, and delete it after the retention window. Do not recreate `Deployment/mrc-racing-tips-xneelo-static.zip` in Git.
 
-5. Test:
+## Deployment Order
 
-- `/`
-- `/pricing/`
-- `/tipsters/`
-- `/tipsters/profile/?tipster=<id>`
-- `/payment-status/`
-- `/login/`
-- `/register/`
-- `/client/`
-- `/tipster/`
-- `/admin/`
+### 1. Database migrations
 
-## Xneelo Limitations For Later Phases
+1. Confirm the production migration list still matches the audited baseline.
+2. Review new SQL for locks, data rewrites, grants, RLS, RPC compatibility, and forward-only recovery.
+3. Export affected data before any risky migration.
+4. Apply only reviewed migrations in version order.
+5. Run focused read-only verification queries and both Supabase advisors.
 
-The static deployment is enough for public UI delivery. The following features run in Supabase Edge Functions rather than Xneelo:
+Never apply a migration merely to test its syntax against production. Prepare compensating SQL for changes that cannot be transactionally reversed.
 
-- PayFast checkout signing and ITN verification.
-- Ozow checkout signing, notification hash verification, and transaction confirmation.
-- Atomic Credit issuance after verified provider callbacks.
-- Tip publication and correction email processing.
-- Sports data sync jobs.
+### 2. Edge Functions
 
-Recommended future backend options:
+Deploy only maintained functions declared in `supabase/config.toml`. Preserve the reviewed JWT setting for each function. Do not redeploy or remove the legacy `deliver-tip-notifications` function without a separately approved cleanup because that changes production state.
 
-- Supabase Edge Functions for payment webhooks, credit unlock logic, and scheduled sports data sync.
-- Xneelo Cloud or Self-Managed Server if we want to host a full Node.js Next.js server ourselves.
-- Vercel if we want the simplest production Next.js deployment path.
+After each deployment, verify the function version and perform only invalid or non-mutating probes against payment and webhook endpoints. Never create a real charge or adjust a wallet for a smoke test.
 
-## Production Requirements
+### 3. Static frontend
 
-- Configure all secrets in hosting environment variables.
-- Configure Supabase Auth redirect URLs.
-- Configure payment gateway webhook URLs.
-- Set `PAYMENTS_ENABLED=true` only after provider credentials and callback verification tests pass.
-- Enable HTTPS before payment webhooks.
-- Run database migrations against the production Supabase project.
-- Review RLS policies before launch.
-- Run final accessibility, SEO, performance, and security checks.
-
-## Current Xneelo Test Package
-
-Prepared upload package:
-
-```text
-C:\Users\coetz\OneDrive\MRC Website\Deployment\mrc-racing-tips-xneelo-static.zip
-```
-
-This ZIP contains the contents of the static `out` directory and includes the current Supabase-enabled login, registration, password reset, and admin access screens. In Xneelo, upload/extract the ZIP so the files inside it land directly in the website root. The home page must resolve as:
-
-```text
-public_html/index.html
-```
-
-If it becomes `public_html/out/index.html`, move the files up one level.
-
-## Xneelo Upload Checklist
-
-1. Log in to the Xneelo Control Panel or konsoleH for the domain.
-2. Open File Manager, FTP, or SFTP for the hosting package.
-3. Go to the website root directory, normally `public_html`.
-4. Back up any existing website files if the domain already has content.
-5. Upload `mrc-racing-tips-xneelo-static.zip`.
-6. Extract it into `public_html`.
-7. Confirm `_next`, `images`, and `index.html` are directly inside `public_html`.
-8. Visit the live domain and test the main routes.
-
-Before testing auth on the live domain, add the domain and `/reset-password` route to Supabase Auth URL settings.
-
-Payment return URLs must point to the deployed Supabase `payment-return` Edge Function. Browser return URLs never issue Credits; only verified PayFast ITN or Ozow notification processing can finalize a payment.
-
-## Rebuild After Changes
-
-Whenever the website changes locally, rebuild and repackage:
-
-```powershell
-cd "C:\Users\coetz\OneDrive\MRC Website\Frontend"
-npm run build:static
-Compress-Archive -Path "C:\Users\coetz\OneDrive\MRC Website\Frontend\out\*" -DestinationPath "C:\Users\coetz\OneDrive\MRC Website\Deployment\mrc-racing-tips-xneelo-static.zip" -Force
-```
-
-## Secure Automated Xneelo Deployment
-
-The repository contains a rollback-safe SFTP deployment workflow. The Xneelo password is never stored in the repository, static frontend, command line, or environment variables. It is encrypted for the current Windows user with Windows DPAPI and saved below the ignored `Deployment/.secrets` directory.
-
-Save or replace the credential interactively:
+The deploy command requires an approval reference and refuses an unverified export:
 
 ```powershell
 Set-Location "C:\Users\coetz\OneDrive\Documents\MRC Website Hermes Bridge"
-.\Deployment\Save-XneeloCredential.ps1
+.\Deployment\Deploy-Xneelo.ps1 -ApprovalReference "approved-by-owner-YYYYMMDD-HHMM"
 ```
 
-Deploy the existing static export:
+The deploy helper:
 
-```powershell
-Set-Location "C:\Users\coetz\OneDrive\Documents\MRC Website Hermes Bridge"
-.\Deployment\Deploy-Xneelo.ps1
-```
+1. Uses the DPAPI-protected credential under ignored `Deployment/.secrets`.
+2. Enforces the configured SSH host key.
+3. Downloads the current `public_html` tree into an ignored timestamped backup.
+4. Uploads assets before HTML.
+5. Verifies deployed files by SHA-256.
+6. Removes stale frontend files only after successful verification.
 
-Each deployment:
+Upload the contents of `Frontend/out` directly into `public_html`; never create `public_html/out/index.html`.
 
-1. Connects with strict SSH host-key verification.
-2. Downloads the current `public_html` tree into a timestamped ZIP under `Deployment/Xneelo Backups`.
-3. Uploads assets first and HTML last.
-4. Verifies every deployed file by SHA-256.
-5. Removes obsolete frontend files only after verification, while preserving hosting/system files.
-6. Reports the backup location and deployment counts as JSON.
+### 4. Production smoke tests
 
-Both the encrypted credential and deployment backups are intentionally excluded from Git.
+Verify at minimum:
+
+- `/`, `/pricing/`, `/tipsters/`, `/blog/`, `/horse-racing/`, `/horse-care/`
+- `/login/`, `/register/`, `/forgot-password/`, `/reset-password/`
+- authenticated `/client/`, `/tipster/`, and `/admin/` role boundaries
+- one existing entitled card view without a new purchase
+- metadata, canonical URL, sitemap, robots, dynamic blog/tipster HTML, and custom 404 behavior
+- RSC prefetch aliases return 200 during client navigation
+- payment return pages display safely without finalizing a payment
+- notification, race-feed, Hermes, and site-build queue summaries remain within runbook thresholds
+
+Run mobile, tablet, and desktop checks without changing production data.
+
+## Rollback
+
+### Frontend
+
+1. Stop further uploads.
+2. Retain the failed deployment output and generated backup path.
+3. Restore the timestamped `public_html-before-*.zip` backup over `public_html`.
+4. Verify hashes and rerun public smoke tests.
+
+### Edge Functions
+
+Redeploy the last known-good committed function version and confirm its JWT setting. Do not change database state as part of an Edge rollback unless the reviewed compensating migration requires it.
+
+### Database
+
+Database migrations are forward-only. Apply the prepared compensating SQL or restore from the approved backup/PITR path. Escalate any payment, Credit, entitlement, or refund inconsistency before allowing new financial operations.
+
+## Required Release Record
+
+Record the approval reference, commit SHA, migration versions, Edge Function versions, static artifact SHA-256, Xneelo backup path, smoke-test result, advisor result, operator, and timestamps. Never include secret values or private customer data.
