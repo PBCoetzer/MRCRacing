@@ -9,7 +9,7 @@ const publicRoutes = ["", "/about", "/blog", "/cancellation-policy", "/contact",
 export default async function sitemap(): Promise<MetadataRoute.Sitemap> {
   const manifest = await getPublicManifest();
   const staticEntries = publicRoutes.map((path) => ({
-    url: `${canonicalSiteUrl}${path || "/"}`,
+    url: `${canonicalSiteUrl}${path ? `${path}/` : "/"}`,
     lastModified: new Date(),
     changeFrequency: path === "" ? "daily" as const : "weekly" as const,
     priority: path === "" ? 1 : 0.7,

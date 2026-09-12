@@ -42,15 +42,62 @@ import type {
   TipsterProfile,
 } from "@/lib/racing/types";
 import { createClient } from "@/lib/supabase/client";
+import type { PublicTipsterProfile } from "@/lib/public-content";
 
-export function TipsterProfileClient({ tipsterSlug: suppliedTipsterSlug }: { tipsterSlug?: string } = {}) {
+type TipsterProfileClientProps = {
+  initialProfile?: PublicTipsterProfile;
+  tipsterSlug?: string;
+};
+
+function initialTipster(profile: PublicTipsterProfile): TipsterProfile {
+  return {
+    id: profile.id,
+    slug: profile.slug,
+    user_id: "",
+    display_name: profile.displayName,
+    biography: profile.biography,
+    photo_path: profile.photoPath,
+    is_verified: true,
+    is_public: true,
+    ranking: profile.ranking,
+    commission_rate_override: null,
+    theme_primary_color: profile.themePrimaryColor,
+    theme_secondary_color: profile.themeSecondaryColor,
+    theme_surface_color: profile.themeSurfaceColor,
+  };
+}
+
+function initialStats(profile: PublicTipsterProfile): TipsterPerformanceStats {
+  return {
+    tipster_id: profile.id,
+    published_winner_tips: profile.settledWinnerTips,
+    settled_winner_tips: profile.settledWinnerTips,
+    winner_hits: profile.winnerHits,
+    winner_strike_rate: profile.winnerStrikeRate,
+    published_place_tips: profile.settledPlaceTips,
+    settled_place_tips: profile.settledPlaceTips,
+    place_hits: profile.placeHits,
+    place_strike_rate: profile.placeStrikeRate,
+    roi_percent: null,
+    updated_at: profile.statsUpdatedAt ?? profile.updatedAt,
+  };
+}
+
+export function TipsterProfileClient({
+  initialProfile,
+  tipsterSlug: suppliedTipsterSlug,
+}: TipsterProfileClientProps = {}) {
   const [loadedAt] = useState(() => Date.now());
-  const [loading, setLoading] = useState(true);
+  const [loading, setLoading] = useState(!initialProfile);
   const [processing, setProcessing] = useState("");
   const [error, setError] = useState("");
   const [message, setMessage] = useState("");
-  const [tipster, setTipster] = useState<TipsterProfile | null>(null);
-  const [stats, setStats] = useState<TipsterPerformanceStats | null>(null);
+  const [tipster, setTipster] = useState<TipsterProfile | null>(() =>
+    initialProfile ? initialTipster(initialProfile) : null,
+  );
+  const [stats, setStats] = useState<TipsterPerformanceStats | null>(() =>
+    initialProfile ? initialStats(initialProfile) : null,
+  );
   const [packages, setPackages] = useState<TipsterPackage[]>([]);
   const [cards, setCards] = useState<TipCard[]>([]);
   const [meetings, setMeetings] = useState<RaceMeeting[]>([]);
@@ -74,7 +121,7 @@ export function TipsterProfileClient({ tipsterSlug: suppliedTipsterSlug }: { tip
       return;
     }
 
-    setLoading(true);
+    if (!initialProfile) setLoading(true);
     setError("");
     const tipsterQuery = supabase
       .from("tipsters")
@@ -214,7 +261,7 @@ export function TipsterProfileClient({ tipsterSlug: suppliedTipsterSlug }: { tip
     setActiveSubscriptionEndsAt(subscriptionResult.data?.[0]?.ends_at ?? null);
     setError(loadError);
     setLoading(false);
-  }, [suppliedTipsterSlug]);
+  }, [initialProfile, suppliedTipsterSlug]);
 
   useEffect(() => {
     const timeoutId = window.setTimeout(() => {

@@ -35,7 +35,7 @@ export default async function PublicTipsterPage({ params }: PageProps) {
         { "@context": "https://schema.org", "@type": "Person", name: profile.displayName, description: profile.biography, url: profileUrl, knowsAbout: ["South African horse racing", "Race analysis"] },
         { "@context": "https://schema.org", "@type": "BreadcrumbList", itemListElement: [{ "@type": "ListItem", position: 1, name: "Tipsters", item: `${canonicalSiteUrl}/tipsters/` }, { "@type": "ListItem", position: 2, name: profile.displayName, item: profileUrl }] },
       ]} />
-      <TipsterProfileClient tipsterSlug={profile.slug} />
+      <TipsterProfileClient initialProfile={profile} tipsterSlug={profile.slug} />
       <SiteFooter />
     </div>
   );

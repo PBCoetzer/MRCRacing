@@ -40,7 +40,7 @@ export default async function BlogArticlePage({ params }: PageProps) {
         { "@context": "https://schema.org", "@type": "BreadcrumbList", itemListElement: [{ "@type": "ListItem", position: 1, name: "Blog", item: `${canonicalSiteUrl}/blog/` }, { "@type": "ListItem", position: 2, name: post.title, item: url }] },
       ]} />
       <main className="mx-auto w-full max-w-7xl px-4 py-10 sm:px-6 lg:px-8">
-        <BlogPostClient slug={slug} />
+        <BlogPostClient initialPost={post} slug={slug} />
       </main>
       <SiteFooter />
     </div>

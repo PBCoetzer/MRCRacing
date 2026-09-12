@@ -14,6 +14,7 @@ import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { createClient } from "@/lib/supabase/client";
 import { supabaseUrl } from "@/lib/supabase/config";
+import type { PublicBlogArticle } from "@/lib/public-content";
 
 type PublicComment = { id: string; body: string; author: string; isMine: boolean; createdAt: string };
 type PublicPost = {
@@ -46,10 +47,17 @@ function resolvePostSlug(suppliedSlug?: string) {
   return path[0] === "blog" && path[1] && path[1] !== "post" ? path[1] : "";
 }
 
-export function BlogPostClient({ slug: suppliedSlug }: { slug?: string } = {}) {
-  const [post, setPost] = useState<PublicPost | null>(null);
+type BlogPostClientProps = {
+  initialPost?: PublicBlogArticle;
+  slug?: string;
+};
+
+export function BlogPostClient({ initialPost, slug: suppliedSlug }: BlogPostClientProps = {}) {
+  const [post, setPost] = useState<PublicPost | null>(() =>
+    initialPost ? { ...initialPost, comments: [] } : null,
+  );
   const [comment, setComment] = useState("");
-  const [loading, setLoading] = useState(true);
+  const [loading, setLoading] = useState(!initialPost);
   const [busy, setBusy] = useState("");
   const [error, setError] = useState("");
   const [message, setMessage] = useState("");
