@@ -12,7 +12,7 @@
 | Object | `Frontend/scripts/audit-public-terminology.mjs` |
 | Recommended fix | Validate the current RPC-backed terms contract and authoritative migration instead of deleted UI constants. |
 | Verification | Terminology audit and `build:static` both pass. |
-| Status | Open; release blocker |
+| Status | Fixed locally in `9768710`; terminology validation now checks the authoritative RPC-backed contract and `build:static` passes. |
 
 ## CQ-002 — Oversized multi-responsibility modules
 
@@ -36,11 +36,11 @@
 | Area | Test reproducibility |
 | Problem | A single repository-wide Deno test command fails because shared tests cannot resolve bare imports without a selected function import map. |
 | Impact | Developers and CI can skip tests or run an incomplete subset accidentally. |
-| Redacted evidence | One command fails on `@supabase/supabase-js` and `spark-md5`; 37 tests pass when split across function configs. |
+| Redacted evidence | At baseline, one command failed on `@supabase/supabase-js` and `spark-md5`; 37 tests passed only when split across function configs. |
 | Object | Supabase Deno configuration and package scripts |
 | Recommended fix | Add a root test runner or root Deno import map and one documented command for all Edge tests. |
 | Verification | One command type-checks and runs every test. |
-| Status | Open |
+| Status | Fixed locally in `9ac65c7` and `6b22f51`; one pinned root Deno configuration runs all 43 Edge tests successfully. |
 
 ## CQ-004 — No continuous integration gate
 
@@ -54,7 +54,7 @@
 | Object | Repository automation |
 | Recommended fix | Add a least-privilege CI workflow using public build credentials or mocked public content, with secrets kept in the platform secret store. |
 | Verification | Pull requests require all checks to pass. |
-| Status | Open |
+| Status | Fixed locally in `9ac65c7`; the least-privilege GitHub Actions workflow runs an isolated Supabase database contract job plus the complete frontend, dependency, Edge, build, and artifact gate. Repository-secret configuration and first hosted run remain owner actions. |
 
 ## CQ-005 — Inactive legacy frontend remains in repository
 

@@ -19,7 +19,7 @@
 | Object | Frontend, Supabase Edge Functions, Xneelo availability |
 | Recommended fix | Add privacy-safe error reporting, synthetic health/registration probes, queue-failure thresholds, and owner escalation with runbooks. |
 | Verification | Controlled test errors and downtime trigger alerts with correlation IDs and no sensitive payloads. |
-| Status | Open |
+| Status | Partially remediated locally in `5e4eaeb` and `d87316d`; a privacy-safe frontend recovery boundary, aggregate health queries, thresholds, escalation, and rollback runbook now exist. External uptime/error collection and alert routing remain owner configuration. |
 
 ## MON-002 — Auth delivery tracking is deployed but inactive
 
@@ -47,4 +47,4 @@
 | Object | Notification outbox, race-feed jobs, lifecycle worker, site-build jobs |
 | Recommended fix | Define maximum queue age/failure counts and stale-data windows; expose redacted health summaries and alert when breached. |
 | Verification | Seeded non-production failures cross thresholds and resolve cleanly after recovery. |
-| Status | Open |
+| Status | Mitigated operationally in `d87316d`; explicit queue-age, failure-count, stale-race, and stale-build thresholds plus aggregate health SQL are documented. Automated external alert routing remains part of `MON-001`. |

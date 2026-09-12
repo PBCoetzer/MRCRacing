@@ -3,7 +3,7 @@
 ## Live Inventory
 
 - Approximately 70 public tables; all have RLS enabled.
-- 104 live migration history entries versus 106 local migration files.
+- The original 104 migration entries now match locally and remotely by version. Two new forward-only remediation migrations are intentionally local-only pending approval.
 - 15 deployed Edge Functions versus 14 local function directories.
 - Core referential checks found no orphan profiles, roles, cards, card selections, Credit transactions, or purchase-backed entitlements.
 - Published cards sampled have revision records; duplicate role assignments were not found.
@@ -20,7 +20,7 @@
 | Object | `supabase/migrations`, `supabase_migrations.schema_migrations` |
 | Recommended fix | Create a reconciliation manifest, classify the two local-only files as schema or environment-specific data repair, and establish one canonical version history before new DDL. |
 | Verification | Local and live migration manifests match exactly by version/name/checksum or an approved baseline marker explains every exception. |
-| Status | Open; release blocker |
+| Status | Fixed locally in `9768710`; 23 versions were reconciled to live history and two environment-specific data repairs moved to `Database/one-off-repairs`. `supabase migration list --linked` now shows only the two new approved-remediation candidates as local-only. |
 
 ## DB-002 — Foreign-key index gaps
 
@@ -34,7 +34,7 @@
 | Object | Public and private table foreign keys |
 | Recommended fix | Add indexes only for demonstrated join/filter/delete paths, prioritizing high-growth payments, notifications, race events, cards, purchases, and audit data. |
 | Verification | Advisor diff plus `EXPLAIN (ANALYZE, BUFFERS)` on representative queries. |
-| Status | Open; requires selective remediation |
+| Status | Selectively remediated locally in `b8be6d0`; eight missing indexes were added for purchase, entitlement, earnings, package, card, and dispute relationships. High-volume notification and Hermes relationships already had leading indexes. The live advisor remains unchanged until deployment and remaining low-volume cases require measured evidence. |
 
 ## DB-003 — Multiple permissive RLS policies add overhead
 
@@ -62,4 +62,4 @@
 | Object | Hermes queue/rate-limit/audit tables, notification worker tokens, site build jobs |
 | Recommended fix | Add a grant regression query and document the intentional no-policy posture. |
 | Verification | `anon` and `authenticated` have no table privileges and direct probes fail. |
-| Status | Accepted with regression check pending |
+| Status | Regression check added in `9ac65c7`; pgTAP asserts revoked API-role grants and final live read-only verification found zero `anon` or `authenticated` grants on `app_private`, with `site_build_jobs` remaining server-only. |

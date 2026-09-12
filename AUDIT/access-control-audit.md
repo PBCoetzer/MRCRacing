@@ -24,7 +24,7 @@
 | Object | `Frontend/src/components/auth/role-gate.tsx`, `/admin/`, `/client/`, `/tipster/` |
 | Recommended fix | Keep all private data behind RLS/RPCs, add a build assertion that private HTML contains no sensitive payloads, and consider server-rendered hosting if route-level denial is required. |
 | Verification | Anonymous artifact scan and negative API tests. |
-| Status | Accepted architecture risk; add regression coverage |
+| Status | Accepted architecture risk with automated artifact secret/private-key scanning in `9ac65c7`; data authorization remains at RLS/RPC boundaries. |
 
 ## ACC-002 — Privileged RPC authorization needs automated coverage
 
@@ -38,7 +38,7 @@
 | Object | Public RPCs, especially `admin_*`, purchase, refund, card, and wallet functions |
 | Recommended fix | Add rollback-only tests for anonymous, client, tipster-owner, tipster-non-owner, administrator, and service roles against a maintained RPC allowlist. |
 | Verification | Test suite proves every unauthorized case fails and every permitted ownership case succeeds. |
-| Status | Open |
+| Status | Partially remediated in `9ac65c7`; 11 pgTAP contracts cover RLS, private-schema grants, server-only tables, anonymous RPC allowlisting, search paths, and sampled privileged RPC denial. Final live read-only checks passed; full synthetic client/tipster/admin actor coverage requires the non-production environment in `DEP-003`. |
 
 ## Ownership Conclusions
 

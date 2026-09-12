@@ -19,7 +19,7 @@
 | Object | Tipster card list and admin/ledger tables |
 | Recommended fix | Use stacked mobile cards for action-heavy rows, retain tables from tablet widths, and keep primary actions visible. |
 | Verification | 320, 375, 768, and desktop viewport screenshots plus keyboard/touch checks. |
-| Status | Open |
+| Status | Mitigated locally in `5e4eaeb`; the primary tipster meeting-card list uses stacked mobile cards with a visible 44px action and retains the table at desktop widths. Manual 390×844 and 1440×900 checks found no horizontal overflow. Other dense admin ledgers remain candidates for incremental conversion. |
 
 ## UX-002 — No route-level error boundary
 
@@ -33,4 +33,4 @@
 | Object | `Frontend/src/app` |
 | Recommended fix | Add accessible global and route-level recovery screens with retry/home actions and redacted client error identifiers. |
 | Verification | Inject a controlled test error and confirm focus, message, retry, and logging behavior. |
-| Status | Open |
+| Status | Fixed locally in `5e4eaeb`; `Frontend/src/app/error.tsx` provides an accessible retry/home recovery path and logs only redacted error metadata. |

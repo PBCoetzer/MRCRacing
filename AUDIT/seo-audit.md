@@ -21,7 +21,7 @@
 | Object | `Frontend/src/app/sitemap.ts` |
 | Recommended fix | Emit a trailing slash for every non-root static route and validate sitemap URLs are redirect-free. |
 | Verification | Crawl sitemap and require zero redirects and canonical equality. |
-| Status | Open at initial-audit commit |
+| Status | Fixed locally in `f4437d3`; every local sitemap URL includes the canonical trailing slash. All 43 resulting URLs return direct HTTP 200 responses from the current host with title and canonical metadata. Production sitemap deployment pending. |
 
 ## SEO-002 — Dynamic articles and profiles lack server-rendered primary content
 
@@ -35,7 +35,7 @@
 | Object | `Frontend/src/app/blog/[slug]/page.tsx`, `Frontend/src/app/tipsters/[slug]/page.tsx` and their client components |
 | Recommended fix | Pass the server-fetched record as initial client state or server-render the public heading/content. |
 | Verification | Built HTML contains the expected H1 and primary text before JavaScript. |
-| Status | Open at initial-audit commit |
+| Status | Fixed locally in `f4437d3`; the export verifier confirms server-rendered H1 content for two blog articles and two tipster profiles before JavaScript. Production deployment pending. |
 
 ## SEO-003 — Static RSC prefetch aliases return 404
 
@@ -49,4 +49,4 @@
 | Object | `Frontend/scripts/prepare-static-export.mjs`, Xneelo deployment artifact |
 | Recommended fix | Repair the static-export validator and assert every generated route payload alias exists before packaging. |
 | Verification | Browser navigation has no RSC 404s; artifact check passes. |
-| Status | Open at initial-audit commit |
+| Status | Fixed locally in `f4437d3`; 63 flattened route-payload aliases are generated and verified, and local browser navigation returned HTTP 200 without payload 404s. Production deployment pending. |

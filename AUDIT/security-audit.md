@@ -21,7 +21,7 @@
 | Object | `Frontend/package.json`, `Frontend/package-lock.json` |
 | Recommended fix | Upgrade Next and `eslint-config-next` to the patched compatible release, regenerate the lockfile, and rerun the full build and dependency audit. |
 | Verification | `npm audit --omit=dev`, ESLint, TypeScript, static build, browser smoke tests. |
-| Status | Open at initial-audit commit |
+| Status | Fixed locally in `bf9fa0f`; Next and `eslint-config-next` are `16.3.5`, the full build passes, and `npm audit --omit=dev` reports zero vulnerabilities. Production deployment pending. |
 
 ## SEC-002 — CSP is report-only
 
@@ -35,7 +35,7 @@
 | Object | `Frontend/public/.htaccess` |
 | Recommended fix | Enforce the verified policy, retain only required origins, and smoke-test Auth, Turnstile, analytics, Supabase, video, and payment journeys. |
 | Verification | Live header check plus browser console/network smoke tests. |
-| Status | Open at initial-audit commit |
+| Status | Fixed locally in `bf9fa0f`; the policy is enforced in the deployment artifact and passed local browser smoke tests. Production header verification pending deployment. |
 
 ## SEC-003 — Compromised-password protection is disabled
 
@@ -63,7 +63,7 @@
 | Object | Public RPC grants and function definitions |
 | Recommended fix | Maintain an allowlist, revoke obsolete overloads, move worker-only helpers to `app_private`, and add automated role-contract tests. |
 | Verification | Advisor diff, grant inventory, anonymous/authenticated negative tests, and rollback-only role simulations. |
-| Status | Open; no direct exploit found |
+| Status | Mitigated locally in `9ac65c7`; a maintained anonymous allowlist, grant checks, and pinned-`search_path` pgTAP contracts were added. Live read-only checks found zero unexpected anonymous definer functions and zero unpinned application definer functions. Broader authenticated actor tests remain. |
 
 ## SEC-005 — Obsolete deployed notification function is not reproducible
 
@@ -82,4 +82,4 @@
 ## Advisor Notes
 
 - Six RLS-enabled/no-policy tables are server-only queue/audit tables. This is safe only while table grants remain revoked; retain a grant regression test.
-- Supabase remediation references: `https://supabase.com/docs/guides/database/database-linter?lint=0028_anon_security_definer_function_executable` and `https://supabase.com/docs/guides/database/database-linter?lint=0029_authenticated_security_definer_function_executable`.
+- Supabase remediation references: [anonymous definer functions](https://supabase.com/docs/guides/database/database-linter?lint=0028_anon_security_definer_function_executable), [authenticated definer functions](https://supabase.com/docs/guides/database/database-linter?lint=0029_authenticated_security_definer_function_executable), and [leaked-password protection](https://supabase.com/docs/guides/auth/password-security#password-strength-and-leaked-password-protection).

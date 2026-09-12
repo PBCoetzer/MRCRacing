@@ -36,14 +36,18 @@ Audit branch: `codex/production-readiness-audit`
 
 ## Current Verification Evidence
 
-- ESLint passes.
-- TypeScript `--noEmit` passes.
-- Raw Next build succeeds and emits 69 routes.
-- `build:static` fails because the terms-version audit still expects removed hard-coded constants; see `CQ-001`.
-- All 43 crawled sitemap URLs resolve to final HTTP 200 responses with a title, description, and canonical URL.
-- Thirty-seven Deno tests pass when invoked with their function-specific import maps.
-- Production dependency audit reports one critical and three high vulnerabilities; see `SEC-001`.
+- Final local verification completed 2026-09-13 01:30 SAST.
+- ESLint and TypeScript `--noEmit` pass without warnings.
+- The terminology validator and production static build pass and emit 69 routes.
+- The artifact verifier passes across 66 HTML files, 43 sitemap routes, 4 dynamic pages, and 63 route-payload aliases.
+- All 43 remediated sitemap URLs return direct HTTP 200 responses from the current production host with title and canonical metadata.
+- One root command runs all 43 Deno Edge Function tests successfully.
+- Production dependency audit reports zero vulnerabilities.
+- Four local Lighthouse runs score 91–94 performance, 100 accessibility, and 100 best practices; public SEO scores 100.
 - Live read-only financial and referential-integrity checks returned zero invariant violations.
+- Live read-only access checks returned zero public tables without RLS, zero API-role grants on `app_private`, zero unexpected anonymous definer RPCs, and zero unpinned application definer functions.
+- The original 104 migration versions reconcile; two remediation migrations are local-only pending approval.
+- A linked Supabase dry run selects exactly those two remediation migrations without applying them.
 - WhatsApp is not implemented. Telegram and SMS notification paths are present.
 
 ## Constraints

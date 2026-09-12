@@ -23,7 +23,7 @@ Technical review only; this is not legal advice.
 | Object | Notification preference schema, all-client announcement RPC, client settings UI |
 | Recommended fix | Add a distinct email-marketing consent field, default it off, provide explicit opt-in/withdrawal, and require consent for all-client promotional announcements while leaving transactional mail unaffected. |
 | Verification | Non-consenting users are excluded; consent timestamp and withdrawal are auditable; transactional messages still deliver. |
-| Status | Open; release blocker for all-client announcements |
+| Status | Fixed locally in `427082e`; explicit email-marketing consent defaults off, records opt-in/withdrawal timestamps through a self-only audited RPC, and gates all-client announcements without changing transactional mail. Migration deployment pending. |
 
 ## PRIV-002 — Data-subject requests are manual only
 
@@ -37,7 +37,7 @@ Technical review only; this is not legal advice.
 | Object | Privacy operations |
 | Recommended fix | Add an authenticated privacy-request intake with immutable status/audit history, or adopt a documented ticket workflow with owners and deadlines. |
 | Verification | Controlled request can be submitted, acknowledged, exported/redacted, and closed with an audit trail. |
-| Status | Open, operational improvement |
+| Status | Mitigated operationally in `d87316d`; a documented, auditable intake/identity/export/deletion workflow now defines owners and evidence. A self-service product workflow remains future work. |
 
 ## PRIV-003 — Retention periods are purpose-based but not operationally scheduled
 
@@ -51,4 +51,4 @@ Technical review only; this is not legal advice.
 | Object | Audit logs, notifications, Auth email events, application documents, payment attempts |
 | Recommended fix | Approve a legal/operational retention matrix, then add safe archival or anonymization jobs with financial/audit holds. |
 | Verification | Documented schedule, dry-run counts, approved exclusions, and monitored purge jobs. |
-| Status | Open; requires policy owner input |
+| Status | Proposed retention matrix and safe dry-run procedure documented in `d87316d`; legal/operational approval remains required before any purge automation. |

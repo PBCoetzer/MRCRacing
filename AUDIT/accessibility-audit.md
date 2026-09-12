@@ -7,6 +7,7 @@
 - Shared alerts expose `role="alert"`.
 - Forms sampled use associated labels and disabled/busy states.
 - Table containers permit horizontal scrolling rather than clipping at the component level.
+- Final local Lighthouse accessibility scores are 100 on home, pricing, login, and horse-care routes.
 
 ## A11Y-001 — Home live-status badge contrast fails
 
@@ -20,7 +21,7 @@
 | Object | `Frontend/src/app/page.tsx` |
 | Recommended fix | Use a darker red surface or dark foreground with sufficient contrast while preserving brand intent. |
 | Verification | Automated contrast audit and visual review. |
-| Status | Open |
+| Status | Fixed locally in `5e4eaeb`; the badge uses a darker red surface and the final Lighthouse contrast audit passes. |
 
 ## A11Y-002 — Authenticated journeys lack repeatable automated coverage
 
@@ -34,4 +35,4 @@
 | Object | Authenticated frontend journeys |
 | Recommended fix | Add browser accessibility smoke tests at mobile and desktop sizes using non-production test identities. |
 | Verification | CI produces zero serious/critical axe violations and completes keyboard-only flows. |
-| Status | Open |
+| Status | Partially remediated; four local public/Auth Lighthouse runs score 100, and manual mobile/desktop browser smoke covered the authenticated tipster card list and navigation. Repeatable authenticated axe and keyboard flows remain blocked on a synthetic non-production identity environment. |

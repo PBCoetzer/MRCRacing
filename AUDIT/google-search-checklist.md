@@ -10,9 +10,9 @@
 - [x] Public routes return 200 and missing routes return 404.
 - [x] Titles, descriptions, and canonical tags exist on crawled public routes.
 - [x] JSON-LD is serialized without raw `<` injection.
-- [ ] Sitemap static URLs do not redirect (`SEO-001`).
-- [ ] Dynamic article/profile HTML contains visible H1 and body content (`SEO-002`).
-- [ ] Client navigation is free of route-payload 404s (`SEO-003`).
+- [x] Remediated sitemap URLs do not redirect (`SEO-001`); production sitemap deployment is pending.
+- [x] Exported dynamic article/profile HTML contains visible H1 content (`SEO-002`).
+- [x] Local client navigation is free of route-payload 404s (`SEO-003`).
 - [ ] Performance meets agreed Core Web Vitals thresholds (`PERF-001`).
 
 ## Owner Actions In Google Search Console
