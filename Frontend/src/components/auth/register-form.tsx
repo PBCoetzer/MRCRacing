@@ -24,9 +24,13 @@ import {
 import { createClient } from "@/lib/supabase/client";
 import { supabaseConfigMessage } from "@/lib/supabase/config";
 import { getSiteUrl } from "@/lib/site-url";
+import {
+  isExistingRegistrationError,
+  isRegistrationEmailRateLimitError,
+} from "@/lib/auth/registration-errors";
 
 type FormState = {
-  kind: "idle" | "success" | "existing" | "error";
+  kind: "idle" | "success" | "existing" | "uncertain" | "error";
   message: string;
 };
 
@@ -149,6 +153,26 @@ export function RegisterForm() {
       });
 
       if (error) {
+        if (isExistingRegistrationError(error)) {
+          resetCaptcha();
+          setRedirectAfterConfirmation(false);
+          showResult(
+            "existing",
+            "An account may already use this email. To protect account privacy, log in or reset the password instead of registering again.",
+          );
+          return;
+        }
+
+        if (isRegistrationEmailRateLimitError(error)) {
+          resetCaptcha();
+          setRedirectAfterConfirmation(false);
+          showResult(
+            "uncertain",
+            "A confirmation request was made recently. Check your inbox and spam folder before trying again. If the account is already confirmed, go to login or reset the password.",
+          );
+          return;
+        }
+
         throw error;
       }
 
@@ -171,14 +195,21 @@ export function RegisterForm() {
       showResult("success", "Account created. Please check your email to confirm your login.");
     } catch (error) {
       resetCaptcha();
-      showResult(
-        "error",
-        isCaptchaChallengeError(error)
-          ? "Human verification expired or was already submitted. It has been refreshed; please complete it and press Create account once more."
-          : error instanceof Error
+
+      if (isCaptchaChallengeError(error)) {
+        setRedirectAfterConfirmation(false);
+        showResult(
+          "uncertain",
+          "The registration response could not be confirmed because human verification expired or was already used. If a confirmation email arrived, your account was created: open the email, then log in. If no email arrived, complete the refreshed verification and try once more.",
+        );
+      } else {
+        showResult(
+          "error",
+          error instanceof Error
             ? error.message
             : "Registration failed. Please try again.",
-      );
+        );
+      }
     } finally {
       submitLockRef.current = false;
       setIsSubmitting(false);
@@ -291,6 +322,8 @@ export function RegisterForm() {
                 ? "Registration failed"
                 : formState.kind === "existing"
                   ? "Check your existing account"
+                  : formState.kind === "uncertain"
+                    ? "Check your registration"
                   : "Registration successful"}
             </DialogTitle>
             <DialogDescription>{formState.message}</DialogDescription>
@@ -300,6 +333,15 @@ export function RegisterForm() {
               <>
                 <Button asChild variant="outline">
                   <Link href="/forgot-password/">Reset password</Link>
+                </Button>
+                <Button asChild>
+                  <Link href="/login/">Go to login</Link>
+                </Button>
+              </>
+            ) : formState.kind === "uncertain" ? (
+              <>
+                <Button type="button" variant="outline" onClick={handleDialogConfirmation}>
+                  Try again
                 </Button>
                 <Button asChild>
                   <Link href="/login/">Go to login</Link>
