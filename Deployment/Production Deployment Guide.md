@@ -81,6 +81,14 @@ The deploy helper:
 5. Verifies deployed files by SHA-256.
 6. Removes stale frontend files only after successful verification.
 
+To capture a standalone backup before any release change, run:
+
+```powershell
+.\Deployment\Deploy-Xneelo.ps1 -ApprovalReference "approved-by-owner-YYYYMMDD-HHMM" -BackupOnly
+```
+
+Backup-only mode downloads and archives the current `public_html` tree without uploading, replacing, or deleting any remote file.
+
 Upload the contents of `Frontend/out` directly into `public_html`; never create `public_html/out/index.html`.
 
 ### 4. Production smoke tests

@@ -2,7 +2,9 @@
 param(
   [Parameter(Mandatory = $true)]
   [ValidateNotNullOrEmpty()]
-  [string]$ApprovalReference
+  [string]$ApprovalReference,
+
+  [switch]$BackupOnly
 )
 
 $ErrorActionPreference = "Stop"
@@ -13,22 +15,24 @@ $pythonScript = Join-Path $deploymentDirectory "deploy_xneelo.py"
 $frontendDirectory = (Resolve-Path (Join-Path $deploymentDirectory "..\Frontend")).Path
 $outputDirectory = Join-Path $frontendDirectory "out"
 
-if (-not (Test-Path -LiteralPath (Join-Path $outputDirectory "index.html"))) {
+if (-not $BackupOnly -and -not (Test-Path -LiteralPath (Join-Path $outputDirectory "index.html"))) {
   throw "No static export exists. Run npm run build:static from Frontend first."
 }
 
-Push-Location $frontendDirectory
-try {
-  & npm run verify:static
-  if ($LASTEXITCODE -ne 0) {
-    throw "Static export verification failed. Production deployment is blocked."
+if (-not $BackupOnly) {
+  Push-Location $frontendDirectory
+  try {
+    & npm run verify:static
+    if ($LASTEXITCODE -ne 0) {
+      throw "Static export verification failed. Production deployment is blocked."
+    }
+  }
+  finally {
+    Pop-Location
   }
 }
-finally {
-  Pop-Location
-}
 
-Write-Host "Production deployment approval: $ApprovalReference"
+Write-Host "Production website operation approval: $ApprovalReference"
 
 if (-not (Test-Path -LiteralPath $credentialPath)) {
   throw "No encrypted Xneelo credential exists. Run Deployment/Save-XneeloCredential.ps1 first."
@@ -50,6 +54,9 @@ try {
   $startInfo.ArgumentList.Add($pythonScript)
   $startInfo.ArgumentList.Add("--config")
   $startInfo.ArgumentList.Add((Join-Path $deploymentDirectory "xneelo-deploy.json"))
+  if ($BackupOnly) {
+    $startInfo.ArgumentList.Add("--backup-only")
+  }
   $startInfo.UseShellExecute = $false
   $startInfo.RedirectStandardInput = $true
   $startInfo.RedirectStandardOutput = $true

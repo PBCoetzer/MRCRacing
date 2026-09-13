@@ -25,6 +25,7 @@ PRESERVED_FILES = {".ftpquota", "error_log"}
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser()
     parser.add_argument("--config", required=True, type=Path)
+    parser.add_argument("--backup-only", action="store_true")
     return parser.parse_args()
 
 
@@ -164,21 +165,22 @@ def main() -> int:
 
     if not password:
         raise RuntimeError("The encrypted Xneelo password could not be read.")
-    if not (local_output / "index.html").is_file():
+    if not args.backup_only and not (local_output / "index.html").is_file():
         raise RuntimeError(f"Static export not found at {local_output}.")
 
     local_files: dict[str, Path] = {}
-    for path in local_output.rglob("*"):
-        if not path.is_file():
-            continue
-        relative = path.relative_to(local_output).as_posix()
-        remote_relative = remote_safe_relative(relative)
-        if remote_relative in local_files:
-            raise RuntimeError(
-                f"Static export contains colliding Xneelo paths: {relative} and "
-                f"{local_files[remote_relative].relative_to(local_output).as_posix()}."
-            )
-        local_files[remote_relative] = path
+    if not args.backup_only:
+        for path in local_output.rglob("*"):
+            if not path.is_file():
+                continue
+            relative = path.relative_to(local_output).as_posix()
+            remote_relative = remote_safe_relative(relative)
+            if remote_relative in local_files:
+                raise RuntimeError(
+                    f"Static export contains colliding Xneelo paths: {relative} and "
+                    f"{local_files[remote_relative].relative_to(local_output).as_posix()}."
+                )
+            local_files[remote_relative] = path
     release_id = uuid.uuid4().hex[:12]
     timestamp = datetime.now().strftime("%Y%m%d-%H%M%S")
     backup_path = backup_directory / f"public_html-before-{timestamp}.zip"
@@ -209,6 +211,21 @@ def main() -> int:
                 flush=True,
             )
             create_backup(sftp, remote_root, before, backup_path)
+
+            if args.backup_only:
+                print(
+                    json.dumps(
+                        {
+                            "status": "backup_succeeded",
+                            "host": config["host"],
+                            "remoteRoot": config["remoteRoot"],
+                            "remoteFileCount": len(before),
+                            "backup": str(backup_path),
+                        },
+                        indent=2,
+                    )
+                )
+                return 0
 
             known_directories = {remote_root}
             uploaded = 0
