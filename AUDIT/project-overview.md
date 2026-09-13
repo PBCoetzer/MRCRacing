@@ -46,7 +46,7 @@ Audit branch: `codex/production-readiness-audit`
 - Four local Lighthouse runs score 91–94 performance, 100 accessibility, and 100 best practices; public SEO scores 100.
 - Live read-only financial and referential-integrity checks returned zero invariant violations.
 - Live read-only access checks returned zero public tables without RLS, zero API-role grants on `app_private`, zero unexpected anonymous definer RPCs, and zero unpinned application definer functions.
-- The original 104 migration versions reconcile; two remediation migrations are local-only pending approval.
+- All 106 migration versions reconcile after the two approved remediation migrations were deployed.
 - A linked Supabase dry run selects exactly those two remediation migrations without applying them.
 - WhatsApp is not implemented. Telegram and SMS notification paths are present.
 

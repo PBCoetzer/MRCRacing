@@ -23,7 +23,7 @@ Technical review only; this is not legal advice.
 | Object | Notification preference schema, all-client announcement RPC, client settings UI |
 | Recommended fix | Add a distinct email-marketing consent field, default it off, provide explicit opt-in/withdrawal, and require consent for all-client promotional announcements while leaving transactional mail unaffected. |
 | Verification | Non-consenting users are excluded; consent timestamp and withdrawal are auditable; transactional messages still deliver. |
-| Status | Fixed locally in `427082e`; explicit email-marketing consent defaults off, records opt-in/withdrawal timestamps through a self-only audited RPC, and gates all-client announcements without changing transactional mail. Migration deployment pending. |
+| Status | Fixed and deployed from `427082e`; explicit email-marketing consent defaults off, records opt-in/withdrawal timestamps through a self-only audited RPC, and gates all-client announcements without changing transactional mail. Live checks confirm anonymous execution is denied and existing accounts remain opted out by default. |
 
 ## PRIV-002 — Data-subject requests are manual only
 

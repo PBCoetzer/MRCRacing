@@ -21,7 +21,7 @@
 | Object | `Frontend/package.json`, `Frontend/package-lock.json` |
 | Recommended fix | Upgrade Next and `eslint-config-next` to the patched compatible release, regenerate the lockfile, and rerun the full build and dependency audit. |
 | Verification | `npm audit --omit=dev`, ESLint, TypeScript, static build, browser smoke tests. |
-| Status | Fixed locally in `bf9fa0f`; Next and `eslint-config-next` are `16.3.5`, the full build passes, and `npm audit --omit=dev` reports zero vulnerabilities. Production deployment pending. |
+| Status | Fixed and deployed from `bf9fa0f`; Next and `eslint-config-next` are `16.3.5`, the full build passes, and `npm audit --omit=dev` reports zero vulnerabilities. |
 
 ## SEC-002 — CSP is report-only
 
@@ -35,7 +35,7 @@
 | Object | `Frontend/public/.htaccess` |
 | Recommended fix | Enforce the verified policy, retain only required origins, and smoke-test Auth, Turnstile, analytics, Supabase, video, and payment journeys. |
 | Verification | Live header check plus browser console/network smoke tests. |
-| Status | Fixed locally in `bf9fa0f`; the policy is enforced in the deployment artifact and passed local browser smoke tests. Production header verification pending deployment. |
+| Status | Fixed and deployed from `bf9fa0f`; production smoke confirms enforced CSP and no report-only CSP header. |
 
 ## SEC-003 — Compromised-password protection is disabled
 

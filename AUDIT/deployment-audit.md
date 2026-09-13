@@ -19,7 +19,7 @@
 | Object | `supabase/config.toml`, Supabase Edge Function metadata |
 | Recommended fix | Declare every maintained local function with the correct entrypoint/import map/JWT mode and classify the extra live legacy function for removal. |
 | Verification | Config inventory equals source inventory; live metadata matches after approved deployment. |
-| Status | Fixed locally in `9768710`; all 14 maintained functions are declared with reconciled JWT/import-map behavior. The obsolete fifteenth live function remains an approved production-cleanup action under `SEC-005`. |
+| Status | Fixed in `9768710`; all 14 maintained functions are declared with reconciled JWT/import-map behavior. No unchanged function was redeployed. The obsolete fifteenth live function remains a separate cleanup action under `SEC-005`. |
 
 ## DEP-002 — Release is not continuously verified
 
@@ -33,7 +33,7 @@
 | Object | Repository automation and deployment process |
 | Recommended fix | Add CI checks and generate a checksummed static artifact from a committed revision. Keep deployment as a separate approved action. |
 | Verification | CI publishes a verified artifact only when every required check passes. |
-| Status | Fixed locally in `9ac65c7` and `d87316d`; CI produces a verified artifact, and the Xneelo script requires an approval reference and reruns artifact verification before credentials are decrypted. First hosted CI execution remains pending. |
+| Status | Fixed in `9ac65c7`, `d87316d`, and `35f6d19`; the verified local pipeline and guarded Xneelo deployment completed successfully with approval references, two matching backups, and remote SHA-256 verification. First hosted CI execution remains pending. |
 
 ## DEP-003 — Environment separation is incomplete
 
@@ -61,4 +61,4 @@
 | Object | `Deployment/Production Deployment Guide.md` |
 | Recommended fix | Update the guide to the active worktree, verified build command, external artifact location, approval gate, and rollback procedure. |
 | Verification | A dry run from a fresh checkout follows the documented commands without ambiguity. |
-| Status | Fixed locally in `d87316d`; the runbook now uses the Hermes Bridge path, verified artifact workflow, explicit approval gate, database/functions/frontend order, Xneelo backup, and compensating-migration procedure. |
+| Status | Fixed in `d87316d` and exercised successfully during the approved production rollout; the runbook uses the Hermes Bridge path, verified artifact workflow, explicit approval gate, database/functions/frontend order, Xneelo backup, and compensating-migration procedure. |

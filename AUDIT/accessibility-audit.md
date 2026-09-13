@@ -21,7 +21,7 @@
 | Object | `Frontend/src/app/page.tsx` |
 | Recommended fix | Use a darker red surface or dark foreground with sufficient contrast while preserving brand intent. |
 | Verification | Automated contrast audit and visual review. |
-| Status | Fixed locally in `5e4eaeb`; the badge uses a darker red surface and the final Lighthouse contrast audit passes. |
+| Status | Fixed and deployed from `5e4eaeb`; the badge uses a darker red surface and the release Lighthouse contrast audit passes. |
 
 ## A11Y-002 — Authenticated journeys lack repeatable automated coverage
 

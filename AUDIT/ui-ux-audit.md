@@ -33,4 +33,4 @@
 | Object | `Frontend/src/app` |
 | Recommended fix | Add accessible global and route-level recovery screens with retry/home actions and redacted client error identifiers. |
 | Verification | Inject a controlled test error and confirm focus, message, retry, and logging behavior. |
-| Status | Fixed locally in `5e4eaeb`; `Frontend/src/app/error.tsx` provides an accessible retry/home recovery path and logs only redacted error metadata. |
+| Status | Fixed and deployed from `5e4eaeb`; `Frontend/src/app/error.tsx` provides an accessible retry/home recovery path and logs only redacted error metadata. |

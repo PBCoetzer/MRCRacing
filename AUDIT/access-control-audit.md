@@ -48,3 +48,4 @@
 - Final aggregate verification found 193 active production accounts and zero without the `client` role, so every active client can use the authenticated blog-comment RPC.
 - Anonymous users cannot comment. Article creation, editing, publishing, archiving, and media upload remain restricted to active accounts with an administrator-approved `tipster_blog_permissions.can_publish` record and owner-scoped post checks.
 - The access-control pgTAP suite now includes six explicit blog comment/author contracts; exported blog routes must also contain the comment interface.
+- Post-deployment mobile-browser smoke confirms the live blog comment interface renders, while anonymous `/client/`, `/tipster/`, and `/admin/` visits show the login-required boundary without private data.

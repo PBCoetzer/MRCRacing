@@ -12,7 +12,7 @@
 | Object | `Frontend/scripts/audit-public-terminology.mjs` |
 | Recommended fix | Validate the current RPC-backed terms contract and authoritative migration instead of deleted UI constants. |
 | Verification | Terminology audit and `build:static` both pass. |
-| Status | Fixed locally in `9768710`; terminology validation now checks the authoritative RPC-backed contract and `build:static` passes. |
+| Status | Fixed in `9768710`; terminology validation checks the authoritative RPC-backed contract, `build:static` passes, and the verified artifact is deployed. |
 
 ## CQ-002 — Oversized multi-responsibility modules
 
@@ -40,7 +40,7 @@
 | Object | Supabase Deno configuration and package scripts |
 | Recommended fix | Add a root test runner or root Deno import map and one documented command for all Edge tests. |
 | Verification | One command type-checks and runs every test. |
-| Status | Fixed locally in `9ac65c7` and `6b22f51`; one pinned root Deno configuration runs all 43 Edge tests successfully. |
+| Status | Fixed in `9ac65c7` and `6b22f51`; one pinned root Deno configuration runs all 43 Edge tests successfully. |
 
 ## CQ-004 — No continuous integration gate
 
@@ -54,7 +54,7 @@
 | Object | Repository automation |
 | Recommended fix | Add a least-privilege CI workflow using public build credentials or mocked public content, with secrets kept in the platform secret store. |
 | Verification | Pull requests require all checks to pass. |
-| Status | Fixed locally in `9ac65c7`; the least-privilege GitHub Actions workflow runs an isolated Supabase database contract job plus the complete frontend, dependency, Edge, build, and artifact gate. Repository-secret configuration and first hosted run remain owner actions. |
+| Status | Fixed in `9ac65c7`; the least-privilege GitHub Actions workflow runs an isolated Supabase database contract job plus the complete frontend, dependency, Edge, build, and artifact gate. The equivalent local pipeline produced the deployed artifact; repository-secret configuration and the first hosted run remain owner actions. |
 
 ## CQ-005 — Inactive legacy frontend remains in repository
 
