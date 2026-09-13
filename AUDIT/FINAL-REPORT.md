@@ -6,7 +6,7 @@ Decision: **NO-GO pending external controls and explicit deployment approval**
 
 Initial audit snapshot: 2026-09-13 00:28 SAST
 
-Final local verification: 2026-09-13 01:30 SAST
+Final local verification: 2026-09-13 10:36 SAST
 
 ## Executive Summary
 
@@ -30,6 +30,23 @@ Production release remains a no-go until the external Auth email delivery/bounce
 - The original 104 Supabase migration versions align. Two forward-only remediation migrations remain local-only.
 - `supabase db push --dry-run --linked` selects exactly those two remediation migrations and performs no production write.
 
+## Blog Access Verification
+
+- All 193 active production accounts have the `client` role; zero active accounts are excluded from blog commenting by a missing role.
+- `create_blog_comment` is executable by authenticated users, denied to anonymous users, and enforces an active client account, published article, plain text, length, link, duplicate, and rate-limit checks.
+- Any active registered account may request blog author access, independently from public Tipster status.
+- Only the three currently approved author records can create, edit, publish, archive, or upload media for their own articles.
+- Six pgTAP permission contracts and an exported blog comment-interface assertion now prevent silent regressions. The complete local release gate passes after these additions.
+
+## Deployment Manifest
+
+- **Database:** apply only `20260912225129_email_marketing_consent.sql` and `20260912232015_add_financial_fk_indexes.sql` after approval.
+- **Frontend:** deploy the newly verified `Frontend/out` artifact to Xneelo through `Deploy-Xneelo.ps1` with an approval reference.
+- **Edge Functions:** no maintained Edge Function source changed during remediation, so no blanket redeployment is required. Keep current versions; separately remove `deliver-tip-notifications` only after confirming no caller and receiving approval.
+- **Supabase Auth/email configuration:** enable leaked-password protection, complete the Resend domain/DNS setup, configure the signed Send Email hook and delivery webhook, and run controlled delivered/bounced tests.
+- **CI:** merge or push the workflow, configure the three public build secrets, and require the first successful hosted database/frontend jobs before release.
+- **Monitoring:** configure external uptime/error alert routing and prove that a controlled alert reaches the owner.
+
 ## Release Blockers
 
 - `MON-002`: activate the signed Supabase Auth Send Email hook, verified sending domain, delivery webhook, bounce/complaint handling, and controlled delivery tests.
@@ -38,7 +55,7 @@ Production release remains a no-go until the external Auth email delivery/bounce
 - `CQ-004`: configure public GitHub build secrets and obtain the first successful hosted CI run, including isolated Supabase migrations and pgTAP.
 - `DEP-003`: either establish a hosted synthetic non-production Auth/provider environment or explicitly accept the bounded gap.
 - `PERF-001`: retest deployed pages and accept or further reduce the remaining 3.0–3.5-second local LCP.
-- Owner approval is required before applying migrations, deploying Edge Functions, uploading the static frontend, or removing the obsolete live worker.
+- Owner approval is required before applying migrations, changing production function/configuration state, uploading the static frontend, or removing the obsolete live worker.
 
 ## Residual Non-Blocking Work
 
@@ -72,10 +89,11 @@ Scores summarize evidence and cannot override a release blocker.
 1. Capture database and Xneelo rollback evidence and record the approval reference.
 2. Apply `20260912225129_email_marketing_consent.sql`, then `20260912232015_add_financial_fk_indexes.sql`.
 3. Re-run Supabase security/performance advisors and financial/access-control read-only checks.
-4. Deploy the 14 maintained Edge Functions with reconciled JWT settings; remove the obsolete worker only after caller confirmation.
-5. Upload the verified static artifact through the guarded Xneelo script.
-6. Run production smoke, Auth email delivery/bounce, gateway reconciliation, sitemap, headers, private-route, responsive, accessibility, and monitoring tests.
-7. Record the final GO, CONDITIONAL GO, or rollback decision with evidence.
+4. Confirm the current 14 maintained Edge Function versions remain unchanged; remove the obsolete worker only after caller confirmation and separate approval.
+5. Complete the Auth email/provider and external monitoring configuration actions.
+6. Upload the verified static artifact through the guarded Xneelo script.
+7. Run production smoke, Auth email delivery/bounce, gateway reconciliation, sitemap, headers, private-route, responsive, accessibility, and monitoring tests.
+8. Record the final GO, CONDITIONAL GO, or rollback decision with evidence.
 
 ## Rollback Position
 

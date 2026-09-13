@@ -45,3 +45,6 @@
 - The inspected RLS policies use restrictive active-account gates plus ownership/visibility policies; the active-account policies do not independently grant table access.
 - Browser role checks improve UX but are not trusted for data authorization.
 - Service-role usage is confined to Edge Functions.
+- Final aggregate verification found 193 active production accounts and zero without the `client` role, so every active client can use the authenticated blog-comment RPC.
+- Anonymous users cannot comment. Article creation, editing, publishing, archiving, and media upload remain restricted to active accounts with an administrator-approved `tipster_blog_permissions.can_publish` record and owner-scoped post checks.
+- The access-control pgTAP suite now includes six explicit blog comment/author contracts; exported blog routes must also contain the comment interface.

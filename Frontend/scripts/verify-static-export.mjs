@@ -100,6 +100,10 @@ for (const dynamicUrl of dynamicUrls) {
   if (!/<h1\b/i.test(html)) {
     throw new Error(`Dynamic route lacks a server-rendered H1: ${dynamicUrl}.`);
   }
+  if (/\/blog\/[^/]+\/$/.test(new URL(dynamicUrl).pathname)
+    && (!html.includes("Join the conversation") || !html.includes("Post comment"))) {
+    throw new Error(`Blog route lacks the client comment interface: ${dynamicUrl}.`);
+  }
 }
 
 let payloadAliases = 0;
