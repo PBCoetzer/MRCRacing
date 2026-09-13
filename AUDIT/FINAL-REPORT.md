@@ -6,7 +6,7 @@ Decision: **CONDITIONAL GO — deployed application is stable; external operatio
 
 Initial audit snapshot: 2026-09-13 00:28 SAST
 
-Final production verification: 2026-09-13 11:20 SAST
+Final production verification: 2026-09-13 12:20 SAST
 
 ## Executive Summary
 
@@ -41,12 +41,13 @@ The application is conditionally fit to remain deployed. Full GO still requires 
 ## Production Deployment Record
 
 - **Approval references:** `owner-approved-20260913-104446` and `owner-approved-20260913-105628`.
-- **Deployed revision:** `35f6d190d15aaa407f4be1b5c66a072e81fdaa93` on `codex/production-readiness-audit`.
+- **Deployed application revision:** `293dfe5299a0f27b64035d831ae939eda4b8e762` on `codex/production-readiness-audit`.
 - **Database:** applied `20260912225129_email_marketing_consent.sql` and `20260912232015_add_financial_fk_indexes.sql`; migration history is fully aligned.
 - **Frontend:** uploaded the verified `Frontend/out` artifact to Xneelo; 474 local files verified, 431 uploaded, 43 already current, and 262 stale files removed while 395 legacy/system files were preserved.
 - **Edge Functions:** no maintained source changed, so no blanket redeployment occurred. The obsolete `deliver-tip-notifications` worker remains untouched pending caller confirmation and separate approval.
 - **Rollback:** two identical pre-change Xneelo backups contain 1,024 entries and share SHA-256 `75D24D2638386CBFA91791B8222147ACC760A73B5D799655D2B5D22DABDC3D4B`.
 - **Detailed record:** `Deployment/Release Records/2026-09-13-production-readiness.md`.
+- **Registration hotfix:** existing-account Auth responses, email rate limits, and ambiguous consumed-captcha responses now provide safe login/retry guidance instead of a false definitive failure. The hotfix deployment retained an additional 869-entry rollback backup with SHA-256 `510AA4498E53E45D4A7F4C6D7B0CD15A7744676342E23E92A0608C809CFC6FE6`; see `Deployment/Release Records/2026-09-13-registration-hotfix.md`.
 
 ## Production Smoke Results
 
@@ -56,7 +57,7 @@ The application is conditionally fit to remain deployed. Full GO still requires 
 - A live dynamic blog article contains the comment form and post button.
 - Anonymous visits to `/client/`, `/tipster/`, and `/admin/` show the login-required boundary and no private records.
 - A representative route-payload alias returns HTTP 200, and an unknown route returns HTTP 404.
-- Registration renders its form, email field, and retained age declaration. The anti-bot widget keeps background requests open and emits browser-sandbox font/WebGL warnings, but no page error was recorded.
+- Registration renders its form, email field, retained age declaration, and the deployed existing-account/captcha recovery guidance. The anti-bot widget keeps background requests open and emits browser-sandbox font/WebGL warnings, but no page error was recorded.
 
 ## Conditions Before Full GO
 
