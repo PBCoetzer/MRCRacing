@@ -3,7 +3,7 @@ import { Bungee, JetBrains_Mono, Nunito_Sans } from "next/font/google";
 import { Providers } from "@/components/providers";
 import { JsonLd } from "@/lib/json-ld";
 import { businessDetails } from "@/lib/business-details";
-import { canonicalSiteUrl, defaultDescription, defaultShareImage, siteName } from "@/lib/metadata";
+import { canonicalSiteUrl, defaultDescription, defaultShareImage, isNonProductionDeployment, siteName } from "@/lib/metadata";
 import "./globals.css";
 
 const bungee = Bungee({
@@ -27,6 +27,9 @@ export const metadata: Metadata = {
   title: { default: siteName, template: `%s | ${siteName}` },
   description: defaultDescription,
   applicationName: siteName,
+  robots: isNonProductionDeployment
+    ? { index: false, follow: false, nocache: true }
+    : undefined,
   icons: {
     icon: [{ url: "/icon.svg", type: "image/svg+xml" }],
     shortcut: ["/icon.svg"],
@@ -40,7 +43,7 @@ export const metadata: Metadata = {
     images: [{ url: defaultShareImage, width: 1200, height: 630, alt: "MRC Racing Tips — South African horse racing" }],
   },
   twitter: { card: "summary_large_image", title: siteName, description: defaultDescription, images: [defaultShareImage] },
-  verification: process.env.NEXT_PUBLIC_GOOGLE_SITE_VERIFICATION
+  verification: !isNonProductionDeployment && process.env.NEXT_PUBLIC_GOOGLE_SITE_VERIFICATION
     ? { google: process.env.NEXT_PUBLIC_GOOGLE_SITE_VERIFICATION }
     : undefined,
 };

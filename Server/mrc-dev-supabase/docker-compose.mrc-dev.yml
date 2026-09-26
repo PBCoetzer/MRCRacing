@@ -1,0 +1,4 @@
+services:
+  functions:
+    env_file:
+      - .env.functions

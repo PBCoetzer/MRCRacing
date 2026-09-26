@@ -4,6 +4,14 @@ import { fileURLToPath } from "node:url";
 
 const scriptsDirectory = path.dirname(fileURLToPath(import.meta.url));
 const outputDirectory = path.resolve(scriptsDirectory, "..", "out");
+const deploymentTarget = process.env.MRC_DEPLOY_TARGET ?? "production";
+const isDevelopment = deploymentTarget === "development";
+const configuredSiteUrl = process.env.NEXT_PUBLIC_SITE_URL ?? "https://www.mrcracing.co.za";
+const expectedHost = new URL(configuredSiteUrl).hostname;
+const allowedSitemapHosts = isDevelopment
+  ? new Set([expectedHost])
+  : new Set(["mrcracing.co.za", "www.mrcracing.co.za"]);
+const productionSupabaseHost = "cjgfvqgiqrphmakruqnk.supabase.co";
 const expectedFiles = ["index.html", "404.html", "robots.txt", "sitemap.xml"];
 const textExtensions = new Set([".css", ".html", ".js", ".json", ".txt", ".xml"]);
 const secretPatterns = [
@@ -55,6 +63,9 @@ if (
 ) {
   throw new Error("Static export does not disable caching for mutable Next route payloads.");
 }
+if (isDevelopment && !htaccess.includes('Header always set X-Robots-Tag "noindex, nofollow, noarchive"')) {
+  throw new Error("Development export is missing the X-Robots-Tag noindex header.");
+}
 
 const files = await findFiles(outputDirectory);
 const htmlFiles = files.filter((file) => file.endsWith(".html"));
@@ -65,6 +76,10 @@ if (htmlFiles.length < 60) {
 for (const file of files) {
   if (!textExtensions.has(path.extname(file))) continue;
   const value = await readFile(file, "utf8");
+
+  if (isDevelopment && value.includes(productionSupabaseHost)) {
+    throw new Error(`Production Supabase project reference found in ${path.relative(outputDirectory, file)}.`);
+  }
 
   for (const secret of secretPatterns) {
     if (secret.pattern.test(value)) {
@@ -87,13 +102,24 @@ if (!sitemapUrls.length) {
 
 for (const sitemapUrl of sitemapUrls) {
   const parsed = new URL(sitemapUrl);
-  if (!new Set(["mrcracing.co.za", "www.mrcracing.co.za"]).has(parsed.hostname)) {
+  if (!allowedSitemapHosts.has(parsed.hostname)) {
     throw new Error(`Unexpected sitemap host: ${parsed.hostname}.`);
   }
   if (!parsed.pathname.endsWith("/")) {
     throw new Error(`Sitemap URL must use a trailing slash: ${sitemapUrl}.`);
   }
   await stat(routeOutputPath(sitemapUrl));
+}
+
+if (isDevelopment) {
+  const robots = await readFile(path.join(outputDirectory, "robots.txt"), "utf8");
+  if (!/Disallow:\s*\//i.test(robots)) {
+    throw new Error("Development robots.txt must disallow all crawling.");
+  }
+  const indexHtml = await readFile(path.join(outputDirectory, "index.html"), "utf8");
+  if (!/name="robots"[^>]+content="noindex, nofollow/i.test(indexHtml)) {
+    throw new Error("Development home page is missing noindex metadata.");
+  }
 }
 
 const dynamicUrls = sitemapUrls.filter((url) =>

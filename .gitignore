@@ -18,6 +18,16 @@ frontend-app/out/
 Frontend/.env
 Frontend/.env.*
 !Frontend/.env.example
+!Frontend/.env.development.example
+
+# Self-hosted development runtime and database exports
+Server/mrc-dev-supabase/runtime/
+Server/mrc-dev-supabase/*.sql.gz
+Server/mrc-dev-supabase/*.dump
+Server/mrc-dev-supabase/.env
+Server/mrc-dev-supabase/.env.functions
+Deployment/xneelo-deploy.development.local.json
+Deployment/Xneelo Development Backups/
 
 # Upload packages and generated artifacts
 Deployment/*.zip

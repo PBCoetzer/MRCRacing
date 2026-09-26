@@ -1,6 +1,14 @@
 import type { Metadata } from "next";
 
-export const canonicalSiteUrl = "https://www.mrcracing.co.za";
+const productionSiteHosts = new Set(["mrcracing.co.za", "www.mrcracing.co.za"]);
+const configuredSiteUrl = process.env.NEXT_PUBLIC_SITE_URL?.trim();
+
+export const canonicalSiteUrl = configuredSiteUrl
+  ? configuredSiteUrl.replace(/\/$/, "")
+  : "https://www.mrcracing.co.za";
+export const isNonProductionDeployment =
+  process.env.NEXT_PUBLIC_DEPLOYMENT_ENV === "development"
+  || !productionSiteHosts.has(new URL(canonicalSiteUrl).hostname);
 export const siteName = "MrC Racing Tips";
 export const defaultDescription =
   "South African horse-racing tips, verified tipster performance, factual racecards, results history, and responsible racing analysis.";
@@ -22,7 +30,9 @@ export function publicMetadata({
     title,
     description,
     alternates: { canonical },
-    robots: { index: true, follow: true },
+    robots: isNonProductionDeployment
+      ? { index: false, follow: false, nocache: true }
+      : { index: true, follow: true },
     openGraph: {
       type: "website",
       locale: "en_ZA",
