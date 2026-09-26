@@ -16,6 +16,7 @@ import {
   ShieldCheck,
 } from "lucide-react";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
+import { MfaProfileCard } from "@/components/auth/mfa-profile-card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
@@ -43,12 +44,13 @@ import type {
 
 type EarningRow = {
   id: string;
-  entry_type: "sale" | "refund";
+  entry_type: "sale" | "refund" | "allocation_adjustment";
   purchase_type: "meeting" | "subscription";
   source_label: string;
   purchaser_email: string | null;
   gross_coins: number;
   platform_fee_coins: number;
+  horse_care_coins: number;
   net_coins: number;
   created_at: string;
 };
@@ -197,7 +199,7 @@ export function TipsterDashboardClient() {
           .order("first_race_at", { ascending: true }),
         supabase
           .from("tip_cards")
-          .select("id,tipster_id,meeting_id,title,summary,coin_price,status,revision,listed_at,published_at,voided_at,updated_at")
+          .select("id,tipster_id,meeting_id,title,summary,coin_price,status,revision,confirmed_revision_count,listed_at,published_at,voided_at,updated_at")
           .eq("tipster_id", verifiedTipster.id)
           .order("updated_at", { ascending: false }),
         supabase
@@ -328,6 +330,9 @@ export function TipsterDashboardClient() {
       Boolean(meeting && !["completed", "cancelled"].includes(meeting.status))
     );
   });
+  const preparationCards = currentCards.filter((card) =>
+    ["draft", "coming_soon"].includes(card.status)
+  );
   const activePackageCount = packages.filter((item) => item.is_active).length;
 
   async function savePackages() {
@@ -505,6 +510,55 @@ export function TipsterDashboardClient() {
         ))}
       </div>
 
+      <MfaProfileCard />
+
+      {preparationCards.length ? (
+        <Card className="border-brand-cyan/45 bg-brand-cyan/5">
+          <CardHeader>
+            <CardTitle className="flex items-center gap-2">
+              <FilePenLine className="size-5 text-brand-cyan" />
+              Continue preparing meeting cards
+            </CardTitle>
+            <CardDescription>
+              Private drafts are visible only to you and administrators. Saving a private draft does not
+              notify clients. Publish only when the complete card is ready.
+            </CardDescription>
+          </CardHeader>
+          <CardContent className="grid gap-3 md:grid-cols-2">
+            {preparationCards.map((draftCard) => {
+              const draftMeeting = meetingById.get(draftCard.meeting_id);
+              const editingOpen = meetingCardSalesOpen(draftMeeting, checkedAt);
+
+              return (
+                <article key={draftCard.id} className="rounded-xl border bg-background/45 p-4">
+                  <div className="flex flex-wrap items-start justify-between gap-3">
+                    <div>
+                      <h3 className="font-semibold text-white">{draftCard.title}</h3>
+                      <p className="mt-1 text-xs text-muted-foreground">
+                        {meetingLabel(draftMeeting)}
+                      </p>
+                    </div>
+                    <Badge variant="secondary">
+                      {draftCard.status === "draft" ? "Private draft" : "Coming Soon"}
+                    </Badge>
+                  </div>
+                  <p className="mt-3 text-sm text-muted-foreground">
+                    {editingOpen
+                      ? "Continue editing, save privately again, or publish publicly when ready."
+                      : "The first-publication cutoff has passed. This draft remains available as a read-only record."}
+                  </p>
+                  <Button asChild className="mt-4 min-h-11 w-full" variant={editingOpen ? "default" : "outline"}>
+                    <Link href={`/tipster/manage-tips/?card=${encodeURIComponent(draftCard.id)}`}>
+                      {editingOpen ? "Continue preparing card" : "View locked draft"}
+                    </Link>
+                  </Button>
+                </article>
+              );
+            })}
+          </CardContent>
+        </Card>
+      ) : null}
+
       <Card>
         <CardHeader>
           <CardTitle className="flex items-center gap-2">
@@ -662,7 +716,7 @@ export function TipsterDashboardClient() {
                   <dl className="mt-4 grid grid-cols-2 gap-3 text-sm">
                     <div>
                       <dt className="text-muted-foreground">Revision</dt>
-                      <dd className="font-mono">{card.revision}</dd>
+                      <dd className="font-mono">{card.confirmed_revision_count}</dd>
                     </div>
                     <div>
                       <dt className="text-muted-foreground">Price</dt>
@@ -750,7 +804,7 @@ export function TipsterDashboardClient() {
                         {card.status.replace("_", " ")}
                       </Badge>
                     </TableCell>
-                    <TableCell className="font-mono">{card.revision}</TableCell>
+                    <TableCell className="font-mono">{card.confirmed_revision_count}</TableCell>
                     <TableCell className="font-mono">{formatMeetingCardPrice(card.coin_price)}</TableCell>
                     <TableCell className="font-mono">
                       {card.status === "settled"
@@ -832,7 +886,8 @@ export function TipsterDashboardClient() {
                 <TableHead>Client email</TableHead>
                 <TableHead>Entry</TableHead>
                 <TableHead>Gross</TableHead>
-                <TableHead>Commission</TableHead>
+                <TableHead>MRC</TableHead>
+                <TableHead>Horse Care</TableHead>
                 <TableHead>Net</TableHead>
               </TableRow>
             </TableHeader>
@@ -851,17 +906,20 @@ export function TipsterDashboardClient() {
                   </TableCell>
                   <TableCell>
                     <Badge variant={entry.entry_type === "refund" ? "destructive" : "outline"}>
-                      {entry.purchase_type} {entry.entry_type}
+                      {entry.entry_type === "allocation_adjustment"
+                        ? "10/20/70 adjustment"
+                        : `${entry.purchase_type} ${entry.entry_type}`}
                     </Badge>
                   </TableCell>
                   <TableCell>{formatCredits(entry.gross_coins)}</TableCell>
                   <TableCell>{formatCredits(entry.platform_fee_coins)}</TableCell>
+                  <TableCell>{formatCredits(entry.horse_care_coins)}</TableCell>
                   <TableCell>{formatCredits(entry.net_coins)}</TableCell>
                 </TableRow>
               ))}
               {!earnings.length ? (
                 <TableRow>
-                  <TableCell colSpan={7} className="text-center text-muted-foreground">
+                  <TableCell colSpan={8} className="text-center text-muted-foreground">
                     No earnings entries yet.
                   </TableCell>
                 </TableRow>

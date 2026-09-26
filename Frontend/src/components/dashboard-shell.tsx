@@ -1,5 +1,5 @@
 import Link from "next/link";
-import { RoleGate } from "@/components/auth/role-gate";
+import { RoleGate, type MfaPolicy } from "@/components/auth/role-gate";
 import { SiteHeader } from "@/components/site-header";
 import { SiteFooter } from "@/components/site-footer";
 import { Button } from "@/components/ui/button";
@@ -12,6 +12,8 @@ type DashboardShellProps = {
   description: string;
   nav: { label: string; href: string }[];
   children: React.ReactNode;
+  mfaPolicy?: MfaPolicy;
+  requireRole?: boolean;
 };
 
 export function DashboardShell({
@@ -22,12 +24,22 @@ export function DashboardShell({
   description,
   nav,
   children,
+  mfaPolicy,
+  requireRole,
 }: DashboardShellProps) {
+  const resolvedMfaPolicy = mfaPolicy ?? (
+    allowedRoles.length === 1 && allowedRoles[0] === "administrator"
+      ? "administrator"
+      : "enrolled"
+  );
+
   return (
     <RoleGate
       allowedRoles={allowedRoles}
       description={accessDescription}
       title={accessTitle}
+      mfaPolicy={resolvedMfaPolicy}
+      requireRole={requireRole}
     >
       <div className="min-h-screen bg-background text-foreground">
         <SiteHeader />

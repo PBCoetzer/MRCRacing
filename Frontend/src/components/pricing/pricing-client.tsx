@@ -266,7 +266,8 @@ export function PricingClient() {
 
       submitProviderForm(checkout.actionUrl, checkout.fields);
     } catch (checkoutError) {
-      setError(await getCheckoutErrorMessage(checkoutError));
+      const checkoutMessage = await getCheckoutErrorMessage(checkoutError);
+      setError(checkoutMessage);
       setProcessing("");
     }
   }

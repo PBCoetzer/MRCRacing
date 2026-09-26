@@ -1,6 +1,7 @@
 import "jsr:@supabase/functions-js/edge-runtime.d.ts";
 import {
   corsHeaders,
+  createOzowPaymentRequest,
   createServiceClient,
   isPaymentsEnabled,
   jsonResponse,
@@ -42,6 +43,70 @@ type CheckoutRecord = {
   }>;
 };
 
+type ProviderRequestEvent =
+  | {
+    createdAt: string;
+    paymentRequestId: string;
+    status: "created";
+  }
+  | {
+    failedAt: string;
+    message: string;
+    status: "failed";
+  };
+
+async function recordProviderRequest(
+  serviceClient: ReturnType<typeof createServiceClient>,
+  paymentId: string,
+  providerRequest: ProviderRequestEvent,
+) {
+  const { data: paymentRow, error: paymentReadError } = await serviceClient
+    .from("payments")
+    .select("raw_event,status")
+    .eq("id", paymentId)
+    .maybeSingle();
+
+  if (paymentReadError) {
+    console.error(
+      "Unable to read Ozow checkout record",
+      paymentId,
+      paymentReadError.message,
+    );
+    return;
+  }
+
+  if (paymentRow?.status !== "pending") {
+    return;
+  }
+
+  const currentEvent = paymentRow.raw_event &&
+      typeof paymentRow.raw_event === "object" &&
+      !Array.isArray(paymentRow.raw_event)
+    ? paymentRow.raw_event as Record<string, unknown>
+    : {};
+  const paymentUpdate = providerRequest.status === "failed"
+    ? {
+      status: "failed" as const,
+      raw_event: { ...currentEvent, providerRequest },
+    }
+    : {
+      raw_event: { ...currentEvent, providerRequest },
+    };
+  const { error: paymentUpdateError } = await serviceClient
+    .from("payments")
+    .update(paymentUpdate)
+    .eq("id", paymentId)
+    .eq("status", "pending");
+
+  if (paymentUpdateError) {
+    console.error(
+      "Unable to record Ozow payment request",
+      paymentId,
+      paymentUpdateError.message,
+    );
+  }
+}
+
 function checkoutConfiguration(provider: PaymentProvider) {
   const supabaseUrl = Deno.env.get("SUPABASE_URL") ?? "";
   const returnFunctionUrl = `${supabaseUrl}/functions/v1/payment-return`;
@@ -74,7 +139,6 @@ function checkoutConfiguration(provider: PaymentProvider) {
     privateKey,
     apiKey,
     mode,
-    actionUrl: "https://pay.ozow.com",
     notificationUrl: `${supabaseUrl}/functions/v1/ozow-notification`,
     returnFunctionUrl,
     siteUrl,
@@ -206,12 +270,39 @@ Deno.serve(async (request: Request) => {
       ...orderedFields,
       ["HashCheck", hash],
     ]);
+    let paymentRequest;
+
+    try {
+      paymentRequest = await createOzowPaymentRequest(
+        {
+          ...fields,
+          IsTest: configuration.mode !== "live",
+        },
+        configuration.apiKey,
+      );
+    } catch (providerError) {
+      const providerMessage = providerError instanceof Error
+        ? providerError.message
+        : "Ozow checkout could not be started.";
+      await recordProviderRequest(serviceClient, payment.id, {
+        failedAt: new Date().toISOString(),
+        message: providerMessage.slice(0, 240),
+        status: "failed",
+      });
+
+      throw providerError;
+    }
+
+    await recordProviderRequest(serviceClient, payment.id, {
+      createdAt: new Date().toISOString(),
+      paymentRequestId: paymentRequest.paymentRequestId,
+      status: "created",
+    });
 
     return jsonResponse(request, {
       paymentId: payment.id,
       provider,
-      actionUrl: configuration.actionUrl,
-      fields,
+      redirectUrl: paymentRequest.url,
       expiresAt,
       purchasedCredits: payment.purchasedCredits,
       rewardCredits: payment.rewardCredits,
@@ -223,9 +314,12 @@ Deno.serve(async (request: Request) => {
     const message = error instanceof Error
       ? error.message
       : "Unable to create checkout.";
-    const status = message.toLowerCase().includes("auth") ||
-        message.toLowerCase().includes("session")
+    const normalizedMessage = message.toLowerCase();
+    const status = normalizedMessage.includes("auth") ||
+        normalizedMessage.includes("session")
       ? 401
+      : normalizedMessage.startsWith("ozow ")
+      ? 502
       : 500;
     console.error("Credit checkout failed", message);
     return jsonResponse(request, { error: message }, status);

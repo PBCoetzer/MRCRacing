@@ -7,7 +7,7 @@ export default function PrivacyPage() {
     <InfoPage
       badge="Privacy"
       title="Privacy policy"
-      description="How MRC Racing Tips collects, uses, safeguards, and shares personal information. Effective 20 August 2026."
+      description="How MRC Racing Tips collects, uses, safeguards, and shares personal information. Updated 16 September 2026."
       sections={[
         {
           title: "Who is responsible",
@@ -26,12 +26,16 @@ export default function PrivacyPage() {
           body: <p>Card and banking details are entered with an approved payment provider and are not stored by MRC Racing Tips. We retain provider references, amounts, status, and verification records. Supabase provides authentication and database services; approved infrastructure, email, security, and payment providers process only the information required for their role.</p>,
         },
         {
+          title: "Optional email announcements",
+          body: <p>We ask for a separate, explicit choice before sending optional announcements about new meeting cards, blog posts, platform news, and similar services. Your choice and the notice version are recorded for audit purposes. Declining or later withdrawing marketing consent does not affect account access, purchases, security alerts, password emails, receipts, or essential service notices. You can change your choice free of charge from your client profile.</p>,
+        },
+        {
           title: "Retention and security",
-          body: <p>Records are retained for as long as needed to provide the service, assess Tipster applications, maintain accurate financial and audit records, resolve disputes, prevent fraud or unauthorised content sharing, and comply with law. Tipster identity and address documents are stored in a private application vault and are available only to the applicant and authorised administrators; they are never published as part of a Tipster profile. Access is role-restricted, protected routes are not indexed, sensitive credentials are kept out of the browser, and payment confirmation is accepted only from verified provider notifications. Premium-card access records are immutable security records and are not displayed publicly.</p>,
+          body: <p>Records are retained for as long as needed to provide the service, assess Tipster applications, maintain accurate financial and audit records, resolve disputes, prevent fraud or unauthorised content sharing, and comply with law. Tipster identity and address documents are stored in a private application vault and are available only to the applicant and authorised administrators; they are never published as part of a Tipster profile. Access is role-restricted, protected routes are not indexed, authenticator-app two-factor authentication protects enrolled accounts and is mandatory for administrators, sensitive credentials are kept out of the browser, and payment confirmation is accepted only from verified provider notifications. Premium-card access records are immutable security records and are not displayed publicly.</p>,
         },
         {
           title: "Your choices and rights",
-          body: <p>You may request access to, correction of, or deletion of eligible personal information, object to certain processing, withdraw optional analytics consent, or lodge a complaint with South Africa&apos;s Information Regulator. Some transaction, security, and audit records must be retained where law or legitimate fraud-prevention needs require it.</p>,
+          body: <p>You may request access to, correction of, or deletion of eligible personal information, object to certain processing, withdraw optional analytics or marketing consent, or lodge a complaint with South Africa&apos;s Information Regulator. Some transaction, security, consent, and audit records must be retained where law or legitimate fraud-prevention needs require it.</p>,
         },
         {
           title: "Contact and related policies",

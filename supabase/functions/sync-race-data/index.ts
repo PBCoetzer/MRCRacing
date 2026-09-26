@@ -13,14 +13,21 @@ import {
   type WorkerConfiguration,
 } from "./providers.ts";
 import { mrcRaceDisplayTitle } from "../_shared/race-presentation.ts";
+import { jwtHasAal2 } from "../_shared/mfa.ts";
 import { inferRaceStatus } from "./status.ts";
+import { syncSecondaryToteCardChanges } from "./tote-card-changes.ts";
 
 type JsonRecord = Record<string, unknown>;
 type ServiceClient = SupabaseClient;
 
 type SyncRequest = {
   trigger?: "cron" | "manual" | "retry";
-  mode?: "pipeline" | "search_only" | "pilot_extract" | "hermes_weekly";
+  mode?:
+    | "pipeline"
+    | "search_only"
+    | "pilot_extract"
+    | "hermes_weekly"
+    | "secondary_changes";
   searchType?: "upcoming_calendar" | "meeting_detail";
   pilotType?: "calendar" | "meeting_schedule" | "race_detail" | "search_evidence";
   pilotQuery?: string;
@@ -1659,7 +1666,16 @@ async function delegateTaskToHermes(
     );
   }
 
-  const deadline = new Date(Date.now() + 2 * 60 * 60 * 1000).toISOString();
+  const deadlineHours =
+    task.task_type === "weekly_calendar" ||
+      task.task_type === "meeting_schedule"
+    ? 24
+    : task.task_type === "race_detail"
+    ? 12
+    : 2;
+  const deadline = new Date(
+    Date.now() + deadlineHours * 60 * 60 * 1000,
+  ).toISOString();
   const { scheduleEvidence: _storedEvidence, ...safeTaskPayload } =
     task.task_payload;
   const response = await fetch(
@@ -1699,8 +1715,47 @@ async function delegateTaskToHermes(
     );
   }
 
+  const bridgeJob =
+    payload.job && typeof payload.job === "object" &&
+      !Array.isArray(payload.job)
+      ? payload.job as JsonRecord
+      : null;
+  const bridgeState = String(bridgeJob?.state ?? "").toLowerCase();
+  const handoffStatus = String(bridgeJob?.handoff_status ?? "").toLowerCase();
+  const proposalId = typeof bridgeJob?.proposal_id === "string"
+    ? bridgeJob.proposal_id
+    : undefined;
+
+  if (bridgeState === "failed" || handoffStatus === "failed") {
+    throw new Error(
+      `Hermes race job failed: ${String(
+        bridgeJob?.error_detail ?? bridgeJob?.error_code ?? "unknown failure",
+      )}`,
+    );
+  }
+
+  if (
+    bridgeState === "accepted" ||
+    (bridgeState === "returned" &&
+      ["shadow", "not_applicable"].includes(handoffStatus))
+  ) {
+    return {
+      status: "succeeded",
+      proposalId,
+      payload: {
+        delegatedTo: "hermes-race-bridge",
+        bridge: payload,
+        deadline,
+      },
+      evidenceCount: Array.isArray(bridgeJob?.result_sources)
+        ? bridgeJob.result_sources.length
+        : 0,
+    };
+  }
+
   return {
     status: "pending_approval",
+    proposalId,
     payload: {
       delegatedTo: "hermes-race-bridge",
       bridge: payload,
@@ -2435,7 +2490,7 @@ async function authorizeRequest(request: Request, serviceClient: ServiceClient):
 
   if (accessToken) {
     const { data, error } = await serviceClient.auth.getUser(accessToken);
-    if (!error && data.user) {
+    if (!error && data.user && jwtHasAal2(accessToken)) {
       const { data: roles } = await serviceClient
         .from("user_roles")
         .select("role")
@@ -2472,6 +2527,19 @@ Deno.serve(async (request: Request) => {
   }
 
   const requestBody = await request.json().catch(() => ({})) as SyncRequest;
+  if (requestBody.mode === "secondary_changes") {
+    try {
+      return jsonResponse(
+        request,
+        await syncSecondaryToteCardChanges(serviceClient),
+      );
+    } catch (error) {
+      return jsonResponse(request, {
+        status: "failed",
+        error: sanitizeError(error),
+      }, 502);
+    }
+  }
   if (requestBody.mode === "pilot_extract") {
     try {
       return await handlePilotExtractionRequest(request, serviceClient, requestBody);

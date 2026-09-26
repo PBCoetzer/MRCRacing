@@ -5,6 +5,12 @@ verify_jwt = false
 import_map = "./functions/process-tip-notifications/deno.json"
 entrypoint = "./functions/process-tip-notifications/index.ts"
 
+[functions.telegram-race-feedback]
+enabled = true
+verify_jwt = false
+import_map = "./functions/telegram-race-feedback/deno.json"
+entrypoint = "./functions/telegram-race-feedback/index.ts"
+
 [functions.hermes-race-bridge]
 enabled = true
 verify_jwt = false

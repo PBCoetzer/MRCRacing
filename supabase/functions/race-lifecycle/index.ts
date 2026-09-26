@@ -1,5 +1,6 @@
 import "jsr:@supabase/functions-js/edge-runtime.d.ts";
 import { createClient, type SupabaseClient } from "@supabase/supabase-js";
+import { jwtHasAal2 } from "../_shared/mfa.ts";
 
 type Authorization = { kind: "cron"; userId: null } | {
   kind: "administrator";
@@ -62,6 +63,7 @@ async function authorize(
   if (!accessToken) return null;
   const { data, error } = await serviceClient.auth.getUser(accessToken);
   if (error || !data.user) return null;
+  if (!jwtHasAal2(accessToken)) return null;
   const { data: roles } = await serviceClient
     .from("user_roles")
     .select("role")

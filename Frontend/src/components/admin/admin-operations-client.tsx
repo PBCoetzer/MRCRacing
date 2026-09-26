@@ -22,6 +22,7 @@ import {
   Users,
 } from "lucide-react";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
+import { MfaProfileCard } from "@/components/auth/mfa-profile-card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
@@ -36,6 +37,8 @@ import { createClient } from "@/lib/supabase/client";
 
 type PlatformSettings = {
   commission_rate: number;
+  horse_care_rate: number;
+  tipster_rate: number;
   updated_at: string;
 };
 
@@ -171,7 +174,7 @@ type InternalLedgerEntry = {
   purchaseType: "meeting" | "subscription";
   purchaseStatus: "active" | "disputed" | "refunded" | "cancelled";
   sourceLabel: string;
-  entryType: "sale" | "refund";
+  entryType: "sale" | "refund" | "allocation_adjustment";
   refundOrigin:
     | "admin_approved"
     | "legacy_automatic"
@@ -187,7 +190,10 @@ type InternalLedgerEntry = {
   rewardCredits: number;
   earningGrossCredits: number;
   commissionRate: number;
+  horseCareRate: number;
+  tipsterRate: number;
   platformFeeCredits: number;
+  horseCareCredits: number;
   tipsterNetCredits: number;
 };
 
@@ -292,7 +298,6 @@ export function AdminOperationsClient() {
   const [userCount, setUserCount] = useState(0);
   const [verifiedTipsters, setVerifiedTipsters] = useState(0);
   const [settings, setSettings] = useState<PlatformSettings | null>(null);
-  const [commissionRate, setCommissionRate] = useState("10");
   const [disputes, setDisputes] = useState<AdminDispute[]>([]);
   const [disputeNotes, setDisputeNotes] = useState<Record<string, string>>({});
   const [outbox, setOutbox] = useState<OutboxRow[]>([]);
@@ -354,7 +359,7 @@ export function AdminOperationsClient() {
           .eq("is_verified", true),
         supabase
           .from("platform_settings")
-          .select("commission_rate,updated_at")
+          .select("commission_rate,horse_care_rate,tipster_rate,updated_at")
           .eq("singleton", true)
           .maybeSingle(),
         supabase
@@ -418,7 +423,6 @@ export function AdminOperationsClient() {
     setUserCount(userSearch?.total ?? 0);
     setVerifiedTipsters(tipstersResult.count ?? 0);
     setSettings(loadedSettings);
-    setCommissionRate(String(loadedSettings?.commission_rate ?? 10));
     setDisputes((disputeResult.data ?? []) as AdminDispute[]);
     setOutbox((outboxResult.data ?? []) as OutboxRow[]);
     setTestMeetings((meetingResult.data ?? []) as TestMeeting[]);
@@ -537,41 +541,6 @@ export function AdminOperationsClient() {
       await loadOperations();
     } catch (caughtError) {
       setError(errorMessage(caughtError, "Operations could not be processed."));
-    } finally {
-      setProcessing("");
-    }
-  }
-
-  async function savePlatformSettings() {
-    const supabase = createClient();
-    const commission = Number(commissionRate);
-
-    if (!supabase) {
-      return;
-    }
-
-    if (commission < 0 || commission > 100) {
-      setError("Enter a commission between 0% and 100%.");
-      return;
-    }
-
-    setProcessing("settings");
-    setError("");
-
-    try {
-      const { error: settingsError } = await supabase
-        .from("platform_settings")
-        .update({ zar_per_coin: 1, commission_rate: commission })
-        .eq("singleton", true);
-
-      if (settingsError) {
-        throw settingsError;
-      }
-
-      setMessage("Commission saved. The public conversion remains fixed at R1 = 1 Credit.");
-      await loadOperations();
-    } catch (caughtError) {
-      setError(errorMessage(caughtError, "Could not save platform settings."));
     } finally {
       setProcessing("");
     }
@@ -731,6 +700,8 @@ export function AdminOperationsClient() {
           Refresh
         </Button>
       </div>
+
+      <MfaProfileCard required />
 
       <div className="grid gap-4 md:grid-cols-4">
         {[
@@ -1095,6 +1066,7 @@ export function AdminOperationsClient() {
                     <TableHead>Purchase total</TableHead>
                     <TableHead>Funding</TableHead>
                     <TableHead>MRC fee</TableHead>
+                    <TableHead>Horse Care</TableHead>
                     <TableHead>Tipster net</TableHead>
                   </TableRow>
                 </TableHeader>
@@ -1135,6 +1107,8 @@ export function AdminOperationsClient() {
                         >
                           {entry.refundOrigin === "legacy_refund_correction"
                             ? "Legacy refund correction"
+                            : entry.entryType === "allocation_adjustment"
+                              ? "10/20/70 allocation adjustment"
                             : entry.entryType === "sale"
                             ? `${entry.purchaseType} sale`
                             : entry.refundOrigin === "admin_approved"
@@ -1156,7 +1130,11 @@ export function AdminOperationsClient() {
                       </TableCell>
                       <TableCell>
                         <p className="font-mono">{entry.platformFeeCredits.toLocaleString("en-ZA")} Credits</p>
-                        <p className="text-xs text-muted-foreground">{entry.commissionRate}%</p>
+                        <p className="text-xs text-muted-foreground">{entry.commissionRate}% of cash-backed Credit use</p>
+                      </TableCell>
+                      <TableCell>
+                        <p className="font-mono">{entry.horseCareCredits.toLocaleString("en-ZA")} Credits</p>
+                        <p className="text-xs text-muted-foreground">{entry.horseCareRate}% of cash-backed Credit use</p>
                       </TableCell>
                       <TableCell className="font-mono font-semibold">
                         {entry.tipsterNetCredits.toLocaleString("en-ZA")} Credits
@@ -1165,7 +1143,7 @@ export function AdminOperationsClient() {
                   ))}
                   {!internalLedger.length ? (
                     <TableRow>
-                      <TableCell colSpan={9} className="h-24 text-center text-muted-foreground">
+                      <TableCell colSpan={10} className="h-24 text-center text-muted-foreground">
                         No client-to-tipster ledger entries have been recorded.
                       </TableCell>
                     </TableRow>
@@ -1516,47 +1494,31 @@ export function AdminOperationsClient() {
         <TabsContent id="system" value="system" className="space-y-4">
           <Card>
             <CardHeader>
-              <CardTitle>Credits and commission</CardTitle>
+              <CardTitle>Credits and content-use allocation</CardTitle>
               <CardDescription>
-                R1 always equals 1 Credit. Sale records snapshot the commission.
+                R1 always equals 1 Credit. No split occurs when Credits are bought; the split is recorded only when cash-backed Credits are used on eligible content.
               </CardDescription>
             </CardHeader>
-            <CardContent className="grid gap-4 sm:grid-cols-2">
+            <CardContent className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
               <div className="rounded-lg border bg-background/45 p-4">
                 <p className="text-sm text-muted-foreground">Fixed public conversion</p>
                 <p className="mt-1 font-mono text-2xl font-bold">R1 = 1 Credit</p>
               </div>
-              <div className="space-y-2">
-                <Label htmlFor="commission-rate">Platform commission %</Label>
-                <Input
-                  id="commission-rate"
-                  min="0"
-                  max="100"
-                  step="0.01"
-                  type="number"
-                  value={commissionRate}
-                  onChange={(event) => setCommissionRate(event.target.value)}
-                />
+              <div className="rounded-lg border bg-background/45 p-4">
+                <p className="text-sm text-muted-foreground">Horse Care</p>
+                <p className="mt-1 font-mono text-2xl font-bold">{Number(settings?.horse_care_rate ?? 10).toLocaleString("en-ZA")}%</p>
               </div>
-              <div className="sm:col-span-2">
-                <Button
-                  disabled={processing === "settings"}
-                  type="button"
-                  onClick={() => void savePlatformSettings()}
-                >
-                  {processing === "settings" ? (
-                    <Loader2 className="size-4 animate-spin" />
-                  ) : (
-                    <Settings className="size-4" />
-                  )}
-                  Save settings
-                </Button>
-                {settings ? (
-                  <p className="mt-2 text-xs text-muted-foreground">
-                    Last updated {formatRaceDateTime(settings.updated_at)}
-                  </p>
-                ) : null}
+              <div className="rounded-lg border bg-background/45 p-4">
+                <p className="text-sm text-muted-foreground">MRC platform</p>
+                <p className="mt-1 font-mono text-2xl font-bold">{Number(settings?.commission_rate ?? 20).toLocaleString("en-ZA")}%</p>
               </div>
+              <div className="rounded-lg border bg-background/45 p-4">
+                <p className="text-sm text-muted-foreground">Tipsters</p>
+                <p className="mt-1 font-mono text-2xl font-bold">{Number(settings?.tipster_rate ?? 70).toLocaleString("en-ZA")}%</p>
+              </div>
+              <p className="text-xs text-muted-foreground sm:col-span-2 lg:col-span-4">
+                Reward Credits are excluded from all three allocations. Last updated {settings ? formatRaceDateTime(settings.updated_at) : "after migration deployment"}.
+              </p>
             </CardContent>
           </Card>
           <Card>

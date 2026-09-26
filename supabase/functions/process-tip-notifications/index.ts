@@ -1,12 +1,19 @@
-import "jsr:@supabase/functions-js/edge-runtime.d.ts";
-import { createClient } from "npm:@supabase/supabase-js@2.110.8";
+import "edge-runtime";
+import { createClient, type SupabaseClient } from "@supabase/supabase-js";
 import {
-  buildTelegramApprovalRequest,
   buildTelegramApprovalRequests,
   type TelegramApprovalPayload,
   validProposalId,
 } from "./telegram.ts";
-import { generateRaceApprovalPdf } from "./telegram-pdf.ts";
+import { buildBlogAnnouncementContent } from "./blog-email.ts";
+import { buildMeetingCardAffiliateFooter } from "./meeting-card-affiliate.ts";
+import { jwtHasAal2 } from "../_shared/mfa.ts";
+import {
+  type CurrentFixture,
+  type CurrentRaceEntry,
+  type CurrentRaceMeeting,
+  summarizeProposalChanges,
+} from "./proposal-changes.ts";
 
 type NotificationPayload = {
   template?: string;
@@ -30,7 +37,17 @@ type NotificationPayload = {
   afterValues?: Record<string, unknown>;
   isAfterLock?: boolean;
   tipsterUrl?: string;
-  notificationAudience?: "all_clients";
+  notificationAudience?:
+    | "all_clients"
+    | "marketing_consented_clients"
+    | "marketing_consented_registered_users";
+  blogPostId?: string;
+  blogTitle?: string;
+  blogExcerpt?: string;
+  blogUrl?: string;
+  authorName?: string;
+  publishedAt?: string;
+  preferenceUrl?: string;
   proposalId?: string;
   confidenceScore?: number;
   distinctSourceCount?: number;
@@ -39,6 +56,15 @@ type NotificationPayload = {
   adminUrl?: string;
   confidenceBreakdown?: Record<string, unknown>;
   raceSnapshot?: TelegramApprovalPayload["raceSnapshot"];
+  reviewKind?: TelegramApprovalPayload["reviewKind"];
+  differenceSummary?: string;
+  sourceDomains?: string[];
+  sourceUrls?: string[];
+  changes?: TelegramApprovalPayload["changes"];
+  changeCount?: number;
+  omittedChangeCount?: number;
+  conflictSummary?: string;
+  feedbackEnabled?: boolean;
 };
 
 type NotificationJob = {
@@ -110,6 +136,13 @@ function escapeHtml(value: unknown) {
     .replaceAll(">", "&gt;")
     .replaceAll('"', "&quot;")
     .replaceAll("'", "&#039;");
+}
+
+function stripControlCharacters(value: string) {
+  return [...value].map((character) => {
+    const code = character.charCodeAt(0);
+    return code <= 31 || code === 127 ? " " : character;
+  }).join("");
 }
 
 function decodeJwtPayload(token: string) {
@@ -223,6 +256,7 @@ function renderLayout(
   body: string,
   actionUrl: string,
   actionLabel: string,
+  promotionalFooterHtml = "",
 ) {
   return `<!doctype html>
 <html lang="en">
@@ -266,6 +300,15 @@ function renderLayout(
                 </div>
               </td>
             </tr>
+            ${
+    promotionalFooterHtml
+      ? `<tr>
+              <td style="padding:0 28px 24px;background:#281044">
+                ${promotionalFooterHtml}
+              </td>
+            </tr>`
+      : ""
+  }
             <tr>
               <td style="padding:18px 28px;background:#1d0c34;color:#c4b5fd;font-size:12px;line-height:1.6">
                 MRC Racing Tips provides South African horse-racing analysis, factual race information, and independent digital tipster content.
@@ -404,6 +447,7 @@ function renderEmail(job: NotificationJob): EmailContent {
   }
 
   if (job.event_type === "favourite_tipster_card_published") {
+    const affiliateFooter = buildMeetingCardAffiliateFooter();
     const tipsterName = String(payload.tipsterName ?? "A favourite tipster");
     const venue = String(payload.meetingVenue ?? "a new race meeting");
     const meetingDate = String(payload.meetingDate ?? "");
@@ -414,7 +458,8 @@ function renderEmail(job: NotificationJob): EmailContent {
     const dateText = meetingDate ? ` for ${meetingDate}` : "";
     const text =
       `${tipsterName}, one of your favourite tipsters, published a ${venue} meeting card${dateText}. ` +
-      "Visit the tipster profile to view its preview and available access options.";
+      "Visit the tipster profile to view its preview and available access options.\n\n" +
+      affiliateFooter.text;
     const html = renderLayout(
       "A favourite tipster published a new card",
       `<p style="margin:0 0 14px"><strong>${
@@ -425,12 +470,14 @@ function renderEmail(job: NotificationJob): EmailContent {
         '<p style="margin:0">Favouriting a tipster does not grant access by itself. Visit the tipster profile to view the preview and available purchase or subscription options.</p>',
       tipsterUrl,
       "View tipster profile",
+      affiliateFooter.html,
     );
 
     return { subject, text, html };
   }
 
   if (job.event_type === "tip_card_published_all_clients") {
+    const affiliateFooter = buildMeetingCardAffiliateFooter();
     const tipsterName = String(payload.tipsterName ?? "An MRC tipster");
     const venue = String(payload.meetingVenue ?? "a new race meeting");
     const meetingDate = String(payload.meetingDate ?? "");
@@ -441,7 +488,8 @@ function renderEmail(job: NotificationJob): EmailContent {
     const dateText = meetingDate ? ` for ${meetingDate}` : "";
     const text =
       `${tipsterName} published a new ${venue} meeting card${dateText}. ` +
-      "Visit the tipster profile to review the preview and available access options.";
+      "Visit the tipster profile to review the preview and available access options.\n\n" +
+      affiliateFooter.text;
     const html = renderLayout(
       "A new meeting card is available",
       `<p style="margin:0 0 14px"><strong>${
@@ -452,9 +500,22 @@ function renderEmail(job: NotificationJob): EmailContent {
         '<p style="margin:0">Visit the tipster profile to review the preview and available purchase or subscription options. This announcement does not grant access by itself.</p>',
       tipsterUrl,
       "View meeting card options",
+      affiliateFooter.html,
     );
 
     return { subject, text, html };
+  }
+
+  if (job.event_type === "blog_post_published_announcement") {
+    const content = buildBlogAnnouncementContent(payload);
+    const html = renderLayout(
+      content.title,
+      content.body,
+      content.actionUrl,
+      content.actionLabel,
+    );
+
+    return { subject: content.subject, text: content.text, html };
   }
 
   const tipsterName = String(payload.tipsterName ?? "Your tipster");
@@ -575,65 +636,6 @@ async function deliverTelegram(
     throw new Error("Telegram approval notifications are not configured.");
   }
 
-  const meeting = payload.raceSnapshot?.meetings?.[0];
-  if (meeting?.races?.length) {
-    let logoBytes: Uint8Array | undefined;
-    try {
-      const logoResponse = await fetch(mrcLogoUrl, {
-        signal: AbortSignal.timeout(10_000),
-      });
-      if (logoResponse.ok) {
-        logoBytes = new Uint8Array(await logoResponse.arrayBuffer());
-      }
-    } catch {
-      logoBytes = undefined;
-    }
-
-    const pdf = await generateRaceApprovalPdf(payload, { logoBytes });
-    const approvalRequest = buildTelegramApprovalRequest(payload);
-    const formData = new FormData();
-    const pdfBuffer = new ArrayBuffer(pdf.bytes.byteLength);
-    new Uint8Array(pdfBuffer).set(pdf.bytes);
-    formData.set("chat_id", telegram.chatId);
-    formData.set(
-      "document",
-      new Blob([pdfBuffer], { type: "application/pdf" }),
-      pdf.fileName,
-    );
-    formData.set("caption", approvalRequest.text.slice(0, 1024));
-    formData.set("reply_markup", JSON.stringify(approvalRequest.reply_markup));
-
-    const response = await fetch(
-      `https://api.telegram.org/bot${
-        encodeURIComponent(telegram.botToken)
-      }/sendDocument`,
-      {
-        method: "POST",
-        body: formData,
-        signal: AbortSignal.timeout(30_000),
-      },
-    );
-    const result = await response.json().catch(() => null) as {
-      ok?: boolean;
-      description?: string;
-      result?: { message_id?: number };
-    } | null;
-
-    if (!response.ok || result?.ok !== true || !result.result?.message_id) {
-      const description = typeof result?.description === "string"
-        ? result.description.replace(/[\u0000-\u001f\u007f]/g, " ").trim()
-          .slice(
-            0,
-            180,
-          )
-        : "Provider rejected the request.";
-      throw new Error(
-        `Telegram delivery failed with HTTP ${response.status}: ${description}`,
-      );
-    }
-    return `telegram:${result.result.message_id}`;
-  }
-
   const request = buildTelegramApprovalRequests(payload)[0];
   const response = await fetch(
     `https://api.telegram.org/bot${
@@ -653,10 +655,7 @@ async function deliverTelegram(
   } | null;
   if (!response.ok || result?.ok !== true || !result.result?.message_id) {
     const description = typeof result?.description === "string"
-      ? result.description.replace(/[\u0000-\u001f\u007f]/g, " ").trim().slice(
-        0,
-        180,
-      )
+      ? stripControlCharacters(result.description).trim().slice(0, 180)
       : "Provider rejected the request.";
     throw new Error(
       `Telegram delivery failed with HTTP ${response.status}: ${description}`,
@@ -665,39 +664,168 @@ async function deliverTelegram(
   return `telegram:${result.result.message_id}`;
 }
 
+async function loadProposalChangePayload(
+  serviceClient: SupabaseClient,
+  proposalId: string,
+  basePayload: NotificationPayload,
+) {
+  const { data: proposalData, error: proposalError } = await serviceClient
+    .from("race_feed_proposals")
+    .select(
+      "snapshot,confidence_breakdown,proposal_version,conflict_summary,has_critical_conflict,venue,meeting_date",
+    )
+    .eq("id", proposalId)
+    .maybeSingle();
+  if (proposalError) {
+    throw new Error(
+      `Could not load the proposed race changes: ${proposalError.message}`,
+    );
+  }
+  if (!proposalData) {
+    throw new Error("The proposed race changes are no longer available.");
+  }
+
+  const proposal = proposalData as {
+    snapshot?: TelegramApprovalPayload["raceSnapshot"];
+    confidence_breakdown?: Record<string, unknown>;
+    proposal_version?: number;
+    conflict_summary?: string | null;
+    has_critical_conflict?: boolean;
+    venue?: string;
+    meeting_date?: string;
+  };
+  const venue = String(proposal.venue ?? basePayload.meetingVenue ?? "").trim();
+  const meetingDate = String(
+    proposal.meeting_date ?? basePayload.meetingDate ?? "",
+  ).trim();
+  if (!venue || !meetingDate || !proposal.snapshot?.meetings?.length) {
+    throw new Error(
+      "The race proposal is missing its meeting identity or snapshot.",
+    );
+  }
+  const { data: meetingData, error: meetingError } = await serviceClient
+    .from("race_meetings")
+    .select("id,venue,meeting_date,status")
+    .eq("venue", venue)
+    .eq("meeting_date", meetingDate)
+    .eq("is_test", false)
+    .maybeSingle();
+  if (meetingError) {
+    throw new Error(
+      `Could not load the current race meeting: ${meetingError.message}`,
+    );
+  }
+
+  const currentMeeting = meetingData as CurrentRaceMeeting | null;
+  let currentFixtures: CurrentFixture[] = [];
+  let currentEntries: CurrentRaceEntry[] = [];
+  if (currentMeeting) {
+    const { data: fixtureData, error: fixtureError } = await serviceClient
+      .from("fixtures")
+      .select(
+        "id,race_number,title,starts_at,distance_m,race_class,status,result_summary",
+      )
+      .eq("meeting_id", currentMeeting.id)
+      .order("race_number", { ascending: true });
+    if (fixtureError) {
+      throw new Error(
+        `Could not load the current races: ${fixtureError.message}`,
+      );
+    }
+    currentFixtures = (fixtureData ?? []) as CurrentFixture[];
+    const fixtureIds = currentFixtures.map((fixture) => fixture.id);
+    if (fixtureIds.length) {
+      const { data: entryData, error: entryError } = await serviceClient
+        .from("race_entries")
+        .select(
+          "fixture_id,saddle_number,horse_name,jockey_name,trainer_name,draw,carried_weight,status,result_position",
+        )
+        .in("fixture_id", fixtureIds)
+        .order("saddle_number", { ascending: true });
+      if (entryError) {
+        throw new Error(
+          `Could not load the current runners: ${entryError.message}`,
+        );
+      }
+      currentEntries = (entryData ?? []) as CurrentRaceEntry[];
+    }
+  }
+
+  const summary = summarizeProposalChanges(
+    proposal.snapshot,
+    currentMeeting,
+    currentFixtures,
+    currentEntries,
+  );
+  const conflictSummary = String(proposal.conflict_summary ?? "").trim();
+  const shouldSend = summary.changeCount > 0 ||
+    proposal.has_critical_conflict === true || Boolean(conflictSummary);
+
+  return {
+    shouldSend,
+    payload: {
+      ...basePayload,
+      reviewKind: "proposal_changes" as const,
+      meetingVenue: venue,
+      meetingDate,
+      confidenceBreakdown: proposal.confidence_breakdown,
+      proposalVersion: proposal.proposal_version,
+      raceSnapshot: undefined,
+      changes: summary.changes,
+      changeCount: summary.changeCount,
+      omittedChangeCount: summary.omitted,
+      conflictSummary,
+      feedbackEnabled: true,
+    },
+  };
+}
+
 async function discoverTelegramChats(telegram: TelegramConfig) {
   if (!telegram.botToken) {
     throw new Error("Telegram approval notifications are not configured.");
   }
 
+  const method = telegram.chatId ? "getChat" : "getUpdates";
+  const query = telegram.chatId
+    ? `?chat_id=${encodeURIComponent(telegram.chatId)}`
+    : "?limit=100&timeout=0";
   const response = await fetch(
     `https://api.telegram.org/bot${
       encodeURIComponent(telegram.botToken)
-    }/getUpdates?limit=100&timeout=0`,
+    }/${method}${query}`,
     { signal: AbortSignal.timeout(15_000) },
   );
   const payload = await response.json().catch(() => null) as {
     ok?: boolean;
     description?: string;
-    result?: Array<{
-      message?: { chat?: TelegramChat };
-      edited_message?: { chat?: TelegramChat };
-      channel_post?: { chat?: TelegramChat };
-      edited_channel_post?: { chat?: TelegramChat };
-      my_chat_member?: { chat?: TelegramChat };
-    }>;
+    result?:
+      | TelegramChat
+      | Array<{
+        message?: { chat?: TelegramChat };
+        edited_message?: { chat?: TelegramChat };
+        channel_post?: { chat?: TelegramChat };
+        edited_channel_post?: { chat?: TelegramChat };
+        my_chat_member?: { chat?: TelegramChat };
+      }>;
   } | null;
 
-  if (!response.ok || payload?.ok !== true || !Array.isArray(payload.result)) {
+  if (!response.ok || payload?.ok !== true || !payload.result) {
     const description = typeof payload?.description === "string"
-      ? payload.description.replace(/[\u0000-\u001f\u007f]/g, " ").trim().slice(
-        0,
-        180,
-      )
+      ? stripControlCharacters(payload.description).trim().slice(0, 180)
       : "Provider rejected the request.";
     throw new Error(
       `Telegram chat discovery failed with HTTP ${response.status}: ${description}`,
     );
+  }
+
+  if (!Array.isArray(payload.result)) {
+    const chat = payload.result;
+    return [{
+      id: String(chat.id),
+      type: chat.type ?? "unknown",
+      label: chat.title ??
+        (chat.username ? `@${chat.username}` : "Private chat"),
+    }];
   }
 
   const chats = new Map<string, TelegramChat>();
@@ -809,6 +937,19 @@ Deno.serve(async (request: Request) => {
           error: "Tipster or administrator access required.",
         }, 403);
       }
+
+      const hasTipsterRole = workerRoles.some(
+        (role: { role: string }) => role.role === "tipster",
+      );
+      const hasAdministratorRole = workerRoles.some(
+        (role: { role: string }) => role.role === "administrator",
+      );
+      if (hasAdministratorRole && !hasTipsterRole && !jwtHasAal2(accessToken)) {
+        return jsonResponse(request, {
+          error: "Administrator two-factor authentication required.",
+          code: "mfa_required",
+        }, 403);
+      }
     }
   }
 
@@ -856,30 +997,32 @@ Deno.serve(async (request: Request) => {
         if (
           job.event_type === "race_feed_proposal_review_required" && proposalId
         ) {
-          const { data: proposalData, error: proposalError } =
-            await serviceClient
-              .from("race_feed_proposals")
-              .select("snapshot,confidence_breakdown,proposal_version")
-              .eq("id", proposalId)
-              .maybeSingle();
-          if (proposalError) {
+          const changePayload = await loadProposalChangePayload(
+            serviceClient,
+            proposalId,
+            job.payload,
+          );
+          telegramPayload = changePayload.payload;
+          const { error: payloadAuditError } = await serviceClient
+            .from("notification_outbox")
+            .update({ payload: telegramPayload })
+            .eq("id", job.id);
+          if (payloadAuditError) {
             throw new Error(
-              `Could not load the proposed race layout: ${proposalError.message}`,
+              `Could not document the Telegram race changes: ${payloadAuditError.message}`,
             );
           }
-          const proposal = proposalData as {
-            snapshot?: TelegramApprovalPayload["raceSnapshot"];
-            confidence_breakdown?: Record<string, unknown>;
-            proposal_version?: number;
-          } | null;
-          telegramPayload = {
-            ...job.payload,
-            confidenceBreakdown: proposal?.confidence_breakdown,
-            proposalVersion: proposal?.proposal_version,
-            raceSnapshot: proposal?.snapshot,
-          };
+          if (!changePayload.shouldSend) {
+            providerMessageId = "telegram:skipped-no-factual-change";
+          } else {
+            providerMessageId = await deliverTelegram(
+              telegram,
+              telegramPayload,
+            );
+          }
+        } else {
+          providerMessageId = await deliverTelegram(telegram, telegramPayload);
         }
-        providerMessageId = await deliverTelegram(telegram, telegramPayload);
       } else {
         if (
           !smtp.host ||

@@ -1,5 +1,5 @@
 begin;
-select plan(17);
+select plan(40);
 
 select is(
   (
@@ -136,10 +136,84 @@ select ok(
   'Anonymous users cannot manage email marketing consent'
 );
 
+select is(
+  (
+    select count(*)::bigint
+    from information_schema.columns
+    where table_schema = 'public'
+      and table_name = 'profiles'
+      and column_name in (
+        'email_marketing_consent_confirmed_at',
+        'email_marketing_consent_version',
+        'email_marketing_consent_source'
+      )
+  ),
+  3::bigint,
+  'Profiles retain a versioned source and timestamp for explicit email choices'
+);
+
+select ok(
+  has_function_privilege('authenticated', 'public.get_email_marketing_consent_status()', 'EXECUTE'),
+  'Authenticated users can read their own email-consent prompt status'
+);
+
+select ok(
+  not has_function_privilege('anon', 'public.get_email_marketing_consent_status()', 'EXECUTE'),
+  'Anonymous users cannot read email-consent prompt status'
+);
+
+select ok(
+  has_function_privilege('authenticated', 'public.respond_to_email_marketing_consent_prompt(boolean,text)', 'EXECUTE')
+    and not has_function_privilege('anon', 'public.respond_to_email_marketing_consent_prompt(boolean,text)', 'EXECUTE'),
+  'Only authenticated users can answer the versioned email-consent prompt'
+);
+
+select ok(
+  position(
+    'email_marketing_consent_confirmed_at'
+    in pg_get_functiondef('public.set_email_marketing_consent(boolean)'::regprocedure)
+  ) > 0
+    and position(
+      'consentVersion'
+      in pg_get_functiondef('public.set_email_marketing_consent(boolean)'::regprocedure)
+    ) > 0,
+  'Client dashboard email choices are explicit and versioned'
+);
+
+select ok(
+  position(
+    'email_choice_supplied'
+    in pg_get_functiondef('app_private.handle_new_user()'::regprocedure)
+  ) > 0
+    and position(
+      'email_marketing_consent_withdrawn'
+      in pg_get_functiondef('app_private.handle_new_user()'::regprocedure)
+    ) > 0,
+  'Registration records both affirmative and declined email choices'
+);
+
 select ok(
   not has_function_privilege('anon', 'app_private.queue_tip_card_all_client_emails(uuid,integer)', 'EXECUTE')
     and not has_function_privilege('authenticated', 'app_private.queue_tip_card_all_client_emails(uuid,integer)', 'EXECUTE'),
   'The all-client email queue helper cannot be called directly from the Data API'
+);
+
+select ok(
+  not has_function_privilege('anon', 'app_private.queue_blog_post_registered_user_emails(uuid)', 'EXECUTE')
+    and not has_function_privilege('authenticated', 'app_private.queue_blog_post_registered_user_emails(uuid)', 'EXECUTE'),
+  'The registered-user blog email queue helper cannot be called directly from the Data API'
+);
+
+select ok(
+  position(
+    'queue_blog_post_registered_user_emails'
+    in pg_get_functiondef('public.publish_blog_post(uuid)'::regprocedure)
+  ) > 0
+    and position(
+      'not was_already_published'
+      in pg_get_functiondef('public.publish_blog_post(uuid)'::regprocedure)
+    ) > 0,
+  'Blog email announcements are queued only for the first publication'
 );
 
 select ok(
@@ -198,6 +272,174 @@ select ok(
   not has_function_privilege('anon', 'app_private.current_tipster_can_publish_blog()', 'EXECUTE')
     and not has_function_privilege('authenticated', 'app_private.current_tipster_can_publish_blog()', 'EXECUTE'),
   'The private blog permission helper is not directly exposed through the Data API'
+);
+
+select ok(
+  position(
+    'auth.mfa_factors'
+    in pg_get_functiondef('app_private.current_user_mfa_satisfied(boolean)'::regprocedure)
+  ) > 0
+    and position(
+      '''aal2'''
+      in pg_get_functiondef('app_private.current_user_mfa_satisfied(boolean)'::regprocedure)
+    ) > 0,
+  'MFA satisfaction checks verified factors and the AAL2 JWT claim'
+);
+
+select ok(
+  not has_function_privilege('anon', 'app_private.current_user_mfa_satisfied(boolean)', 'EXECUTE')
+    and not has_function_privilege('authenticated', 'app_private.current_user_mfa_satisfied(boolean)', 'EXECUTE'),
+  'The private MFA helper cannot be called directly by browser roles'
+);
+
+select ok(
+  position(
+    'current_user_mfa_satisfied(false)'
+    in pg_get_functiondef('app_private.current_user_account_active()'::regprocedure)
+  ) > 0,
+  'Enrolled users must complete MFA before active-account operations'
+);
+
+select ok(
+  has_function_privilege('authenticated', 'app_private.current_user_account_visible()', 'EXECUTE')
+    and not has_function_privilege('anon', 'app_private.current_user_account_visible()', 'EXECUTE'),
+  'Only authenticated users can evaluate the MFA identity bootstrap helper'
+);
+
+select ok(
+  exists (
+    select 1
+    from pg_policies
+    where schemaname = 'public'
+      and tablename = 'user_roles'
+      and policyname = 'user_roles_active_account'
+      and permissive = 'RESTRICTIVE'
+      and position('current_user_account_visible()' in coalesce(qual, '')) > 0
+  ),
+  'Active users can discover their own role before completing an MFA challenge'
+);
+
+select ok(
+  position(
+    'current_user_mfa_satisfied(true)'
+    in pg_get_functiondef('app_private.current_user_has_role(public.app_role)'::regprocedure)
+  ) > 0
+    and position(
+      '''administrator'''
+      in pg_get_functiondef('app_private.current_user_has_role(public.app_role)'::regprocedure)
+    ) > 0,
+  'Administrator role checks always require MFA enrollment and AAL2'
+);
+
+select ok(
+  position(
+    'email_marketing_consent'
+    in pg_get_functiondef('app_private.handle_new_user()'::regprocedure)
+  ) > 0
+    and position(
+      'email_marketing_consented_at'
+      in pg_get_functiondef('app_private.handle_new_user()'::regprocedure)
+    ) > 0,
+  'Registration persists explicit email-announcement consent on the new profile'
+);
+
+select ok(
+  position(
+    'email_marketing_consent_granted'
+    in pg_get_functiondef('app_private.handle_new_user()'::regprocedure)
+  ) > 0
+    and position(
+      'email_marketing_consent_version'
+      in pg_get_functiondef('app_private.handle_new_user()'::regprocedure)
+    ) > 0,
+  'Registration records an auditable versioned email-announcement acceptance'
+);
+
+select ok(
+  position(
+    'join auth.users users'
+    in pg_get_functiondef('app_private.queue_tip_card_all_client_emails(uuid,integer)'::regprocedure)
+  ) > 0
+    and position(
+      'users.email_confirmed_at is not null'
+      in pg_get_functiondef('app_private.queue_tip_card_all_client_emails(uuid,integer)'::regprocedure)
+    ) > 0
+    and position(
+      'users.deleted_at is null'
+      in pg_get_functiondef('app_private.queue_tip_card_all_client_emails(uuid,integer)'::regprocedure)
+    ) > 0,
+  'All-client meeting-card announcements require a confirmed, non-deleted Auth recipient'
+);
+
+select ok(
+  position(
+    'email_delivery_eligible'
+    in pg_get_functiondef('app_private.queue_tip_card_notifications(uuid,integer,text)'::regprocedure)
+  ) > 0
+    and position(
+      'users.email_confirmed_at is not null'
+      in pg_get_functiondef('app_private.queue_tip_card_notifications(uuid,integer,text)'::regprocedure)
+    ) > 0,
+  'Entitlement and favourite-tipster meeting-card emails require a confirmed Auth recipient'
+);
+
+select ok(
+  position(
+    'users.created_at < now() - interval ''30 days'''
+    in pg_get_functiondef('app_private.unconfirmed_account_cleanup_candidates(integer)'::regprocedure)
+  ) > 0
+    and position(
+      'users.last_sign_in_at is null'
+      in pg_get_functiondef('app_private.unconfirmed_account_cleanup_candidates(integer)'::regprocedure)
+    ) > 0,
+  'Stale-account cleanup candidates must be unconfirmed, unused registrations older than 30 days'
+);
+
+select ok(
+  position(
+    'roles.role in (''tipster'', ''administrator'')'
+    in pg_get_functiondef('app_private.unconfirmed_account_cleanup_candidates(integer)'::regprocedure)
+  ) > 0
+    and position(
+      'public.credit_transactions'
+      in pg_get_functiondef('app_private.unconfirmed_account_cleanup_candidates(integer)'::regprocedure)
+    ) > 0
+    and position(
+      'storage.objects'
+      in pg_get_functiondef('app_private.unconfirmed_account_cleanup_candidates(integer)'::regprocedure)
+    ) > 0,
+  'Cleanup protects privileged, financial, and Storage-backed accounts'
+);
+
+select ok(
+  position(
+    'delete from auth.users'
+    in lower(pg_get_functiondef('app_private.cleanup_stale_unconfirmed_accounts(integer)'::regprocedure))
+  ) > 0
+    and position(
+      'stale_unconfirmed_accounts_cleanup'
+      in pg_get_functiondef('app_private.cleanup_stale_unconfirmed_accounts(integer)'::regprocedure)
+    ) > 0,
+  'Cleanup permanently deletes eligible Auth users and records an aggregate audit event'
+);
+
+select ok(
+  not has_function_privilege('anon', 'app_private.unconfirmed_account_cleanup_candidates(integer)', 'EXECUTE')
+    and not has_function_privilege('authenticated', 'app_private.unconfirmed_account_cleanup_candidates(integer)', 'EXECUTE')
+    and not has_function_privilege('anon', 'app_private.cleanup_stale_unconfirmed_accounts(integer)', 'EXECUTE')
+    and not has_function_privilege('authenticated', 'app_private.cleanup_stale_unconfirmed_accounts(integer)', 'EXECUTE'),
+  'Browser roles cannot inspect or run stale-account cleanup functions'
+);
+
+select ok(
+  exists (
+    select 1
+    from cron.job
+    where jobname = 'mrc-cleanup-stale-unconfirmed-accounts'
+      and schedule = '30 0 * * *'
+      and command = 'select app_private.cleanup_stale_unconfirmed_accounts(500);'
+  ),
+  'Stale unconfirmed account cleanup runs once daily'
 );
 
 select * from finish();

@@ -15,6 +15,10 @@ import {
   turnstileSiteKey,
 } from "@/components/auth/captcha-field";
 import { dashboardForRoles } from "@/lib/auth/roles";
+import {
+  destinationAfterPrimaryLogin,
+  safeInternalDestination,
+} from "@/lib/auth/mfa-routing";
 import { supabaseConfigMessage } from "@/lib/supabase/config";
 import { createClient } from "@/lib/supabase/client";
 
@@ -115,12 +119,22 @@ export function LoginForm() {
       });
 
       const requestedDestination = new URLSearchParams(window.location.search).get("next");
-      const safeDestination =
-        requestedDestination?.startsWith("/") && !requestedDestination.startsWith("//")
-          ? requestedDestination
-          : dashboardForRoles(roleRows.map((row) => row.role));
+      const dashboardDestination = dashboardForRoles(roleRows.map((row) => row.role));
+      const safeDestination = safeInternalDestination(
+        requestedDestination,
+        dashboardDestination,
+      );
+      const { data: assurance, error: assuranceError } =
+        await supabase.auth.mfa.getAuthenticatorAssuranceLevel();
+      if (assuranceError) throw assuranceError;
+      const destination = destinationAfterPrimaryLogin({
+        currentLevel: assurance.currentLevel,
+        nextLevel: assurance.nextLevel,
+        isAdministrator: roleRows.some((row) => row.role === "administrator"),
+        destination: safeDestination,
+      });
 
-      router.push(safeDestination);
+      router.push(destination);
       router.refresh();
     } catch (error) {
       resetCaptcha();

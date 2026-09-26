@@ -48,6 +48,14 @@ for (const expectedFile of expectedFiles) {
   await stat(path.join(outputDirectory, expectedFile));
 }
 
+const htaccess = await readFile(path.join(outputDirectory, ".htaccess"), "utf8");
+if (
+  !htaccess.includes('<FilesMatch "^__next\\..*\\.txt$">')
+  || !htaccess.includes('Header set Cache-Control "no-store, max-age=0, must-revalidate"')
+) {
+  throw new Error("Static export does not disable caching for mutable Next route payloads.");
+}
+
 const files = await findFiles(outputDirectory);
 const htmlFiles = files.filter((file) => file.endsWith(".html"));
 if (htmlFiles.length < 60) {

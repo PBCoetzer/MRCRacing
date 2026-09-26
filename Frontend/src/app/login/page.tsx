@@ -16,8 +16,8 @@ export default function LoginPage() {
             Log in to unlock tips, track credits, and manage your dashboard.
           </h1>
           <p className="mt-4 max-w-2xl text-lg leading-8 text-muted-foreground">
-            Secure online authentication powers email login, password resets, and role-aware
-            routing for clients, horse-racing tipsters, and administrators.
+            Secure online authentication powers email login, password resets, authenticator-app
+            two-factor authentication, and role-aware routing for clients, tipsters, and administrators.
           </p>
           <Alert className="mt-6 max-w-2xl">
             <LockKeyhole className="size-4" />
@@ -31,7 +31,7 @@ export default function LoginPage() {
         <Card>
           <CardHeader>
             <CardTitle>Login</CardTitle>
-            <CardDescription>Enter your account details.</CardDescription>
+            <CardDescription>Enter your account details. Enrolled accounts verify a second factor next.</CardDescription>
           </CardHeader>
           <CardContent>
             <LoginForm />

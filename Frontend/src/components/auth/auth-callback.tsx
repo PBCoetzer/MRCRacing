@@ -7,6 +7,7 @@ import { AlertCircle, CheckCircle2, Loader2 } from "lucide-react";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { Button } from "@/components/ui/button";
 import { dashboardForRoles } from "@/lib/auth/roles";
+import { destinationAfterPrimaryLogin } from "@/lib/auth/mfa-routing";
 import { createClient } from "@/lib/supabase/client";
 import { supabaseConfigMessage } from "@/lib/supabase/config";
 
@@ -125,11 +126,24 @@ export function AuthCallback() {
         }
 
         const roleRows = (roles ?? []) as RoleRow[];
-        const destination = dashboardForRoles(roleRows.map((row) => row.role));
+        const dashboardDestination = dashboardForRoles(roleRows.map((row) => row.role));
+        const { data: assurance, error: assuranceError } =
+          await supabase.auth.mfa.getAuthenticatorAssuranceLevel();
+        if (assuranceError) throw assuranceError;
+        const destination = destinationAfterPrimaryLogin({
+          currentLevel: assurance.currentLevel,
+          nextLevel: assurance.nextLevel,
+          isAdministrator: roleRows.some((row) => row.role === "administrator"),
+          destination: dashboardDestination,
+        });
 
         window.history.replaceState({}, document.title, window.location.pathname);
         setCallbackState("success");
-        setMessage("Email confirmed. Taking you to your dashboard.");
+        setMessage(
+          destination.startsWith("/account/security/")
+            ? "Email confirmed. Taking you to two-factor verification."
+            : "Email confirmed. Taking you to your dashboard.",
+        );
         window.location.replace(destination);
       } catch (error) {
         if (!isMounted) {

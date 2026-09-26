@@ -40,7 +40,6 @@ import type {
   TipCardChangeAlert,
   TipCardMultiple,
   TipCardMultipleSelection,
-  TipCardStatus,
   TipsterProfile,
 } from "@/lib/racing/types";
 
@@ -119,7 +118,7 @@ export function ManageTipsClient() {
   const [summary, setSummary] = useState("");
   const [coinPrice, setCoinPrice] = useState("25");
   const [freeMeetingCard, setFreeMeetingCard] = useState(false);
-  const [listingStatus, setListingStatus] = useState<Extract<TipCardStatus, "draft" | "coming_soon">>("draft");
+  const [cardAction, setCardAction] = useState<"draft" | "publish">("draft");
   const [revisionSummary, setRevisionSummary] = useState("");
   const [raceDrafts, setRaceDrafts] = useState<RaceDraftMap>({});
   const [multipleDrafts, setMultipleDrafts] = useState<MultipleDraftMap>({});
@@ -170,7 +169,7 @@ export function ManageTipsClient() {
       if (requestedCardId) {
         const { data: cardData, error: cardError } = await supabase
           .from("tip_cards")
-          .select("id,tipster_id,meeting_id,title,summary,coin_price,status,revision,listed_at,published_at,voided_at,updated_at")
+          .select("id,tipster_id,meeting_id,title,summary,coin_price,status,revision,confirmed_revision_count,listed_at,published_at,voided_at,updated_at")
           .eq("id", requestedCardId)
           .eq("tipster_id", tipsterData.id)
           .maybeSingle();
@@ -365,7 +364,7 @@ export function ManageTipsClient() {
       setSummary(loadedCard?.summary ?? "");
       setCoinPrice(String(loadedCard && loadedCard.coin_price > 0 ? loadedCard.coin_price : 25));
       setFreeMeetingCard(loadedCard?.coin_price === 0);
-      setListingStatus(loadedCard?.status === "coming_soon" ? "coming_soon" : "draft");
+      setCardAction("draft");
       setChangeAlerts(loadedChangeAlerts);
     } catch (loadError) {
       setError(getErrorMessage(loadError, "Could not load the meeting card editor."));
@@ -627,7 +626,14 @@ export function ManageTipsClient() {
         }
 
         const notificationMessage = await invokeNotificationWorker();
-        const revisedCard = data as TipCard;
+        const revisedCardData = data as TipCard;
+        const revisedCard = {
+          ...revisedCardData,
+          confirmed_revision_count: Math.max(
+            revisedCardData.confirmed_revision_count,
+            card.confirmed_revision_count + 1,
+          ),
+        };
         setOriginalRaceDrafts(raceDrafts);
         setOriginalMultipleDrafts(multipleDrafts);
         setCard(revisedCard);
@@ -661,7 +667,7 @@ export function ManageTipsClient() {
         p_summary: summary,
         p_coin_price: parsedPrice,
         p_expected_revision: card?.revision ?? 0,
-        p_listing_status: action === "publish" ? "draft" : listingStatus,
+        p_listing_status: "draft",
         p_race_selections: raceSelections,
         p_multiples: multiples,
       });
@@ -685,7 +691,14 @@ export function ManageTipsClient() {
         }
 
         const notificationMessage = await invokeNotificationWorker();
-        const publishedCard = publishedData as PublishedTipCardResult;
+        const publishedCardData = publishedData as PublishedTipCardResult;
+        const publishedCard = {
+          ...publishedCardData,
+          confirmed_revision_count: Math.max(
+            publishedCardData.confirmed_revision_count,
+            savedCard.confirmed_revision_count + 1,
+          ),
+        };
         setCard(publishedCard);
         setNotifyAllClients(false);
         setMessage(
@@ -697,9 +710,7 @@ export function ManageTipsClient() {
         const nextUrl = `/tipster/manage-tips/?card=${encodeURIComponent(savedCard.id)}`;
         window.history.replaceState(null, "", nextUrl);
         setMessage(
-          listingStatus === "coming_soon"
-            ? "Coming Soon preview saved. Individual purchase opens only after the tips are published."
-            : "Draft saved privately.",
+          "Private draft saved. No client notifications were sent. You can continue preparing it from the Tipster dashboard.",
         );
       }
     } catch (saveError) {
@@ -866,7 +877,7 @@ export function ManageTipsClient() {
             <Badge>{meeting.venue}</Badge>
             {meeting.is_test ? <Badge variant="secondary">Private test meeting</Badge> : null}
             <Badge variant="outline">Race 1: {formatRaceDateTime(meeting.first_race_at)}</Badge>
-            {card ? <Badge variant="outline">Revision {card.revision}</Badge> : null}
+            {card ? <Badge variant="outline">Revision {card.confirmed_revision_count}</Badge> : null}
           </div>
           <CardTitle className="font-heading text-2xl text-white">Meeting card setup</CardTitle>
           <CardDescription>
@@ -932,16 +943,27 @@ export function ManageTipsClient() {
           </div>
           {!isPublished ? (
             <div className="space-y-2">
-              <Label htmlFor="listing-status">Pre-publication visibility</Label>
+              <Label htmlFor="card-action">Card status</Label>
               <select
-                id="listing-status"
+                id="card-action"
                 className="h-8 w-full rounded-lg border border-input bg-background px-2.5 text-sm"
-                value={listingStatus}
-                onChange={(event) => setListingStatus(event.target.value as "draft" | "coming_soon")}
+                value={cardAction}
+                onChange={(event) => {
+                  const nextAction = event.target.value as "draft" | "publish";
+                  setCardAction(nextAction);
+                  if (nextAction === "draft") {
+                    setNotifyAllClients(false);
+                  }
+                }}
               >
-                <option value="draft">Private draft</option>
-                <option value="coming_soon">Coming Soon / preview only</option>
+                <option value="draft">Private Draft</option>
+                <option value="publish">Publish Card</option>
               </select>
+              <p className="text-xs text-muted-foreground">
+                {cardAction === "draft"
+                  ? "Only you and administrators can view it. No client notifications are sent."
+                  : "The completed card becomes public and the selected publication emails are queued."}
+              </p>
             </div>
           ) : (
             <div className="rounded-lg border border-brand-cyan/35 bg-brand-cyan/8 p-3 text-sm">
@@ -950,6 +972,35 @@ export function ManageTipsClient() {
           )}
         </CardContent>
       </Card>
+
+      {!isPublished ? (
+        <Card className="border-brand-cyan/40 bg-brand-cyan/5">
+          <CardHeader>
+            <CardTitle className="flex items-center gap-2">
+              <FilePenLine className="size-5 text-brand-cyan" />
+              Prepare privately, publish when ready
+            </CardTitle>
+            <CardDescription>
+              Save as many private updates as needed before the first-publication cutoff. Private saves never
+              appear in the marketplace and never send client notifications.
+            </CardDescription>
+          </CardHeader>
+          <CardContent className="grid gap-3 text-sm md:grid-cols-3">
+            <div className="rounded-lg border bg-background/45 p-3">
+              <p className="font-semibold text-white">1. Prepare</p>
+              <p className="mt-1 text-muted-foreground">Add selections, comments, price, Exotics, and Multiples.</p>
+            </div>
+            <div className="rounded-lg border bg-background/45 p-3">
+              <p className="font-semibold text-white">2. Save privately</p>
+              <p className="mt-1 text-muted-foreground">Return from the Tipster dashboard and continue editing later.</p>
+            </div>
+            <div className="rounded-lg border bg-background/45 p-3">
+              <p className="font-semibold text-white">3. Publish publicly</p>
+              <p className="mt-1 text-muted-foreground">Only publishing opens the card and queues the selected emails.</p>
+            </div>
+          </CardContent>
+        </Card>
+      ) : null}
 
       <div className="space-y-4">
         <div>
@@ -1341,33 +1392,42 @@ export function ManageTipsClient() {
             </div>
           ) : (
             <div className="flex w-full flex-col gap-3 sm:w-auto sm:min-w-[28rem]">
-              <label
-                htmlFor="notify-all-clients"
-                className="flex cursor-pointer items-start gap-3 rounded-lg border border-border bg-background/45 p-3"
-              >
-                <input
-                  id="notify-all-clients"
-                  type="checkbox"
-                  className="mt-1 size-4 accent-primary"
-                  checked={notifyAllClients}
-                  disabled={saving}
-                  onChange={(event) => setNotifyAllClients(event.target.checked)}
-                />
-                <span className="space-y-1">
-                  <span className="block text-sm font-semibold">Notify all clients</span>
-                  <span className="block text-xs text-muted-foreground">
-                    Email every active client who permits email notifications. Each account receives this new-card announcement only once.
+              {cardAction === "publish" ? (
+                <label
+                  htmlFor="notify-all-clients"
+                  className="flex cursor-pointer items-start gap-3 rounded-lg border border-border bg-background/45 p-3"
+                >
+                  <input
+                    id="notify-all-clients"
+                    type="checkbox"
+                    className="mt-1 size-4 accent-primary"
+                    checked={notifyAllClients}
+                    disabled={saving}
+                    onChange={(event) => setNotifyAllClients(event.target.checked)}
+                  />
+                  <span className="space-y-1">
+                    <span className="block text-sm font-semibold">Notify all clients</span>
+                    <span className="block text-xs text-muted-foreground">
+                      Email each eligible account once when this card is published.
+                    </span>
                   </span>
-                </span>
-              </label>
+                </label>
+              ) : null}
               <div className="flex flex-wrap gap-2 sm:justify-end">
-                <Button disabled={saving} type="button" variant="outline" onClick={() => void saveCard("draft")}>
-                  {saving ? <Loader2 className="size-4 animate-spin" /> : <Save className="size-4" />}
-                  Save {listingStatus === "coming_soon" ? "Coming Soon" : "draft"}
-                </Button>
-                <Button disabled={saving} type="button" onClick={() => void saveCard("publish")}>
-                  {saving ? <Loader2 className="size-4 animate-spin" /> : <Send className="size-4" />}
-                  Publish meeting card
+                <Button
+                  disabled={saving}
+                  type="button"
+                  variant={cardAction === "draft" ? "outline" : "default"}
+                  onClick={() => void saveCard(cardAction)}
+                >
+                  {saving ? (
+                    <Loader2 className="size-4 animate-spin" />
+                  ) : cardAction === "draft" ? (
+                    <Save className="size-4" />
+                  ) : (
+                    <Send className="size-4" />
+                  )}
+                  {cardAction === "draft" ? "Save private draft" : "Publish card"}
                 </Button>
               </div>
             </div>

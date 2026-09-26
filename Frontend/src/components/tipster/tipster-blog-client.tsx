@@ -39,6 +39,13 @@ type BlogAuthorAccess = {
   displayName: string;
 };
 
+type PublishedBlogPost = BlogPost & {
+  notificationWasFirstPublication?: boolean;
+  notificationAudienceCount?: number;
+  notificationNewlyQueuedCount?: number;
+  notificationAlreadyQueuedCount?: number;
+};
+
 const emptyDraft = { title: "", excerpt: "", body: "", coverPath: "", videoUrl: "" };
 const supportedCoverTypes = new Set(["image/jpeg", "image/png", "image/webp"]);
 const maxSourceCoverBytes = 20 * 1024 * 1024;
@@ -83,6 +90,7 @@ async function toWebp(file: File) {
 }
 
 export function TipsterBlogClient() {
+  const [signedIn, setSignedIn] = useState(false);
   const [tipsterId, setTipsterId] = useState("");
   const [canPublish, setCanPublish] = useState(false);
   const [authorAccess, setAuthorAccess] = useState<BlogAuthorAccess | null>(null);
@@ -99,6 +107,13 @@ export function TipsterBlogClient() {
     const supabase = createClient();
     if (!supabase) return;
     setLoading(true); setError("");
+    const { data: userData, error: userError } = await supabase.auth.getUser();
+    if (userError || !userData.user) {
+      setSignedIn(false);
+      setLoading(false);
+      return;
+    }
+    setSignedIn(true);
     const { data: accessData, error: accessError } = await supabase.rpc(
       "get_my_blog_author_access",
     );
@@ -214,9 +229,12 @@ export function TipsterBlogClient() {
     setBusy("publish"); setError(""); setMessage("");
     try {
       const saved = await saveDraft();
-      const { error: publishError } = await supabase.rpc("publish_blog_post", { p_post_id: saved.id });
+      const { data, error: publishError } = await supabase.rpc("publish_blog_post", { p_post_id: saved.id });
       if (publishError) throw publishError;
-      setMessage("Article published directly under your approved author permission.");
+      const published = data as PublishedBlogPost;
+      setMessage(published.notificationWasFirstPublication
+        ? `Article published. ${published.notificationNewlyQueuedCount ?? 0} email announcement${published.notificationNewlyQueuedCount === 1 ? "" : "s"} queued for ${published.notificationAudienceCount ?? 0} eligible registered account${published.notificationAudienceCount === 1 ? "" : "s"}.`
+        : "Article updated. No duplicate announcement email was sent.");
       await load();
     } catch (publishError) { setError(publishError instanceof Error ? publishError.message : "Article could not be published."); }
     setBusy("");
@@ -231,9 +249,15 @@ export function TipsterBlogClient() {
   }
 
   if (loading) return <Card><CardContent className="flex min-h-52 items-center justify-center gap-2"><Loader2 className="size-5 animate-spin" />Loading author workspace…</CardContent></Card>;
+  if (!signedIn) return null;
 
   return (
-    <div className="space-y-6">
+    <section id="author-tools" className="scroll-mt-24 space-y-6" aria-labelledby="blog-author-tools-title">
+      <div>
+        <p className="font-mono text-xs uppercase tracking-[0.2em] text-brand-cyan">Author tools</p>
+        <h2 id="blog-author-tools-title" className="mt-2 font-heading text-3xl text-white">Write for MRC</h2>
+        <p className="mt-2 max-w-3xl text-muted-foreground">Approved authors can create, edit, and publish here. All other registered clients can continue reading and commenting.</p>
+      </div>
       {error ? <Alert variant="destructive"><AlertTitle>Blog action failed</AlertTitle><AlertDescription>{error}</AlertDescription></Alert> : null}
       {message ? <Alert><AlertTitle>Blog updated</AlertTitle><AlertDescription>{message}</AlertDescription></Alert> : null}
       {!canPublish ? <Alert><Newspaper className="size-4" /><AlertTitle>Blog author approval required</AlertTitle><AlertDescription>Any registered client may request access. An administrator must verify and approve the request before articles can be created, edited, or published.</AlertDescription></Alert> : null}
@@ -260,7 +284,7 @@ export function TipsterBlogClient() {
         </Card>
       ) : null}
 
-      <div className="grid gap-6 xl:grid-cols-[320px_1fr]">
+      {canPublish ? <div className="grid gap-6 xl:grid-cols-[320px_1fr]">
         <Card>
           <CardHeader><CardTitle>My articles</CardTitle><CardDescription>Published articles remain visible if permission is later revoked; edits stop immediately.</CardDescription></CardHeader>
           <CardContent className="space-y-3">
@@ -271,7 +295,7 @@ export function TipsterBlogClient() {
         </Card>
 
         <Card>
-          <CardHeader><CardTitle>{selectedId ? "Edit article" : "New article"}</CardTitle><CardDescription>Safe Markdown supports headings, paragraphs, lists, and HTTP/HTTPS links. Add one approved YouTube or Vimeo video using its public link; raw HTML remains blocked.</CardDescription></CardHeader>
+          <CardHeader><CardTitle>{selectedId ? "Edit article" : "New article"}</CardTitle><CardDescription>Safe Markdown supports headings, bold, italics, horizontal dividers, paragraphs, lists, and HTTP/HTTPS links. Add one approved YouTube or Vimeo video using its public link; raw HTML remains blocked.</CardDescription></CardHeader>
           <CardContent className="space-y-5">
             <div><Label htmlFor="post-title">Title</Label><Input id="post-title" maxLength={160} value={draft.title} disabled={!canPublish} onChange={(event) => setDraft((current) => ({ ...current, title: event.target.value }))} /></div>
             <div><Label htmlFor="post-excerpt">Public summary</Label><Textarea id="post-excerpt" maxLength={400} value={draft.excerpt} disabled={!canPublish} onChange={(event) => setDraft((current) => ({ ...current, excerpt: event.target.value }))} /></div>
@@ -309,7 +333,7 @@ export function TipsterBlogClient() {
             </div>
           </CardContent>
         </Card>
-      </div>
-    </div>
+      </div> : null}
+    </section>
   );
 }

@@ -1,6 +1,8 @@
 import "jsr:@supabase/functions-js/edge-runtime.d.ts";
 import { createClient, type SupabaseClient } from "@supabase/supabase-js";
+import { jwtHasAal2 } from "../_shared/mfa.ts";
 import {
+  canonicalDomain,
   confidencePercent,
   constantTimeEqual,
   type HermesRaceResult,
@@ -40,9 +42,14 @@ function json(request: Request, payload: unknown, status = 200) {
 }
 
 function safeMessage(error: unknown) {
-  if (error instanceof Error) {
-    return error.message.replace(/[\r\n]+/g, " ").slice(0, 500);
-  }
+  const message = error instanceof Error
+    ? error.message
+    : typeof error === "object" && error !== null && "message" in error &&
+        typeof error.message === "string"
+    ? error.message
+    : null;
+
+  if (message) return message.replace(/[\r\n]+/g, " ").slice(0, 500);
   return "Unexpected Hermes race bridge failure.";
 }
 
@@ -87,6 +94,7 @@ async function authorizeInternal(
   if (!accessToken) return null;
   const { data, error } = await serviceClient.auth.getUser(accessToken);
   if (error || !data.user) return null;
+  if (!jwtHasAal2(accessToken)) return null;
   const { data: roles } = await serviceClient
     .from("user_roles")
     .select("role")
@@ -185,6 +193,61 @@ async function handoffResult(
     return { mode: "shadow", proposalId: null };
   }
 
+  const taskPayload =
+    job.task_payload && typeof job.task_payload === "object" &&
+      !Array.isArray(job.task_payload)
+      ? job.task_payload as JsonRecord
+      : {};
+  if (taskPayload.comparison_only === true) {
+    const meetingId = uuid(taskPayload.meetingId, "task_payload.meetingId");
+    const sourceDomains = [
+      ...new Set(
+        result.sources.map((source) => canonicalDomain(source.domain)),
+      ),
+    ];
+    if (sourceDomains.length !== 1 || sourceDomains[0] === "formgrids.info") {
+      throw new Error(
+        "A comparison-only result must contain exactly one non-Formgrids source.",
+      );
+    }
+    const requestedSource = canonicalDomain(
+      String(taskPayload.comparison_source ?? ""),
+    );
+    if (!requestedSource || requestedSource !== sourceDomains[0]) {
+      throw new Error(
+        "The comparison result source does not match the requested secondary source.",
+      );
+    }
+    const observedAt = result.sources.reduce(
+      (latest, source) =>
+        Date.parse(source.retrieved_at) > Date.parse(latest)
+          ? source.retrieved_at
+          : latest,
+      result.started_at,
+    );
+    const { data: comparison, error: comparisonError } = await serviceClient
+      .rpc("record_secondary_race_change_snapshot", {
+        p_meeting_id: meetingId,
+        p_source_domain: sourceDomains[0],
+        p_source_url: result.sources[0].url,
+        p_source_observed_at: observedAt,
+        p_content_hash: result.evidence_hash,
+        p_snapshot: result.normalized_data,
+      });
+    if (comparisonError) throw comparisonError;
+    const recorded = await recordHandoff(
+      serviceClient,
+      result.job_id,
+      "not_applicable",
+    );
+    if (recorded.error) throw recorded.error;
+    return {
+      mode: "secondary_comparison",
+      proposalId: null,
+      comparison,
+    };
+  }
+
   const taskId = typeof job.source_task_id === "string"
     ? job.source_task_id
     : "";
@@ -192,8 +255,12 @@ async function handoffResult(
 
   if (job.task_type === "weekly_calendar") {
     const meetings = result.normalized_data.meetings;
-    if (!taskId || !runId || !Array.isArray(meetings) || meetings.length === 0) {
-      throw new Error("Weekly Hermes results did not contain staged meeting data.");
+    if (
+      !taskId || !runId || !Array.isArray(meetings) || meetings.length === 0
+    ) {
+      throw new Error(
+        "Weekly Hermes results did not contain staged meeting data.",
+      );
     }
     const { data: staged, error: stageError } = await serviceClient.rpc(
       "stage_hermes_weekly_calendar_result",

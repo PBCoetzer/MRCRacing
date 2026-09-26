@@ -5,12 +5,14 @@ import {
   BadgeCheck,
   CalendarDays,
   ChevronRight,
+  ExternalLink,
   LockKeyhole,
   Sparkles,
   Trophy,
   Users,
   Wallet,
 } from "lucide-react";
+import { AffiliateImpressionTracker } from "@/components/affiliates/affiliate-impression-tracker";
 import { HomePinnedBlogPost } from "@/components/blog/home-pinned-blog-post";
 import { HomeCreditPackages } from "@/components/pricing/home-credit-packages";
 import { UpcomingMeetingBoard } from "@/components/racing/race-data-board";
@@ -25,6 +27,7 @@ import {
   CardHeader,
   CardTitle,
 } from "@/components/ui/card";
+import { affiliatePartners } from "@/lib/affiliate-partners";
 import { publicMetadata, siteName } from "@/lib/metadata";
 
 export const metadata: Metadata = {
@@ -194,6 +197,86 @@ export default function Home() {
         </section>
 
         <HomePinnedBlogPost />
+
+        <section className="mx-auto w-full max-w-7xl px-4 py-12 sm:px-6 lg:px-8">
+          <div className="mb-6 max-w-3xl">
+            <Badge variant="outline">Affiliate partners</Badge>
+            <h2 className="mt-3 font-heading text-3xl text-white">
+              Open an account with an MRC affiliate partner.
+            </h2>
+            <p className="mt-3 text-muted-foreground">
+              These are affiliate links. MRC Racing Tips may earn a commission when you
+              register or transact through a partner link, at no additional cost to you.
+            </p>
+          </div>
+
+          <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
+            {affiliatePartners.map((partner) =>
+              partner.primary ? (
+                <a
+                  key={partner.name}
+                  href={partner.href}
+                  target="_blank"
+                  rel="sponsored noopener noreferrer"
+                  aria-label={`Visit ${partner.name}`}
+                  className="group relative overflow-hidden rounded-xl border border-brand-cyan/55 bg-brand-purple-deep shadow-[0_18px_45px_rgba(0,0,0,0.28)] transition hover:-translate-y-1 hover:border-brand-cyan sm:col-span-2 lg:col-span-4"
+                >
+                  <div className="flex flex-wrap items-center justify-between gap-2 border-b border-white/10 px-4 py-3 text-white">
+                    <Badge className="border border-brand-cyan/45 bg-brand-cyan/12 text-brand-cyan">
+                      Primary partner
+                    </Badge>
+                    <span className="flex items-center gap-2 text-sm font-semibold">
+                      Visit {partner.name}
+                      <ExternalLink className="size-4 text-brand-cyan" />
+                    </span>
+                  </div>
+                  <div className="relative aspect-[7426/1548] min-h-24 w-full overflow-hidden bg-[#001bea] sm:min-h-32">
+                    <Image
+                      src={partner.image}
+                      alt={`${partner.name} logo`}
+                      fill
+                      sizes="(max-width: 1280px) 100vw, 1280px"
+                      className="object-contain transition duration-300 group-hover:scale-[1.01]"
+                    />
+                  </div>
+                  {partner.impressionUrl ? (
+                    <AffiliateImpressionTracker
+                      partnerName={partner.name}
+                      src={partner.impressionUrl}
+                    />
+                  ) : null}
+                </a>
+              ) : (
+                <a
+                  key={partner.name}
+                  href={partner.href}
+                  target="_blank"
+                  rel="sponsored noopener noreferrer"
+                  aria-label={`Visit ${partner.name}`}
+                  className="group relative aspect-[16/10] overflow-hidden rounded-xl border border-brand-gold/24 bg-brand-purple-deep transition hover:-translate-y-1 hover:border-brand-gold/65 hover:shadow-[0_18px_45px_rgba(0,0,0,0.28)]"
+                >
+                  <Image
+                    src={partner.image}
+                    alt={`${partner.name} logo`}
+                    fill
+                    sizes="(max-width: 640px) 100vw, (max-width: 1024px) 50vw, 25vw"
+                    className="object-cover transition duration-300 group-hover:scale-105"
+                  />
+                  <div className="absolute inset-x-0 bottom-0 flex items-center justify-between bg-gradient-to-t from-black/86 via-black/55 to-transparent px-4 pb-3 pt-10 text-white">
+                    <span className="font-semibold">{partner.name}</span>
+                    <ExternalLink className="size-4 text-brand-cyan" />
+                  </div>
+                </a>
+              ),
+            )}
+          </div>
+
+          <p className="mt-4 text-xs leading-5 text-muted-foreground">
+            Available only to adults eligible under applicable law. Transactional
+            activity carries financial risk. Affiliate placement does not change
+            MRC&apos;s independent tipster reporting or results history.
+          </p>
+        </section>
 
         <section className="mx-auto w-full max-w-7xl px-4 py-12 sm:px-6 lg:px-8">
           <div className="mb-6 flex flex-wrap items-end justify-between gap-4">

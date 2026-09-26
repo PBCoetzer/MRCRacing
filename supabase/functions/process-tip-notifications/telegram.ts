@@ -1,3 +1,5 @@
+import type { TelegramRaceChange } from "./proposal-changes.ts";
+
 export type TelegramRaceRunner = {
   horseName?: string;
   jockeyName?: string;
@@ -26,6 +28,7 @@ export type TelegramRaceSnapshot = {
 };
 
 export type TelegramApprovalPayload = {
+  reviewKind?: "proposal" | "proposal_changes" | "secondary_consensus";
   meetingVenue?: string;
   meetingDate?: string;
   confidenceScore?: number;
@@ -36,6 +39,15 @@ export type TelegramApprovalPayload = {
   proposalVersion?: number;
   confidenceBreakdown?: Record<string, unknown>;
   raceSnapshot?: TelegramRaceSnapshot;
+  differenceSummary?: string;
+  sourceDomains?: string[];
+  sourceUrls?: string[];
+  adminUrl?: string;
+  changes?: TelegramRaceChange[];
+  changeCount?: number;
+  omittedChangeCount?: number;
+  conflictSummary?: string;
+  feedbackEnabled?: boolean;
 };
 
 export type TelegramDecision = "approve" | "reject";
@@ -43,9 +55,13 @@ export type TelegramDecision = "approve" | "reject";
 export type TelegramMessageRequest = {
   text: string;
   link_preview_options: { is_disabled: true };
-  reply_markup?: {
-    inline_keyboard: Array<Array<{ text: string; url: string }>>;
-  };
+  reply_markup?:
+    | { inline_keyboard: Array<Array<{ text: string; url: string }>> }
+    | {
+      force_reply: true;
+      input_field_placeholder?: string;
+      selective?: boolean;
+    };
 };
 
 const adminBaseUrl = "https://www.mrcracing.co.za/admin/racing/";
@@ -53,14 +69,11 @@ const uuidPattern =
   /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
 
 function compact(value: unknown, fallback: string, maximumLength = 120) {
-  const normalized = String(value ?? "").replace(/[\u0000-\u001f\u007f]+/g, " ")
-    .trim();
+  const normalized = [...String(value ?? "")].map((character) => {
+    const code = character.charCodeAt(0);
+    return code <= 31 || code === 127 ? " " : character;
+  }).join("").trim();
   return (normalized || fallback).slice(0, maximumLength);
-}
-
-function finiteNumber(value: unknown): number | null {
-  const numericValue = Number(value);
-  return Number.isFinite(numericValue) ? numericValue : null;
 }
 
 function formatMeetingDate(value: unknown) {
@@ -125,6 +138,65 @@ export function renderTelegramApproval(payload: TelegramApprovalPayload) {
     "_",
     " ",
   );
+  if (payload.reviewKind === "secondary_consensus") {
+    const sourceDomains = Array.isArray(payload.sourceDomains)
+      ? [
+        ...new Set(
+          payload.sourceDomains.map((value) => compact(value, "", 120)).filter(
+            Boolean,
+          ),
+        ),
+      ]
+      : [];
+    const difference = compact(
+      payload.differenceSummary,
+      "Secondary race sources disagree with the current Formgrids record.",
+      1200,
+    );
+    return [
+      "⚠️ MRC RACE SOURCE DIFFERENCE",
+      `${venue.toUpperCase()} · ${meetingDate}`,
+      difference,
+      `Primary feed: Formgrids · Matching comparison sources: ${sourceDomains.length}`,
+      sourceDomains.length ? `Sources: ${sourceDomains.join(", ")}` : "",
+      "No race data was changed automatically. Review the difference before correcting the Formgrids-backed record.",
+      "Reply with a correction such as: Race 1 Horse 10 scratched.",
+      `Review: ${compact(payload.adminUrl, adminBaseUrl, 2048)}`,
+    ].filter(Boolean).join("\n").slice(0, 4096);
+  }
+  if (payload.reviewKind === "proposal_changes") {
+    const changes = Array.isArray(payload.changes) ? payload.changes : [];
+    const changeCount = Math.max(
+      changes.length,
+      Number(payload.changeCount ?? changes.length) || 0,
+    );
+    const omittedCount = Math.max(
+      0,
+      Number(payload.omittedChangeCount ?? changeCount - changes.length) || 0,
+    );
+    const conflictSummary = compact(payload.conflictSummary, "", 800);
+    const changeHeading = changeCount === 0
+      ? "Source conflict requires review:"
+      : changeCount === 1
+      ? "1 factual change detected:"
+      : `${changeCount} factual changes detected:`;
+    const lines = [
+      "⚠️ MRC RACE CHANGE REVIEW",
+      `${venue.toUpperCase()} · ${meetingDate}`,
+      changeHeading,
+      ...changes.map((change) =>
+        `• ${compact(change.summary, "Race data changed.", 280)}`
+      ),
+      omittedCount > 0
+        ? `• Plus ${omittedCount} additional change(s) in the admin review.`
+        : "",
+      conflictSummary ? `Source warning: ${conflictSummary}` : "",
+      "Reply with a correction such as “Race 1 Horse 10 scratched” or “Race 2 jockey changed to Craig Zackey”.",
+      "Replies are saved for review and never change race data automatically.",
+      `Review: ${proposalReviewUrl(payload.proposalId, "approve")}`,
+    ];
+    return lines.filter(Boolean).join("\n").slice(0, 4096);
+  }
   const oneSourceCapApplied =
     payload.confidenceBreakdown?.oneSourceCapApplied === true;
   const lines = [
@@ -134,7 +206,7 @@ export function renderTelegramApproval(payload: TelegramApprovalPayload) {
   ];
 
   if (races.length) {
-    lines.push(`Attached PDF: ${races.length} races · ${runnerCount} runners`);
+    lines.push(`${races.length} races · ${runnerCount} runners`);
   }
   if (oneSourceCapApplied) {
     lines.push(
@@ -142,15 +214,23 @@ export function renderTelegramApproval(payload: TelegramApprovalPayload) {
     );
   }
   lines.push(
-    races.length
-      ? "Open the attached MRC review PDF to check every runner, jockey, trainer, draw and weight."
-      : "Review the evidence before deciding. The buttons open the proposal without applying it automatically.",
+    "Review the evidence before deciding. The buttons open the proposal without applying it automatically.",
   );
 
   return lines.join("\n").slice(0, 4096);
 }
 
 function approvalKeyboard(payload: TelegramApprovalPayload) {
+  if (
+    payload.reviewKind === "secondary_consensus" ||
+    payload.reviewKind === "proposal_changes" ||
+    payload.feedbackEnabled === true
+  ) {
+    return {
+      force_reply: true as const,
+      input_field_placeholder: "Reply with the race correction to review",
+    };
+  }
   return {
     inline_keyboard: [[
       {
@@ -175,7 +255,9 @@ export function buildTelegramApprovalRequests(
   }];
 }
 
-export function buildTelegramApprovalRequest(payload: TelegramApprovalPayload) {
+export function buildTelegramApprovalRequest(
+  payload: TelegramApprovalPayload,
+): TelegramMessageRequest {
   return {
     text: renderTelegramApproval(payload),
     link_preview_options: { is_disabled: true },

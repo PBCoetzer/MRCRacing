@@ -24,6 +24,7 @@ import {
 import { createClient } from "@/lib/supabase/client";
 import { supabaseConfigMessage } from "@/lib/supabase/config";
 import { getSiteUrl } from "@/lib/site-url";
+import { EMAIL_MARKETING_CONSENT_VERSION } from "@/lib/email-marketing-consent";
 import {
   isExistingRegistrationError,
   isRegistrationEmailRateLimitError,
@@ -111,9 +112,14 @@ export function RegisterForm() {
     const password = String(formData.get("password") ?? "");
     const acceptedTerms = formData.get("acceptedTerms") === "on";
     const confirmedOver18 = formData.get("confirmedOver18") === "on";
+    const emailMarketingChoice = String(formData.get("emailMarketingChoice") ?? "");
+    const acceptedEmailAnnouncements = emailMarketingChoice === "yes";
 
-    if (!acceptedTerms || !confirmedOver18) {
-      showResult("error", "Please accept the platform terms and confirm the age declaration.");
+    if (!acceptedTerms || !confirmedOver18 || !["yes", "no"].includes(emailMarketingChoice)) {
+      showResult(
+        "error",
+        "Please accept the platform terms, confirm the age declaration, and choose your email preference.",
+      );
       return;
     }
 
@@ -144,6 +150,8 @@ export function RegisterForm() {
             accepted_terms: acceptedTerms,
             accepted_terms_version: currentTermsVersion,
             confirmed_over_18: confirmedOver18,
+            email_marketing_consent: acceptedEmailAnnouncements,
+            email_marketing_consent_version: EMAIL_MARKETING_CONSENT_VERSION,
             first_name: firstName,
             last_name: lastName,
             display_name: displayName || `${firstName} ${lastName}`,
@@ -272,6 +280,38 @@ export function RegisterForm() {
           <input name="confirmedOver18" type="checkbox" required className="mt-1 accent-primary" />
           <span>I confirm that I am 18 years old or older.</span>
         </label>
+        <fieldset className="grid gap-3 rounded-lg border border-brand-cyan/30 bg-brand-cyan/5 p-3 text-sm text-muted-foreground">
+          <legend className="px-1 font-medium text-foreground">Optional email announcements</legend>
+          <p>
+            Choose whether MRC Racing Tips may email you about new meeting cards, blog posts,
+            platform news, and similar services. This choice does not affect account or purchase
+            emails and can be changed later from your client profile.
+          </p>
+          <label className="flex items-start gap-3 rounded-md border bg-background/50 p-3">
+            <input
+              name="emailMarketingChoice"
+              type="radio"
+              value="yes"
+              required
+              className="mt-1 accent-primary"
+            />
+            <span>Yes, send me optional email announcements.</span>
+          </label>
+          <label className="flex items-start gap-3 rounded-md border bg-background/50 p-3">
+            <input
+              name="emailMarketingChoice"
+              type="radio"
+              value="no"
+              required
+              className="mt-1 accent-primary"
+            />
+            <span>No, do not send me optional email announcements.</span>
+          </label>
+          <p className="text-xs">
+            See the <Link href="/privacy/" className="text-brand-cyan underline">privacy policy</Link>{" "}
+            for details.
+          </p>
+        </fieldset>
         <CaptchaField
           ref={turnstileRef}
           action="register"

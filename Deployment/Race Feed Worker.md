@@ -55,12 +55,21 @@ Never add these values to Xneelo, browser code, or a `NEXT_PUBLIC_` variable.
   Function open.
 - Google Search and structured extraction have separate bounded timeouts.
 - Result polling is created only for non-test meetings linked to non-void tip cards.
-- Proposals at 90% confidence or higher auto-apply when backed by two approved
-  independent domains and no critical conflict. New meetings, routine changes, and
-  results are all enabled for auto-approval in production.
-- A proposal backed by only one approved domain remains capped at 70% and requires
-  manual review. Approval supplies a standard audit note when the administrator does
-  not enter a custom note; rejection always requires an explicit reason.
+- Formgrids is the sole authoritative publishing source. Ordinary Hermes meeting,
+  race-detail, and result tasks are restricted to `formgrids.info`.
+- Complete, conflict-free Formgrids meeting snapshots may auto-apply at 90% Hermes
+  confidence. Existing exact-confidence result handling remains available for
+  Formgrids-backed results.
+- Raceform and Tote are comparison-only evidence sources. They cannot publish or
+  auto-apply race data under any confidence score.
+- If at least two independent comparison domains report the same normalized difference
+  within 30 minutes, administrators receive a Telegram and in-app review alert. The
+  alert never changes the Formgrids-backed race record.
+- New meetings, routine changes, and results remain enabled for Formgrids-driven
+  auto-approval. Administrators review and correct disputed data manually.
+- The daily paid-search budget applies only to provider-backed searches. Tasks marked
+  `delegate_to_hermes` continue through the local Hermes worker after that budget is
+  exhausted, so race discovery and schedule updates do not stop.
 - Dummy meetings must remain until one future meeting and one recent results meeting
   pass the full proposal and approval acceptance test.
 

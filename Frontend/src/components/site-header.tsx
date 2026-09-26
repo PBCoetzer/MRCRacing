@@ -5,7 +5,7 @@ import Image from "next/image";
 import { useRouter } from "next/navigation";
 import { useEffect, useState } from "react";
 import type { AuthChangeEvent, Session } from "@supabase/supabase-js";
-import { LogOut, Menu } from "lucide-react";
+import { LogOut, Menu, ShieldCheck } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import {
   Sheet,
@@ -159,6 +159,12 @@ export function SiteHeader() {
         <div className="hidden items-center gap-2 md:flex">
           {authState === "signed-in" ? (
             <>
+              <Button asChild variant="outline" size="sm">
+                <Link href="/account/security/">
+                  <ShieldCheck className="size-4" />
+                  Security
+                </Link>
+              </Button>
               {dashboardHref ? (
                 <Button asChild size="sm" className="bg-brand-gold text-brand-purple-deep hover:bg-brand-gold/90">
                   <Link href={dashboardHref}>Dashboard</Link>
@@ -198,8 +204,14 @@ export function SiteHeader() {
               ))}
               {authState === "signed-in" ? (
                 <>
+                  <Button asChild variant="outline" className="mt-4 justify-start">
+                    <Link href="/account/security/">
+                      <ShieldCheck className="size-4" />
+                      Profile security &amp; 2FA
+                    </Link>
+                  </Button>
                   {dashboardHref ? (
-                    <Button asChild className="mt-4 justify-start bg-brand-gold text-brand-purple-deep hover:bg-brand-gold/90">
+                    <Button asChild className="justify-start bg-brand-gold text-brand-purple-deep hover:bg-brand-gold/90">
                       <Link href={dashboardHref}>Dashboard</Link>
                     </Button>
                   ) : null}

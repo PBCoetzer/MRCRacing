@@ -6,7 +6,7 @@ import {
   validProposalId,
 } from "./telegram.ts";
 
-function assert(condition: unknown, message: string) {
+function assert(condition: unknown, message: string): asserts condition {
   if (!condition) throw new Error(message);
 }
 
@@ -31,58 +31,56 @@ Deno.test("renders a compact approval message without a preview URL", () => {
   assert(text.length < 400, "approval message should remain compact");
 });
 
-Deno.test("summarizes the PDF attachment instead of sending long race messages", () => {
+Deno.test("renders only factual proposal changes without a race-card dump", () => {
   const requests = buildTelegramApprovalRequests({
+    reviewKind: "proposal_changes",
     proposalId,
     meetingVenue: "Fairview",
     meetingDate: "2026-09-11",
-    changeType: "new_meeting",
+    changeType: "routine_change",
     confidenceScore: 70,
     approvedSourceCount: 1,
     distinctSourceCount: 1,
-    confidenceBreakdown: { oneSourceCapApplied: true },
-    raceSnapshot: {
-      meetings: [{
-        venue: "Fairview",
-        meetingDate: "2026-09-11",
-        races: Array.from({ length: 8 }, (_, raceIndex) => ({
-          raceNumber: raceIndex + 1,
-          startsAt: `2026-09-11T${
-            String(10 + raceIndex).padStart(2, "0")
-          }:15:00Z`,
-          title: "Open Maiden",
-          distanceMetres: 1200 + raceIndex * 100,
-          runners: Array.from({ length: 12 }, (_, runnerIndex) => ({
-            saddleNumber: runnerIndex + 1,
-            horseName: `MRC RUNNER ${raceIndex + 1}-${runnerIndex + 1}`,
-            jockeyName: `Jockey ${runnerIndex + 1}`,
-            trainerName: `Trainer ${runnerIndex + 1}`,
-            draw: runnerIndex + 1,
-            carriedWeight: 55.5,
-            status: "active",
-          })),
-        })),
-      }],
-    },
+    feedbackEnabled: true,
+    changeCount: 2,
+    changes: [
+      {
+        kind: "runner_changed",
+        summary: "Race 1 · #10 CLEVER KID · status: active → scratched",
+      },
+      {
+        kind: "runner_changed",
+        summary: "Race 2 · #4 BLUE LAGOON · jockey: Old Jockey → Craig Zackey",
+      },
+    ],
   });
 
   assert(
     requests.length === 1,
-    "the PDF workflow should send one concise message",
+    "one concise change message is required",
   );
   assert(
-    requests[0].text.includes("Attached PDF: 8 races · 96 runners"),
-    "PDF summary is missing",
+    requests[0].text.includes(
+      "Race 1 · #10 CLEVER KID · status: active → scratched",
+    ),
+    "scratching change is missing",
   );
   assert(
-    !requests[0].text.includes("🏁 RACE 1"),
-    "runner layout should only appear in the PDF",
+    requests[0].text.includes(
+      "Race 2 · #4 BLUE LAGOON · jockey: Old Jockey → Craig Zackey",
+    ),
+    "jockey change is missing",
   );
   assert(
-    requests[0].text.includes("confidence is capped for safety"),
-    "single-source reason is missing",
+    !requests[0].text.includes("96 runners") &&
+      !requests[0].text.includes("Attached PDF"),
+    "full-card output should not appear in Telegram",
   );
-  assert(Boolean(requests[0].reply_markup), "review buttons are missing");
+  assert(
+    requests[0].reply_markup && "force_reply" in requests[0].reply_markup &&
+      requests[0].reply_markup.force_reply === true,
+    "change messages must open a Telegram reply prompt",
+  );
 });
 
 Deno.test("builds safe approve and reject proposal deep links", () => {
@@ -116,6 +114,10 @@ Deno.test("rejects malformed proposal IDs and falls back to the admin page", () 
 
 Deno.test("uses an inline keyboard and disables link previews", () => {
   const request = buildTelegramApprovalRequest({ proposalId });
+  assert(
+    request.reply_markup && "inline_keyboard" in request.reply_markup,
+    "normal proposal review must keep its inline keyboard",
+  );
   const keyboard = request.reply_markup.inline_keyboard;
 
   assert(
@@ -141,5 +143,57 @@ Deno.test("uses an inline keyboard and disables link previews", () => {
   assert(
     keyboard[0][1].url.includes("decision=reject"),
     "reject intent is missing",
+  );
+});
+
+Deno.test("renders a secondary-source consensus alert without approval actions", () => {
+  const request = buildTelegramApprovalRequest({
+    reviewKind: "secondary_consensus",
+    meetingVenue: "Scottsville",
+    meetingDate: "2026-09-21",
+    differenceSummary:
+      "Race 3 · #7 KAZ FROM ALCATRAZ · status: Formgrids active → secondary scratched",
+    sourceDomains: ["raceform.co.za", "tote.co.za"],
+    adminUrl: "https://www.mrcracing.co.za/admin/racing/",
+  });
+
+  assert(
+    request.text.includes("No race data was changed automatically"),
+    "comparison alert must state that it did not update race data",
+  );
+  assert(
+    request.text.includes("raceform.co.za, tote.co.za"),
+    "comparison sources were not listed",
+  );
+  assert(
+    request.reply_markup && "force_reply" in request.reply_markup &&
+      request.reply_markup.force_reply === true,
+    "comparison alerts must open a Telegram reply prompt",
+  );
+  assert(
+    request.text.includes("Review: https://www.mrcracing.co.za/admin/racing/"),
+    "comparison alert review link is missing",
+  );
+});
+
+Deno.test("renders a conflict-only proposal without claiming factual changes", () => {
+  const request = buildTelegramApprovalRequest({
+    reviewKind: "proposal_changes",
+    proposalId,
+    meetingVenue: "Fairview",
+    meetingDate: "2026-09-21",
+    changeCount: 0,
+    changes: [],
+    conflictSummary: "Two sources disagree about Race 3.",
+    feedbackEnabled: true,
+  });
+
+  assert(
+    request.text.includes("Source conflict requires review:"),
+    "zero-change conflicts need an accurate heading",
+  );
+  assert(
+    !request.text.includes("0 factual changes detected"),
+    "zero-change conflicts must not use a misleading change count",
   );
 });

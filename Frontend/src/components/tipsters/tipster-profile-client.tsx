@@ -176,7 +176,7 @@ export function TipsterProfileClient({
         supabase
           .from("tip_cards")
           .select(
-            "id,tipster_id,meeting_id,title,summary,coin_price,status,revision,listed_at,published_at,voided_at,updated_at",
+            "id,tipster_id,meeting_id,title,summary,coin_price,status,revision,confirmed_revision_count,listed_at,published_at,voided_at,updated_at",
           )
           .eq("tipster_id", resolvedTipsterId)
           .in("status", ["coming_soon", "published"])

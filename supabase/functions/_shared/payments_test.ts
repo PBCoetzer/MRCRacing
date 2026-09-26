@@ -1,9 +1,41 @@
 import {
   corsHeaders,
   createOzowPaymentRequest,
+  requireUser,
   selectOzowVerificationRecord,
   validateOzowPostFields,
 } from "./payments.ts";
+
+Deno.test("checkout authentication does not require privileged MFA inspection", async () => {
+  let privilegedAuthRead = false;
+  const serviceClient = {
+    auth: {
+      getUser: () => Promise.resolve({
+        data: { user: { id: "client-user" } },
+        error: null,
+      }),
+      admin: {
+        mfa: {
+          listFactors: () => {
+            privilegedAuthRead = true;
+            throw new Error("Checkout must not inspect MFA factors.");
+          },
+        },
+      },
+    },
+  };
+  const request = new Request("https://example.com", {
+    headers: { Authorization: "Bearer valid-session" },
+  });
+  const user = await requireUser(
+    request,
+    serviceClient as unknown as Parameters<typeof requireUser>[1],
+  );
+
+  if (user.id !== "client-user" || privilegedAuthRead) {
+    throw new Error("Checkout should validate only the authenticated user session.");
+  }
+});
 
 Deno.test("payment CORS permits Supabase browser client headers", () => {
   const request = new Request("https://example.com", {
@@ -91,7 +123,7 @@ Deno.test("Ozow post fields accept the production callback lengths", () => {
 
 Deno.test("Ozow payment request returns only a trusted secure URL", async () => {
   const result = await createOzowPaymentRequest(
-    { SiteCode: "MRC", HashCheck: "signed" },
+    { SiteCode: "MRC", HashCheck: "signed", IsTest: false },
     "api-key",
     async (input, init) => {
       if (String(input) !== "https://api.ozow.com/PostPaymentRequest") {
@@ -100,6 +132,11 @@ Deno.test("Ozow payment request returns only a trusted secure URL", async () => 
 
       if (new Headers(init?.headers).get("ApiKey") !== "api-key") {
         throw new Error("Ozow API key header was not supplied.");
+      }
+
+      const requestBody = JSON.parse(String(init?.body)) as { IsTest?: unknown };
+      if (requestBody.IsTest !== false) {
+        throw new Error("Ozow IsTest must be sent as a JSON boolean.");
       }
 
       return new Response(JSON.stringify({
@@ -112,6 +149,24 @@ Deno.test("Ozow payment request returns only a trusted secure URL", async () => 
 
   if (result.url !== "https://pay.ozow.com/payment-request-id/Secure") {
     throw new Error("Expected the trusted Ozow payment URL.");
+  }
+});
+
+Deno.test("Ozow payment request converts network failures into a retryable provider error", async () => {
+  let message = "";
+
+  try {
+    await createOzowPaymentRequest(
+      { SiteCode: "MRC", HashCheck: "signed", IsTest: false },
+      "api-key",
+      () => Promise.reject(new TypeError("network details")),
+    );
+  } catch (error) {
+    message = error instanceof Error ? error.message : "";
+  }
+
+  if (message !== "Ozow payment service could not be reached. Please try again shortly.") {
+    throw new Error("Expected a safe retryable Ozow network error.");
   }
 });
 

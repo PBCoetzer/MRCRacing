@@ -4,7 +4,8 @@ import { TipsterDashboardClient } from "@/components/tipster/tipster-dashboard-c
 const tipsterNav = [
   { label: "Dashboard", href: "/tipster/" },
   { label: "Manage Tips", href: "/tipster/manage-tips/" },
-  { label: "Blog", href: "/tipster/blog/" },
+  { label: "Blog", href: "/blog/#author-tools" },
+  { label: "Profile security & 2FA", href: "/account/security/" },
 ];
 
 export default function TipsterPage() {

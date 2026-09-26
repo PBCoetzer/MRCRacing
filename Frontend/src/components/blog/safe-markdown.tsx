@@ -1,28 +1,36 @@
 import type { ReactNode } from "react";
+import {
+  isMarkdownHorizontalRule,
+  parseInlineMarkdown,
+} from "@/lib/blog/safe-markdown";
 
 function inlineContent(value: string): ReactNode[] {
-  const output: ReactNode[] = [];
-  const linkPattern = /\[([^\]]+)]\((https?:\/\/[^\s)]+)\)/g;
-  let cursor = 0;
-
-  for (const match of value.matchAll(linkPattern)) {
-    const index = match.index ?? 0;
-    if (index > cursor) output.push(value.slice(cursor, index));
-    output.push(
-      <a
-        key={`${index}-${match[2]}`}
-        href={match[2]}
-        target="_blank"
-        rel="noreferrer noopener"
-        className="text-brand-cyan underline underline-offset-4"
-      >
-        {match[1]}
-      </a>,
-    );
-    cursor = index + match[0].length;
-  }
-  if (cursor < value.length) output.push(value.slice(cursor));
-  return output;
+  return parseInlineMarkdown(value).map((token, index) => {
+    const key = `${token.type}-${index}`;
+    if (token.type === "link") {
+      return (
+        <a
+          key={key}
+          href={token.href}
+          target="_blank"
+          rel="noreferrer noopener"
+          className="text-brand-cyan underline underline-offset-4"
+        >
+          {token.value}
+        </a>
+      );
+    }
+    if (token.type === "strong") {
+      return <strong key={key} className="font-bold text-white">{token.value}</strong>;
+    }
+    if (token.type === "emphasis") {
+      return <em key={key}>{token.value}</em>;
+    }
+    if (token.type === "strong-emphasis") {
+      return <strong key={key} className="font-bold text-white"><em>{token.value}</em></strong>;
+    }
+    return token.value;
+  });
 }
 
 export function SafeMarkdown({ value }: { value: string }) {
@@ -33,6 +41,12 @@ export function SafeMarkdown({ value }: { value: string }) {
   while (index < lines.length) {
     const line = lines[index].trim();
     if (!line) {
+      index += 1;
+      continue;
+    }
+
+    if (isMarkdownHorizontalRule(line)) {
+      blocks.push(<hr key={`hr-${index}`} className="my-8 border-border/70" />);
       index += 1;
       continue;
     }
@@ -80,7 +94,8 @@ export function SafeMarkdown({ value }: { value: string }) {
     const paragraph: string[] = [];
     while (
       index < lines.length && lines[index].trim() &&
-      !/^(#{1,3})\s+|^[-*]\s+|^\d+\.\s+/.test(lines[index].trim())
+      !/^(#{1,3})\s+|^[-*]\s+|^\d+\.\s+/.test(lines[index].trim()) &&
+      !isMarkdownHorizontalRule(lines[index])
     ) {
       paragraph.push(lines[index].trim());
       index += 1;

@@ -1,5 +1,6 @@
 "use client";
 
+import Link from "next/link";
 import { useSearchParams } from "next/navigation";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
@@ -11,6 +12,7 @@ import {
   DatabaseZap,
   ExternalLink,
   FileSearch,
+  MessageSquareReply,
   Play,
   RefreshCw,
   SearchCheck,
@@ -150,6 +152,22 @@ type ChangeEvent = {
   created_at: string;
 };
 
+type TelegramFeedback = {
+  id: string;
+  proposalId: string | null;
+  eventType: string;
+  meetingVenue: string | null;
+  meetingDate: string | null;
+  feedbackText: string;
+  parsedHint: Record<string, unknown>;
+  status: "new" | "reviewed" | "dismissed" | "applied";
+  telegramUsername: string | null;
+  telegramDisplayName: string | null;
+  reviewNote: string | null;
+  createdAt: string;
+  reviewedAt: string | null;
+};
+
 type DomainDraft = {
   displayName: string;
   status: SourceDomain["status"];
@@ -219,6 +237,7 @@ export function AdminRaceFeedClient() {
   const [fragments, setFragments] = useState<FeedFragment[]>([]);
   const [runs, setRuns] = useState<FeedRun[]>([]);
   const [changes, setChanges] = useState<ChangeEvent[]>([]);
+  const [telegramFeedback, setTelegramFeedback] = useState<TelegramFeedback[]>([]);
   const [reviewNotes, setReviewNotes] = useState<Record<string, string>>({});
   const [researchNotes, setResearchNotes] = useState<Record<string, string>>({});
   const [manualResearch, setManualResearch] = useState("");
@@ -240,6 +259,7 @@ export function AdminRaceFeedClient() {
         fragmentResult,
         runResult,
         changeResult,
+        feedbackResult,
       ] = await Promise.all([
         supabase.from("race_feed_settings").select("confidence_threshold,minimum_approved_sources,auto_approve_new_meetings,auto_approve_routine_changes,auto_approve_results,future_lookahead_days,daily_search_limit,last_weekly_discovery_at").single(),
         supabase.from("race_feed_proposals").select(proposalColumns).order("created_at", { ascending: false }).limit(40),
@@ -248,6 +268,7 @@ export function AdminRaceFeedClient() {
         supabase.from("race_feed_fragments").select("id,fragment_type,meeting_key,venue,meeting_date,race_number,created_at").eq("is_current", true).order("created_at", { ascending: false }).limit(100),
         supabase.from("race_feed_runs").select("id,trigger_type,status,search_model_name,extraction_model_name,search_query_count,evidence_count,changes_applied,alerts_created,error_message,started_at,completed_at,duration_ms").order("started_at", { ascending: false }).limit(40),
         supabase.from("race_change_events").select("id,entity_type,change_type,changed_fields,summary,created_at").order("created_at", { ascending: false }).limit(40),
+        supabase.rpc("admin_list_telegram_race_feedback", { p_limit: 50 }),
       ]);
       const firstError = settingsResult.error
         ?? proposalResult.error
@@ -255,7 +276,8 @@ export function AdminRaceFeedClient() {
         ?? taskResult.error
         ?? fragmentResult.error
         ?? runResult.error
-        ?? changeResult.error;
+        ?? changeResult.error
+        ?? feedbackResult.error;
       if (firstError) throw firstError;
 
       let loadedProposals = (proposalResult.data ?? []) as FeedProposal[];
@@ -308,6 +330,11 @@ export function AdminRaceFeedClient() {
       setFragments((fragmentResult.data ?? []) as FeedFragment[]);
       setRuns((runResult.data ?? []) as FeedRun[]);
       setChanges((changeResult.data ?? []) as ChangeEvent[]);
+      setTelegramFeedback(
+        Array.isArray(feedbackResult.data)
+          ? feedbackResult.data as TelegramFeedback[]
+          : [],
+      );
       setError("");
     } catch (loadError) {
       setError(errorMessage(loadError, "Could not load the race-feed monitor."));
@@ -330,6 +357,7 @@ export function AdminRaceFeedClient() {
     [domains],
   );
   const pendingProposals = proposals.filter((proposal) => ["pending", "quarantined"].includes(proposal.status));
+  const pendingTelegramFeedback = telegramFeedback.filter((item) => item.status === "new");
   const requestedProposal = requestedProposalId
     ? proposals.find((proposal) => proposal.id.toLowerCase() === requestedProposalId) ?? null
     : null;
@@ -435,6 +463,37 @@ export function AdminRaceFeedClient() {
       await loadDashboard();
     } catch (reviewError) {
       setError(errorMessage(reviewError, "Could not review the proposal."));
+    } finally {
+      setBusyKey("");
+    }
+  }
+
+  async function updateTelegramFeedback(
+    feedbackId: string,
+    status: "reviewed" | "dismissed",
+  ) {
+    setBusyKey(`telegram-feedback-${feedbackId}`);
+    setError("");
+    setSuccess("");
+    try {
+      const supabase = createRequiredClient();
+      const { error: updateError } = await supabase.rpc(
+        "admin_update_telegram_race_feedback",
+        {
+          p_feedback_id: feedbackId,
+          p_status: status,
+          p_review_note: null,
+        },
+      );
+      if (updateError) throw updateError;
+      setSuccess(
+        status === "reviewed"
+          ? "Telegram correction marked as reviewed."
+          : "Telegram correction dismissed.",
+      );
+      await loadDashboard();
+    } catch (updateError) {
+      setError(errorMessage(updateError, "Could not update Telegram feedback."));
     } finally {
       setBusyKey("");
     }
@@ -609,6 +668,66 @@ export function AdminRaceFeedClient() {
         </TabsList>
 
         <TabsContent value="proposals" className="grid gap-4">
+          {pendingTelegramFeedback.length ? (
+            <Card className="border-brand-cyan/50">
+              <CardHeader>
+                <CardTitle className="flex items-center gap-2">
+                  <MessageSquareReply className="size-5 text-brand-cyan" />
+                  Telegram correction feedback
+                </CardTitle>
+                <CardDescription>
+                  Replies are audit notes only. Review the source evidence before changing any race data.
+                </CardDescription>
+              </CardHeader>
+              <CardContent className="grid gap-3">
+                {pendingTelegramFeedback.map((item) => (
+                  <div key={item.id} className="rounded-xl border border-border/70 p-4">
+                    <div className="flex flex-wrap items-start justify-between gap-3">
+                      <div>
+                        <p className="font-medium">
+                          {item.meetingVenue || "Race-feed alert"}
+                          {item.meetingDate ? ` · ${formatDate(item.meetingDate)}` : ""}
+                        </p>
+                        <p className="mt-1 text-xs text-muted-foreground">
+                          {item.telegramDisplayName || (item.telegramUsername ? `@${item.telegramUsername}` : "Telegram administrator")}
+                          {` · ${formatDateTime(item.createdAt)}`}
+                        </p>
+                      </div>
+                      <Badge variant="outline">new feedback</Badge>
+                    </div>
+                    <p className="mt-3 whitespace-pre-wrap text-sm">{item.feedbackText}</p>
+                    {Object.keys(item.parsedHint ?? {}).length ? (
+                      <p className="mt-2 text-xs text-muted-foreground">
+                        Parsed hints: {Object.entries(item.parsedHint).map(([key, value]) => `${key}: ${String(value)}`).join(" · ")}
+                      </p>
+                    ) : null}
+                    <div className="mt-3 flex flex-wrap gap-2">
+                      {item.proposalId ? (
+                        <Button asChild variant="outline" size="sm">
+                          <Link href={`/admin/racing/?proposal=${item.proposalId}`}>Open linked proposal</Link>
+                        </Button>
+                      ) : null}
+                      <Button
+                        size="sm"
+                        onClick={() => void updateTelegramFeedback(item.id, "reviewed")}
+                        disabled={Boolean(busyKey)}
+                      >
+                        <CheckCircle2 className="size-4" /> Mark reviewed
+                      </Button>
+                      <Button
+                        size="sm"
+                        variant="outline"
+                        onClick={() => void updateTelegramFeedback(item.id, "dismissed")}
+                        disabled={Boolean(busyKey)}
+                      >
+                        <XCircle className="size-4" /> Dismiss
+                      </Button>
+                    </div>
+                  </div>
+                ))}
+              </CardContent>
+            </Card>
+          ) : null}
           {pendingProposals.length ? pendingProposals.map((proposal) => {
             const counts = proposalCounts(proposal);
             const proposalEvidence = evidence.filter((item) => item.proposal_id === proposal.id);

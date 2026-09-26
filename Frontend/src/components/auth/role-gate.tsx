@@ -14,16 +14,22 @@ type RoleGateState =
   | "loading"
   | "configured"
   | "signed-out"
+  | "mfa-required"
+  | "mfa-setup-required"
   | "restricted"
   | "forbidden"
   | "ready"
   | "error";
+
+export type MfaPolicy = "enrolled" | "administrator" | "management";
 
 type RoleGateProps = {
   allowedRoles: string[];
   children: React.ReactNode;
   description: string;
   title: string;
+  mfaPolicy?: MfaPolicy;
+  requireRole?: boolean;
 };
 
 type RoleRow = {
@@ -40,7 +46,14 @@ function isMissingAuthSession(error: unknown) {
   return error instanceof Error && error.message.toLowerCase().includes("auth session missing");
 }
 
-export function RoleGate({ allowedRoles, children, description, title }: RoleGateProps) {
+export function RoleGate({
+  allowedRoles,
+  children,
+  description,
+  title,
+  mfaPolicy = "enrolled",
+  requireRole = true,
+}: RoleGateProps) {
   const [gateState, setGateState] = useState<RoleGateState>("loading");
   const [message, setMessage] = useState("Checking your Supabase session.");
   const loginHref = typeof window === "undefined"
@@ -87,10 +100,12 @@ export function RoleGate({ allowedRoles, children, description, title }: RoleGat
             .select("status,suspension_until,public_message")
             .eq("user_id", user.id)
             .maybeSingle(),
-          supabase
-            .from("user_roles")
-            .select("role")
-            .eq("user_id", user.id),
+          requireRole
+            ? supabase
+                .from("user_roles")
+                .select("role")
+                .eq("user_id", user.id)
+            : null,
         ]);
 
         if (controlResult.error) {
@@ -115,21 +130,45 @@ export function RoleGate({ allowedRoles, children, description, title }: RoleGat
           return;
         }
 
-        if (roleResult.error) {
-          throw roleResult.error;
-        }
-
         if (!isMounted) {
           return;
         }
 
-        const roleRows = (roleResult.data ?? []) as RoleRow[];
-        const hasAccess = roleRows.some((row) => allowedRoles.includes(row.role));
+        if (requireRole) {
+          if (!roleResult) {
+            throw new Error("Account access could not be confirmed.");
+          }
 
-        if (!hasAccess) {
-          setGateState("forbidden");
-          setMessage(`This account does not have access to ${description}.`);
-          return;
+          if (roleResult.error) {
+            throw roleResult.error;
+          }
+
+          const roleRows = (roleResult.data ?? []) as RoleRow[];
+          const hasAccess = roleRows.some((row) => allowedRoles.includes(row.role));
+
+          if (!hasAccess) {
+            setGateState("forbidden");
+            setMessage(`This account does not have access to ${description}.`);
+            return;
+          }
+        }
+
+        if (mfaPolicy !== "management") {
+          const { data: assurance, error: assuranceError } =
+            await supabase.auth.mfa.getAuthenticatorAssuranceLevel();
+          if (assuranceError) throw assuranceError;
+
+          if (assurance.nextLevel === "aal2" && assurance.currentLevel !== "aal2") {
+            setGateState("mfa-required");
+            setMessage("Enter a current authenticator code to finish signing in.");
+            return;
+          }
+
+          if (mfaPolicy === "administrator" && assurance.currentLevel !== "aal2") {
+            setGateState("mfa-setup-required");
+            setMessage("Administrators must set up two-factor authentication before opening this workspace.");
+            return;
+          }
         }
 
         setGateState("ready");
@@ -149,7 +188,7 @@ export function RoleGate({ allowedRoles, children, description, title }: RoleGat
     return () => {
       isMounted = false;
     };
-  }, [allowedRoles, description]);
+  }, [allowedRoles, description, mfaPolicy, requireRole]);
 
   if (gateState === "ready") {
     return children;
@@ -183,6 +222,10 @@ export function RoleGate({ allowedRoles, children, description, title }: RoleGat
                   ? "Login required"
                   : gateState === "restricted"
                     ? "Account restricted"
+                    : gateState === "mfa-required"
+                      ? "Two-factor verification required"
+                      : gateState === "mfa-setup-required"
+                        ? "Two-factor setup required"
                   : title}
             </AlertTitle>
             <AlertDescription>{message}</AlertDescription>
@@ -196,6 +239,19 @@ export function RoleGate({ allowedRoles, children, description, title }: RoleGat
                 <Link href="/register/">Create account</Link>
               </Button>
             </div>
+          ) : null}
+          {gateState === "mfa-required" || gateState === "mfa-setup-required" ? (
+            <Button asChild>
+              <Link
+                href={
+                  typeof window === "undefined"
+                    ? "/account/security/"
+                    : `/account/security/?mode=${gateState === "mfa-required" ? "challenge" : "setup"}&next=${encodeURIComponent(`${window.location.pathname}${window.location.search}${window.location.hash}`)}`
+                }
+              >
+                Open account security
+              </Link>
+            </Button>
           ) : null}
         </div>
       </main>

@@ -180,23 +180,31 @@ function ozowProviderMessage(payload: OzowPaymentRequestPayload) {
 }
 
 export async function createOzowPaymentRequest(
-  fields: Record<string, string>,
+  fields: Record<string, string | boolean>,
   apiKey: string,
   fetcher: typeof fetch = fetch,
 ): Promise<OzowPaymentRequestResult> {
-  const response = await fetcher(
-    "https://api.ozow.com/PostPaymentRequest",
-    {
-      method: "POST",
-      headers: {
-        Accept: "application/json",
-        ApiKey: apiKey,
-        "Content-Type": "application/json",
+  let response: Response;
+
+  try {
+    response = await fetcher(
+      "https://api.ozow.com/PostPaymentRequest",
+      {
+        method: "POST",
+        headers: {
+          Accept: "application/json",
+          ApiKey: apiKey,
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify(fields),
+        signal: AbortSignal.timeout(15_000),
       },
-      body: JSON.stringify(fields),
-      signal: AbortSignal.timeout(15_000),
-    },
-  );
+    );
+  } catch {
+    throw new Error(
+      "Ozow payment service could not be reached. Please try again shortly.",
+    );
+  }
   const responseText = await response.text();
   let payload: OzowPaymentRequestPayload = {};
 

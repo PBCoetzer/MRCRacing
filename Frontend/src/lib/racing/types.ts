@@ -83,6 +83,7 @@ export type TipCard = {
   coin_price: number;
   status: TipCardStatus;
   revision: number;
+  confirmed_revision_count: number;
   listed_at: string | null;
   published_at: string | null;
   voided_at: string | null;

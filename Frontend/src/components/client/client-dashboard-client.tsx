@@ -20,6 +20,7 @@ import {
   TicketCheck,
 } from "lucide-react";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
+import { MfaProfileCard } from "@/components/auth/mfa-profile-card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
@@ -241,7 +242,7 @@ export function ClientDashboardClient() {
           .maybeSingle(),
         supabase
           .from("tip_cards")
-          .select("id,tipster_id,meeting_id,title,summary,coin_price,status,revision,listed_at,published_at,voided_at,updated_at")
+          .select("id,tipster_id,meeting_id,title,summary,coin_price,status,revision,confirmed_revision_count,listed_at,published_at,voided_at,updated_at")
           .in("status", ["coming_soon", "published", "settled"])
           .order("updated_at", { ascending: false }),
         supabase
@@ -685,8 +686,8 @@ export function ClientDashboardClient() {
       if (preferenceError) throw preferenceError;
       setEmailMarketingEnabled(nextEnabled);
       setMessage(nextEnabled
-        ? "New meeting-card email announcements are enabled."
-        : "New meeting-card email announcements are disabled.");
+        ? "New-content email announcements are enabled."
+        : "New-content email announcements are disabled.");
     } catch (preferenceError) {
       setError(messageFrom(preferenceError, "Email announcement preferences could not be updated."));
     } finally {
@@ -869,8 +870,10 @@ export function ClientDashboardClient() {
         ))}
       </div>
 
+      <MfaProfileCard />
+
       <div className="grid gap-4 lg:grid-cols-2">
-        <Card>
+        <Card id="email-announcements" className="scroll-mt-24">
           <CardHeader>
             <CardTitle className="flex items-center gap-2">
               <Coins className="size-5 text-primary" />
@@ -932,10 +935,10 @@ export function ClientDashboardClient() {
           <CardHeader>
             <CardTitle className="flex items-center gap-2">
               <Mail className="size-5 text-primary" />
-              New meeting-card email announcements
+              New-content email announcements
             </CardTitle>
             <CardDescription>
-              Choose whether any tipster may email you when a new meeting card is published.
+              Choose whether MRC may email you when a new blog article or meeting card is published.
             </CardDescription>
           </CardHeader>
           <CardContent className="space-y-4">
@@ -1060,7 +1063,7 @@ export function ClientDashboardClient() {
                       <Badge style={tipsterThemeButtonStyle(cardTipster)}>
                         {tipCard.status === "settled" ? "Settled history" : "Published"}
                       </Badge>
-                      <Badge variant="outline">Revision {tipCard.revision}</Badge>
+                      <Badge variant="outline">Revision {tipCard.confirmed_revision_count}</Badge>
                     </div>
                     <CardTitle className="mt-3 font-heading text-2xl text-white">{tipCard.title}</CardTitle>
                     <CardDescription className="mt-1">

@@ -1,5 +1,6 @@
 import "jsr:@supabase/functions-js/edge-runtime.d.ts";
 import { createClient } from "@supabase/supabase-js";
+import { jwtHasAal2 } from "../_shared/mfa.ts";
 
 type ModerationAction = "flag" | "suspend" | "ban" | "restore";
 type EmailConfirmationAction = "resend_confirmation" | "verify_email";
@@ -126,6 +127,14 @@ Deno.serve(async (request: Request) => {
       request,
       { error: "Invalid authenticated session." },
       401,
+    );
+  }
+
+  if (!jwtHasAal2(accessToken)) {
+    return jsonResponse(
+      request,
+      { error: "Administrator two-factor authentication required.", code: "mfa_required" },
+      403,
     );
   }
 
