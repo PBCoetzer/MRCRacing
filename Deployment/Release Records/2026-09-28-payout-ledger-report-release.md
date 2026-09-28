@@ -4,7 +4,7 @@
 
 - Owner approval: proceed with the planned live update after verified backups, temporary financial freezes, production migration, deployment, reconciliation, and monitored reactivation.
 - Release branch: `codex/production-payout-ledger-20260928`.
-- New permanent database migration: `20260928172538_tipster_payout_requests_and_current_period_reports.sql`.
+- New permanent database migrations: `20260928172538_tipster_payout_requests_and_current_period_reports.sql` and `20260928204000_enable_tipster_payout_workflow.sql`.
 - The existing forward-only revenue period remains unchanged: `content-spend-10-20-70-v2-forward-only`, effective `2026-09-28T01:42:36.127366Z`.
 - Historical financial rows, client Purchased Credits, Reward Credits, entitlements, subscriptions, payments, and wallet balances remain immutable.
 - Reward Credits remain excluded from Horse Care, platform, and Tipster allocations.
@@ -75,19 +75,36 @@ External backup root: `C:\Users\coetz\OneDrive\Documents\MRC Production Backups\
 
 ## Cutover record
 
-The following fields are completed during the live cutover:
+- Release commit: `75ed1dab72fa4d4c8f97d213b23e6bbbde0ef694`.
+- Active pending checkouts before freeze: 0 at `2026-09-28T20:20:17.684913Z`.
+- Checkout and full financial freeze: completed before the T-0 snapshot; every protected mutation grant reported frozen.
+- T-0 manifest: captured at `2026-09-28T20:20:49.778735Z`, SHA-256 `E34792EA73957CCFCAEB769229953AF01EE2E185582AD9999B0301CE67B8EBE5`.
+- Migration `20260928172538`: applied successfully while financial mutations were frozen.
+- Post-migration manifest: SHA-256 `3FAAE2D609D18A998E94B50474845E841E10D6FF660594444698BEBAB7E2244E`.
+- Post-migration payout verification: SHA-256 `18CFE8FC3A89B9C92649E411439F3F7FB8EB37826FFC848DE46DFB22F6BFA44D`; payout requests and payout items were both zero, duplicate assignments were zero, and every payout mutator remained frozen.
+- Post-migration revenue monitor: SHA-256 `07C8B9D4CA44BCA5F0ABFCE711D9E8C014393CC66ABD70917FE14A8009CF20EF`; all revenue, wallet, history, idempotency, and related-entry checks passed.
+- Xneelo deployment: 604 local files verified, 520 uploaded, 84 unchanged, 601 stale generated files removed, 538 legacy or system files preserved, and 1,142 remote files present after deployment.
+- Xneelo deployment backup: `public_html-before-20260928-222328.zip`, 21,152,771 bytes, SHA-256 `0FCDD9F98AACE93F59F6173A06E81827EBA4A38F0E3B640C09978202FD781421`.
+- Live HTTP smoke: homepage, login, pricing, blog, Tipsters, racing, Horse Care, Client, Tipster, Admin, Admin Revenue, and account profile routes all returned HTTP 200 with no development-environment reference.
+- Live private-route smoke: the unauthenticated Admin Revenue route displayed the correct login guard and production navigation.
+- Financial reactivation: completed; all intended checkout, payment, spend, refund, wallet-adjustment, and payout grants reported enabled while raw unsafe spend overloads remained blocked.
+- Migration `20260928204000`: applied successfully to record the verified payout grants permanently.
+- Final financial manifest: SHA-256 `22DD9F7404FA71F765D7BCDEF02A0163EEEA348828BB24F635A0F556541B5B51`.
+- Final reactivation verification: SHA-256 `E8772A271631CEC6864B9AAA995EF0908D41EA20B974E37D01906D11512663D8`.
+- Final revenue monitor: SHA-256 `61044E9DC6678042AF98F2D36015FD065DAF464D2EAE6AF453F489B7F287C5EA`.
+- Every T-0 fingerprint for wallets, Credit transactions, payments, purchases, entitlements, subscriptions, Tipster earnings, Horse Care entries, and remittances remained unchanged after migration, deployment, and reactivation.
+- Race-feed queue: 0 queued and 0 running. Site-build queue: 0 queued.
+- Notification backlog: unchanged at 118 pending SMS notifications. It remains isolated for a separate owner decision and was not sent or cleared during this release.
+- Monitoring automation `monitor-mrc-cutover`: reactivated at a 15-minute interval with read-only revenue, payout, queue, route, and media checks; it stays quiet unless a required checkpoint, discrepancy, meaningful change, or operator action occurs.
 
-- Release commit: pending.
-- Checkout freeze: pending.
-- Full financial freeze: pending.
-- T-0 manifest and hash: pending.
-- Migration application: pending.
-- Post-migration reconciliation: pending.
-- Static deployment and Xneelo deployment hash: pending.
-- Live route and role smoke tests: pending.
-- Financial reactivation: pending.
-- Post-reactivation manifest and hash: pending.
-- Monitoring automation reactivation: pending.
+## Revenue checkpoint
+
+- Two organic current-period purchases total 80 Purchased Credits and 0 Reward Credits.
+- Stored allocations reconcile exactly to 8 Horse Care, 16 platform, and 56 Tipster Credits.
+- The first organic purchase is meeting purchase `762dec57-607a-49ec-9dc1-b9341a9e342f`: 40 Purchased Credits allocated as 4 Horse Care, 8 platform, and 28 Tipster Credits.
+- Current-period gross composition, 10/20/70 split, related entries, wallet invariants, idempotency, immutable historical fingerprints, and opening settlement all pass.
+- Payout requests and payout items remain zero at release completion.
+- The 24-hour checkpoint remains due after `2026-09-29T01:42:36.127366Z`.
 
 ## Rollback policy
 
