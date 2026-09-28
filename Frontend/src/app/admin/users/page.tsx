@@ -8,7 +8,7 @@ export default function AdminUsersPage() {
       allowedRoles={["administrator"]}
       accessDescription="the administrator user directory"
       accessTitle="Administrator access required"
-      title="User directory"
+      title="User Directory"
       description="Search, filter, sort, and review every MRC Racing account using server-side pagination."
       nav={adminNav}
     >

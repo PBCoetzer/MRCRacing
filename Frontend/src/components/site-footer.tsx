@@ -16,7 +16,7 @@ const links = [
 export function SiteFooter() {
   return (
     <footer className="border-t border-brand-gold/25 bg-brand-purple-deep/92">
-      <div className="mx-auto grid w-full max-w-7xl gap-6 px-4 py-8 text-sm text-muted-foreground sm:px-6 md:grid-cols-[1fr_auto] lg:px-8">
+      <div className="site-container grid gap-6 py-8 text-sm text-muted-foreground md:grid-cols-[1fr_auto]">
         <div className="flex gap-4">
           <Image
             src="/images/mrc-racing-tips-logo.webp"

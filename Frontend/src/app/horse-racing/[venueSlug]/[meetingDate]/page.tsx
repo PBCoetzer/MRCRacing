@@ -35,7 +35,7 @@ export default async function RaceMeetingPage({ params }: PageProps) {
         { "@context": "https://schema.org", "@type": "SportsEvent", name: `${meeting.venue} horse racing meeting`, startDate: meeting.firstRaceAt, endDate: meeting.lastRaceAt ?? undefined, eventStatus, eventAttendanceMode: "https://schema.org/OfflineEventAttendanceMode", location: { "@type": "Place", name: meeting.venue, address: { "@type": "PostalAddress", addressCountry: "ZA" } }, url: pageUrl, sport: "Horse racing" },
         { "@context": "https://schema.org", "@type": "BreadcrumbList", itemListElement: [{ "@type": "ListItem", position: 1, name: "Horse racing", item: `${canonicalSiteUrl}/horse-racing/` }, { "@type": "ListItem", position: 2, name: `${meeting.venue} ${meeting.meetingDate}`, item: pageUrl }] },
       ]} />
-      <main className="mx-auto w-full max-w-7xl px-4 py-12 sm:px-6 lg:px-8">
+      <main className="site-container py-12">
         <PublicRaceMeetingLive initialMeeting={meeting} />
       </main>
       <SiteFooter />

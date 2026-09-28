@@ -15,3 +15,9 @@ Deno.test("jwtHasAal2 accepts only an AAL2 access token claim", () => {
   assertEquals(jwtHasAal2(token({})), false);
   assertEquals(jwtHasAal2("invalid"), false);
 });
+
+Deno.test("jwtHasAal2 fails closed for malformed or type-confused claims", () => {
+  assertEquals(jwtHasAal2(token({ aal: 2 })), false);
+  assertEquals(jwtHasAal2(token({ aal: "AAL2" })), false);
+  assertEquals(jwtHasAal2("header.@@@.signature"), false);
+});

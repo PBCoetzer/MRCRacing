@@ -1,5 +1,5 @@
 begin;
-select plan(14);
+select plan(24);
 
 select is(
   (
@@ -8,28 +8,87 @@ select is(
     where singleton = true
   ),
   '[10.00, 20.00, 70.00]'::jsonb,
-  'The configured content-spend split is 10/20/70'
+  'The active forward-only content-spend split is 10/20/70'
 );
 
-select has_column(
-  'public',
-  'content_purchases',
-  'horse_care_coins',
-  'Content purchases snapshot the Horse Care allocation'
+select ok(
+  (
+    select revenue_split_effective_at is not null
+    from public.platform_settings
+    where singleton = true
+  ),
+  'The current revenue period has an explicit effective timestamp'
 );
 
-select has_column(
+select has_table(
   'public',
-  'content_purchases',
-  'allocation_version',
-  'Content purchases snapshot the allocation rule version'
+  'revenue_split_periods',
+  'Revenue policy periods are retained as immutable history'
 );
 
-select has_column(
+select has_table(
   'public',
-  'tipster_earnings',
-  'horse_care_coins',
-  'Tipster earnings expose the Horse Care allocation'
+  'revenue_opening_settlements',
+  'Opening settlements are retained separately from client wallets'
+);
+
+select is(
+  (
+    select count(*)::bigint
+    from public.revenue_split_periods
+    where allocation_version = 'content-spend-10-20-70-v2-forward-only'
+  ),
+  1::bigint,
+  'Exactly one current 10/20/70 revenue period is recorded'
+);
+
+select ok(
+  exists (
+    select 1
+    from public.revenue_opening_settlements settlements
+    join public.revenue_split_periods periods on periods.id = settlements.period_id
+    where periods.allocation_version = 'content-spend-10-20-70-v2-forward-only'
+      and settlements.beneficiary_type = 'horse_care'
+  )
+  and exists (
+    select 1
+    from public.revenue_opening_settlements settlements
+    join public.revenue_split_periods periods on periods.id = settlements.period_id
+    where periods.allocation_version = 'content-spend-10-20-70-v2-forward-only'
+      and settlements.beneficiary_type = 'platform'
+  ),
+  'The opening settlement records Horse Care and platform history'
+);
+
+select is(
+  (
+    select coalesce(sum(settlements.amount_credits), 0)::numeric(14, 2)
+    from public.revenue_opening_settlements settlements
+    join public.revenue_split_periods periods on periods.id = settlements.period_id
+    where periods.allocation_version = 'content-spend-10-20-70-v2-forward-only'
+      and settlements.beneficiary_type = 'tipster'
+  ),
+  (
+    select coalesce(sum(earnings.net_coins), 0)::numeric(14, 2)
+    from public.tipster_earnings earnings
+    cross join public.platform_settings settings
+    where settings.singleton = true
+      and earnings.created_at < settings.revenue_split_effective_at
+  ),
+  'The opening tipster settlement exactly snapshots pre-period earnings'
+);
+
+select is(
+  (
+    select count(*)::bigint
+    from public.content_purchases purchases
+    cross join public.platform_settings settings
+    where settings.singleton = true
+      and purchases.created_at < settings.revenue_split_effective_at
+      and purchases.allocation_version = 'content-spend-10-20-70-v2-forward-only'
+  ),
+  0::bigint,
+  'Historical purchases are not rewritten into the new policy'
 );
 
 select is(
@@ -42,75 +101,108 @@ select is(
       <> purchases.purchased_coins
   ),
   0::bigint,
-  'Every purchase allocation reconciles exactly to cash-backed Credits used'
+  'Every historical and current purchase allocation still reconciles exactly'
 );
 
 select is(
-  (
-    select count(*)::bigint
-    from public.content_purchases purchases
-    where purchases.reward_coins > 0
-      and purchases.platform_fee_coins
-        + purchases.horse_care_coins
-        + purchases.tipster_net_coins
-        <> purchases.purchased_coins
-  ),
-  0::bigint,
-  'Reward Credits do not increase financial allocations'
+  app_private.calculate_content_spend_split(100) -> 'platformCredits',
+  '20.00'::jsonb,
+  'One hundred Purchased Credits allocate twenty Credits to the platform'
 );
 
 select is(
-  (
-    select count(*)::bigint
-    from public.content_purchases purchases
-    left join lateral (
-      select
-        coalesce(sum(earnings.platform_fee_coins), 0) as platform_fee_coins,
-        coalesce(sum(earnings.horse_care_coins), 0) as horse_care_coins,
-        coalesce(sum(earnings.net_coins), 0) as tipster_net_coins
-      from public.tipster_earnings earnings
-      where earnings.purchase_id = purchases.id
-    ) ledger on true
-    where purchases.status in ('active', 'disputed')
-      and purchases.purchased_coins > 0
-      and (
-        ledger.platform_fee_coins <> purchases.platform_fee_coins
-        or ledger.horse_care_coins <> purchases.horse_care_coins
-        or ledger.tipster_net_coins <> purchases.tipster_net_coins
-      )
-  ),
-  0::bigint,
-  'Active earnings ledgers reconcile to their purchase allocation snapshots'
+  app_private.calculate_content_spend_split(100) -> 'horseCareCredits',
+  '10.00'::jsonb,
+  'One hundred Purchased Credits allocate ten Credits to Horse Care'
 );
 
-select like(
-  pg_get_functiondef('public.purchase_meeting_card(uuid,text)'::regprocedure),
-  '%calculate_content_spend_split(purchased_used)%',
+select is(
+  app_private.calculate_content_spend_split(100) -> 'tipsterCredits',
+  '70.00'::jsonb,
+  'One hundred Purchased Credits allocate seventy Credits to the tipster'
+);
+
+select ok(
+  pg_get_functiondef('public.purchase_meeting_card(uuid,text)'::regprocedure)
+    like '%calculate_content_spend_split(purchased_used)%',
   'Meeting-card purchases calculate the split when Credits are used'
 );
 
-select like(
-  pg_get_functiondef('public.purchase_tipster_subscription(uuid,text)'::regprocedure),
-  '%calculate_content_spend_split(purchased_used)%',
+select ok(
+  pg_get_functiondef('public.purchase_tipster_subscription(uuid,text)'::regprocedure)
+    like '%calculate_content_spend_split(purchased_used)%',
   'Subscription purchases calculate the split when Credits are used'
 );
 
-select unlike(
-  pg_get_functiondef('public.purchase_meeting_card(uuid,text)'::regprocedure),
-  '%commission_rate_override%',
-  'Meeting-card allocations do not bypass the fixed 10/20/70 policy'
+select ok(
+  pg_get_functiondef('public.purchase_meeting_card(uuid,text)'::regprocedure)
+    like '%purchased_used := (allocation ->> ''purchasedUsed'')::integer%'
+  and pg_get_functiondef('public.purchase_meeting_card(uuid,text)'::regprocedure)
+    like '%reward_used := (allocation ->> ''rewardUsed'')::integer%'
+  and pg_get_functiondef('public.purchase_meeting_card(uuid,text)'::regprocedure)
+    like '%calculate_content_spend_split(purchased_used)%',
+  'Mixed meeting-card spend excludes Reward Credits from the revenue split'
+);
+
+select ok(
+  pg_get_functiondef('public.purchase_tipster_subscription(uuid,text)'::regprocedure)
+    like '%allocate_wallet_spend_reward_first%'
+  and pg_get_functiondef('public.purchase_tipster_subscription(uuid,text)'::regprocedure)
+    like '%calculate_content_spend_split(purchased_used)%',
+  'Subscriptions may use Reward Credits first but allocate only Purchased Credits'
+);
+
+select is(
+  app_private.calculate_content_spend_split(1),
+  jsonb_build_object(
+    'allocationVersion', 'content-spend-10-20-70-v2-forward-only',
+    'effectiveAt', (select revenue_split_effective_at from public.platform_settings where singleton = true),
+    'purchasedCreditsUsed', 1,
+    'platformRate', 20.00,
+    'horseCareRate', 10.00,
+    'tipsterRate', 70.00,
+    'platformCredits', 0.20,
+    'horseCareCredits', 0.10,
+    'tipsterCredits', 0.70
+  ),
+  'A one-Credit spend rounds exactly to 0.10/0.20/0.70'
+);
+
+select ok(
+  app_private.calculate_content_spend_split(0) ->> 'horseCareCredits' = '0.00'
+  and app_private.calculate_content_spend_split(0) ->> 'platformCredits' = '0.00'
+  and app_private.calculate_content_spend_split(0) ->> 'tipsterCredits' = '0.00',
+  'Reward-only spend creates zero Horse Care, platform, and tipster allocation'
+);
+
+select ok(
+  pg_get_functiondef('app_private.refund_content_purchase(uuid,text,uuid)'::regprocedure)
+    like '%-purchase_row.platform_fee_coins%'
+  and pg_get_functiondef('app_private.refund_content_purchase(uuid,text,uuid)'::regprocedure)
+    like '%-purchase_row.horse_care_coins%'
+  and pg_get_functiondef('app_private.refund_content_purchase(uuid,text,uuid)'::regprocedure)
+    like '%-purchase_row.tipster_net_coins%'
+  and pg_get_functiondef('app_private.refund_content_purchase(uuid,text,uuid)'::regprocedure)
+    like '%on conflict (idempotency_key) do nothing%',
+  'Refunds reverse the exact stored allocation and remain idempotent'
+);
+
+select ok(
+  pg_get_functiondef('public.purchase_meeting_card(uuid,text)'::regprocedure)
+    not like '%commission_rate_override%',
+  'Meeting-card allocations cannot bypass the fixed current policy'
 );
 
 select ok(
   not has_function_privilege('authenticated', 'public.purchase_meeting_card(uuid,text)', 'EXECUTE')
-    and has_function_privilege('authenticated', 'public.purchase_meeting_card(uuid,text,boolean)', 'EXECUTE'),
-  'Clients must use the confirmed meeting-card purchase wrapper'
+    and not has_function_privilege('authenticated', 'public.purchase_meeting_card(uuid,text,boolean)', 'EXECUTE'),
+  'Meeting-card spending remains frozen until production verification completes'
 );
 
 select ok(
   not has_function_privilege('authenticated', 'public.purchase_tipster_subscription(uuid,text)', 'EXECUTE')
-    and has_function_privilege('authenticated', 'public.purchase_tipster_subscription(uuid,text,boolean,boolean)', 'EXECUTE'),
-  'Clients must use the confirmed subscription purchase wrapper'
+    and not has_function_privilege('authenticated', 'public.purchase_tipster_subscription(uuid,text,boolean,boolean)', 'EXECUTE'),
+  'Subscription spending remains frozen until production verification completes'
 );
 
 select ok(
@@ -119,9 +211,9 @@ select ok(
   'Only signed-in users can reach the internally administrator-guarded revenue report'
 );
 
-select like(
-  pg_get_functiondef('public.admin_get_revenue_split_report(integer)'::regprocedure),
-  '%current_user_has_role(''administrator'')%',
+select ok(
+  pg_get_functiondef('public.admin_get_revenue_split_report(integer)'::regprocedure)
+    like '%current_user_has_role(''administrator'')%',
   'The revenue report enforces administrator authorization and MFA'
 );
 

@@ -4,7 +4,9 @@ import Link from "next/link";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import {
   AlertTriangle,
+  ArrowRight,
   Bell,
+  CalendarDays,
   ChevronDown,
   ChevronRight,
   CheckCircle2,
@@ -18,9 +20,14 @@ import {
   RefreshCw,
   ShieldCheck,
   TicketCheck,
+  Trophy,
 } from "lucide-react";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
+import { ProfileSettingsClient } from "@/components/account/profile-settings-client";
 import { MfaProfileCard } from "@/components/auth/mfa-profile-card";
+import { MfaSettingsClient } from "@/components/auth/mfa-settings-client";
+import { TipsterApplicationClient } from "@/components/tipster/tipster-application-client";
+import { TipsterBlogClient } from "@/components/tipster/tipster-blog-client";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
@@ -139,6 +146,61 @@ type CardOutcome = {
   settled_at: string;
 };
 
+type ClientWorkspaceView =
+  | "overview"
+  | "subscriptions"
+  | "meeting-cards"
+  | "discover-tipsters"
+  | "marketplace"
+  | "purchases"
+  | "write-for-mrc"
+  | "profile"
+  | "become-tipster";
+
+const clientWorkspaceViews = new Set<ClientWorkspaceView>([
+  "overview",
+  "subscriptions",
+  "meeting-cards",
+  "discover-tipsters",
+  "marketplace",
+  "purchases",
+  "write-for-mrc",
+  "profile",
+  "become-tipster",
+]);
+
+function clientWorkspaceViewFromLocation(): ClientWorkspaceView {
+  if (typeof window === "undefined") {
+    return "overview";
+  }
+
+  if (new URLSearchParams(window.location.search).has("card")) {
+    return "meeting-cards";
+  }
+
+  const hash = window.location.hash.replace(/^#/, "");
+  const aliases: Record<string, ClientWorkspaceView> = {
+    "unlocked-tips": "meeting-cards",
+    "author-tools": "write-for-mrc",
+    "security": "profile",
+  };
+  const candidate = aliases[hash] ?? hash;
+
+  return clientWorkspaceViews.has(candidate as ClientWorkspaceView)
+    ? candidate as ClientWorkspaceView
+    : "overview";
+}
+
+function clientWorkspaceViewFromEvent(event: Event): ClientWorkspaceView | null {
+  if (!(event instanceof CustomEvent) || typeof event.detail !== "string") {
+    return null;
+  }
+
+  return clientWorkspaceViews.has(event.detail as ClientWorkspaceView)
+    ? event.detail as ClientWorkspaceView
+    : null;
+}
+
 function messageFrom(error: unknown, fallback: string) {
   if (error instanceof Error) {
     return error.message;
@@ -151,6 +213,15 @@ function messageFrom(error: unknown, fallback: string) {
   return fallback;
 }
 
+function raceMeetingHref(meeting: RaceMeeting) {
+  const venueSlug = meeting.venue_slug?.trim() || meeting.venue
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, "-")
+    .replace(/^-|-$/g, "");
+
+  return `/horse-racing/meeting/?venue=${encodeURIComponent(venueSlug)}&date=${encodeURIComponent(meeting.meeting_date)}`;
+}
+
 export function ClientDashboardClient() {
   const [loadedAt] = useState(() => Date.now());
   const [loading, setLoading] = useState(true);
@@ -158,8 +229,6 @@ export function ClientDashboardClient() {
   const [error, setError] = useState("");
   const [message, setMessage] = useState("");
   const [walletBalance, setWalletBalance] = useState(0);
-  const [purchasedBalance, setPurchasedBalance] = useState(0);
-  const [rewardBalance, setRewardBalance] = useState(0);
   const [phone, setPhone] = useState("");
   const [smsNotificationsEnabled, setSmsNotificationsEnabled] = useState(false);
   const [emailMarketingEnabled, setEmailMarketingEnabled] = useState(false);
@@ -192,6 +261,26 @@ export function ClientDashboardClient() {
   const [cardOutcomes, setCardOutcomes] = useState<CardOutcome[]>([]);
   const [userId, setUserId] = useState("");
   const [disputeReasons, setDisputeReasons] = useState<Record<string, string>>({});
+  const [activeView, setActiveView] = useState<ClientWorkspaceView>("overview");
+
+  useEffect(() => {
+    const syncView = () => setActiveView(clientWorkspaceViewFromLocation());
+    const syncDashboardView = (event: Event) => {
+      const requestedView = clientWorkspaceViewFromEvent(event);
+      if (requestedView) {
+        setActiveView(requestedView);
+      }
+    };
+
+    syncView();
+    window.addEventListener("hashchange", syncView);
+    window.addEventListener("mrc-dashboard-view-change", syncDashboardView);
+
+    return () => {
+      window.removeEventListener("hashchange", syncView);
+      window.removeEventListener("mrc-dashboard-view-change", syncDashboardView);
+    };
+  }, []);
 
   const loadDashboard = useCallback(async () => {
     const supabase = createClient();
@@ -247,7 +336,7 @@ export function ClientDashboardClient() {
           .order("updated_at", { ascending: false }),
         supabase
           .from("race_meetings")
-          .select("id,venue,country_code,meeting_date,first_race_at,last_race_at,status,is_test,source_name,source_url")
+          .select("id,venue,venue_slug,country_code,meeting_date,first_race_at,last_race_at,status,is_test,source_name,source_url")
           .order("first_race_at"),
         supabase
           .from("tipsters")
@@ -408,8 +497,6 @@ export function ClientDashboardClient() {
       const loadedProfile = profileResult.data as ProfileNotificationRow | null;
       const loadedTermsStatus = termsStatusResult.data as PremiumTermsStatus | null;
       setWalletBalance(Number(loadedWallet?.balance ?? 0));
-      setPurchasedBalance(Number(loadedWallet?.purchased_balance ?? 0));
-      setRewardBalance(Number(loadedWallet?.reward_balance ?? 0));
       setPhone(loadedProfile?.phone ?? "");
       setSmsNotificationsEnabled(Boolean(loadedProfile?.sms_notifications_enabled));
       setEmailMarketingEnabled(Boolean(
@@ -833,6 +920,23 @@ export function ClientDashboardClient() {
     return tipCard.status === "published" &&
       meetingCardSalesOpen(meeting, loadedAt);
   });
+  const upcomingMeetings = meetings
+    .filter((meeting) => meeting.status === "scheduled" && new Date(meeting.first_race_at).getTime() >= loadedAt)
+    .sort((left, right) => new Date(left.first_race_at).getTime() - new Date(right.first_race_at).getTime());
+  const recentCompletedMeetings = meetings
+    .filter((meeting) => meeting.status === "completed")
+    .sort((left, right) => new Date(right.first_race_at).getTime() - new Date(left.first_race_at).getTime())
+    .slice(0, 3);
+  const upcomingCardCandidates = cards
+    .filter((tipCard) => ["coming_soon", "published"].includes(tipCard.status))
+    .map((tipCard) => ({ tipCard, meeting: meetingById.get(tipCard.meeting_id) }))
+    .filter((item): item is { tipCard: TipCard; meeting: RaceMeeting } => (
+      item.meeting !== undefined && new Date(item.meeting.first_race_at).getTime() >= loadedAt
+    ))
+    .sort((left, right) => (
+      new Date(left.meeting.first_race_at).getTime() - new Date(right.meeting.first_race_at).getTime()
+    ));
+  const featuredUpcomingCard = upcomingCardCandidates[0];
 
   return (
     <div className="space-y-6">
@@ -870,100 +974,117 @@ export function ClientDashboardClient() {
         ))}
       </div>
 
-      <MfaProfileCard />
+      <MfaProfileCard href="/client/#profile" presentation="requirements" />
 
-      <div className="grid gap-4 lg:grid-cols-2">
-        <Card id="email-announcements" className="scroll-mt-24">
-          <CardHeader>
-            <CardTitle className="flex items-center gap-2">
-              <Coins className="size-5 text-primary" />
-              Credit balance breakdown
-            </CardTitle>
-            <CardDescription>
-              Purchased Credits and promotional Reward Credits are accounted for separately.
-            </CardDescription>
-          </CardHeader>
-          <CardContent className="grid gap-3 sm:grid-cols-2">
-            <div className="rounded-lg border bg-background/40 p-4">
-              <p className="text-sm text-muted-foreground">Purchased Credits</p>
-              <p className="mt-1 font-mono text-2xl font-semibold">{formatCredits(purchasedBalance)}</p>
-              <p className="mt-2 text-xs text-muted-foreground">
-                Used first and contributes to tipster earnings and the ECHCU pledge.
-              </p>
-            </div>
-            <div className="rounded-lg border bg-background/40 p-4">
-              <p className="text-sm text-muted-foreground">Reward Credits</p>
-              <p className="mt-1 font-mono text-2xl font-semibold">{formatCredits(rewardBalance)}</p>
-              <p className="mt-2 text-xs text-muted-foreground">
-                Promotional access only; no tipster payment or ECHCU contribution is created.
-              </p>
-            </div>
-          </CardContent>
-        </Card>
-
+      <div className={activeView === "overview" ? "space-y-4" : "hidden"}>
         <Card>
           <CardHeader>
-            <CardTitle className="flex items-center gap-2">
-              <Bell className="size-5 text-primary" />
-              Meeting-card SMS alerts
-            </CardTitle>
-            <CardDescription>
-              Receive transactional alerts when an entitled meeting card is published or corrected.
-            </CardDescription>
-          </CardHeader>
-          <CardContent className="space-y-4">
-            <div className="rounded-lg border bg-background/40 p-4 text-sm">
-              <p className="text-muted-foreground">Cell number</p>
-              <p className="mt-1 font-medium">{phone || "No cell number saved"}</p>
+            <div className="flex flex-wrap items-start justify-between gap-3">
+              <div>
+                <CardTitle className="flex items-center gap-2">
+                  <TicketCheck className="size-5 text-primary" />
+                  Upcoming meeting card
+                </CardTitle>
+                <CardDescription className="mt-1">
+                  The next card currently prepared or published by an MRC Tipster.
+                </CardDescription>
+              </div>
+              {featuredUpcomingCard ? (
+                <Badge variant={featuredUpcomingCard.tipCard.status === "published" ? "default" : "outline"}>
+                  {featuredUpcomingCard.tipCard.status === "published" ? "Available now" : "Coming soon"}
+                </Badge>
+              ) : null}
             </div>
-            <Button
-              type="button"
-              variant={smsNotificationsEnabled ? "outline" : "default"}
-              disabled={processingId === "sms-preferences" || (!smsNotificationsEnabled && !phone.trim())}
-              onClick={() => void toggleSmsNotifications()}
-            >
-              {processingId === "sms-preferences" ? <Loader2 className="size-4 animate-spin" /> : <Bell className="size-4" />}
-              {smsNotificationsEnabled ? "Disable SMS alerts" : "Enable SMS alerts"}
-            </Button>
-            <p className="text-xs text-muted-foreground">
-              This consent covers service notifications only. Marketing SMS requires separate consent.
-            </p>
+          </CardHeader>
+          <CardContent>
+            {featuredUpcomingCard ? (
+              <div className="rounded-lg border bg-background/40 p-4">
+                <h3 className="font-heading text-2xl text-white">{featuredUpcomingCard.tipCard.title}</h3>
+                <p className="mt-1 text-sm text-brand-cyan">
+                  {tipsterById.get(featuredUpcomingCard.tipCard.tipster_id)?.display_name ?? "MRC Tipster"}
+                </p>
+                <p className="mt-3 text-sm text-muted-foreground">
+                  {featuredUpcomingCard.tipCard.summary || "Meeting analysis and selections are being prepared."}
+                </p>
+                <div className="mt-4 flex flex-wrap items-center justify-between gap-3">
+                  <div>
+                    <p className="font-medium">{featuredUpcomingCard.meeting.venue}</p>
+                    <p className="text-sm text-muted-foreground">
+                      {formatRaceDateTime(featuredUpcomingCard.meeting.first_race_at)} · {formatMeetingCardPrice(featuredUpcomingCard.tipCard.coin_price)}
+                    </p>
+                  </div>
+                  <Button asChild variant="outline">
+                    <a href={featuredUpcomingCard.tipCard.status === "published" ? "#marketplace" : "#discover-tipsters"}>
+                      {featuredUpcomingCard.tipCard.status === "published" ? "View card options" : "View Tipsters"}
+                      <ArrowRight className="size-4" />
+                    </a>
+                  </Button>
+                </div>
+              </div>
+            ) : (
+              <p className="text-sm text-muted-foreground">
+                No new meeting card has been listed yet. This panel updates automatically when a Tipster prepares or publishes one.
+              </p>
+            )}
           </CardContent>
         </Card>
 
-        <Card>
-          <CardHeader>
-            <CardTitle className="flex items-center gap-2">
-              <Mail className="size-5 text-primary" />
-              New-content email announcements
-            </CardTitle>
-            <CardDescription>
-              Choose whether MRC may email you when a new blog article or meeting card is published.
-            </CardDescription>
-          </CardHeader>
-          <CardContent className="space-y-4">
-            <Button
-              type="button"
-              variant={emailMarketingEnabled ? "outline" : "default"}
-              disabled={processingId === "email-marketing-preferences"}
-              onClick={() => void toggleEmailMarketing()}
-            >
-              {processingId === "email-marketing-preferences" ? (
-                <Loader2 className="size-4 animate-spin" />
-              ) : (
-                <Mail className="size-4" />
-              )}
-              {emailMarketingEnabled ? "Disable email announcements" : "Enable email announcements"}
-            </Button>
-            <p className="text-xs text-muted-foreground">
-              This optional marketing consent is separate from purchase receipts, security messages,
-              account notices, and card updates you are already entitled to receive.
-            </p>
-          </CardContent>
-        </Card>
+        <div className="grid gap-4 lg:grid-cols-2">
+          <Card>
+            <CardHeader>
+              <CardTitle className="flex items-center gap-2">
+                <CalendarDays className="size-5 text-primary" />
+                Upcoming racing
+              </CardTitle>
+              <CardDescription>Next scheduled South African meetings from the race feed.</CardDescription>
+            </CardHeader>
+            <CardContent className="space-y-3">
+              {upcomingMeetings.slice(0, 3).map((meeting) => (
+                <div key={meeting.id} className="flex flex-wrap items-center justify-between gap-3 rounded-lg border bg-background/40 p-4">
+                  <div>
+                    <p className="font-semibold text-white">{meeting.venue}</p>
+                    <p className="text-sm text-muted-foreground">{formatRaceDateTime(meeting.first_race_at)}</p>
+                  </div>
+                  <Button asChild size="sm" variant="outline">
+                    <Link href={raceMeetingHref(meeting)}>Racecard</Link>
+                  </Button>
+                </div>
+              ))}
+              {!upcomingMeetings.length ? (
+                <p className="text-sm text-muted-foreground">No future race meetings are currently listed.</p>
+              ) : null}
+            </CardContent>
+          </Card>
+
+          <Card>
+            <CardHeader>
+              <CardTitle className="flex items-center gap-2">
+                <Trophy className="size-5 text-primary" />
+                Recent race results
+              </CardTitle>
+              <CardDescription>Recently completed meetings with racecards and official results.</CardDescription>
+            </CardHeader>
+            <CardContent className="space-y-3">
+              {recentCompletedMeetings.map((meeting) => (
+                <div key={meeting.id} className="flex flex-wrap items-center justify-between gap-3 rounded-lg border bg-background/40 p-4">
+                  <div>
+                    <p className="font-semibold text-white">{meeting.venue}</p>
+                    <p className="text-sm text-muted-foreground">{formatRaceDateTime(meeting.first_race_at)}</p>
+                  </div>
+                  <Button asChild size="sm" variant="outline">
+                    <Link href={raceMeetingHref(meeting)}>View results</Link>
+                  </Button>
+                </div>
+              ))}
+              {!recentCompletedMeetings.length ? (
+                <p className="text-sm text-muted-foreground">Completed race results will appear here.</p>
+              ) : null}
+            </CardContent>
+          </Card>
+        </div>
       </div>
 
-      <Card id="subscriptions" className="scroll-mt-24">
+      <Card id="subscriptions" className={activeView === "subscriptions" ? "scroll-mt-24" : "hidden"}>
         <CardHeader>
           <CardTitle>My Subscribed Tipsters</CardTitle>
           <CardDescription>
@@ -1022,7 +1143,7 @@ export function ClientDashboardClient() {
         </CardContent>
       </Card>
 
-      <div id="unlocked-tips" className="scroll-mt-24 space-y-4">
+      <div id="meeting-cards" className={activeView === "meeting-cards" ? "scroll-mt-24 space-y-4" : "hidden"}>
         <div className="flex flex-wrap items-end justify-between gap-3">
           <div>
             <h2 className="font-heading text-2xl text-white">My Meeting Cards &amp; History</h2>
@@ -1222,7 +1343,7 @@ export function ClientDashboardClient() {
         ) : null}
       </div>
 
-      <Card id="discover-tipsters" className="scroll-mt-24">
+      <Card id="discover-tipsters" className={activeView === "discover-tipsters" ? "scroll-mt-24" : "hidden"}>
         <CardHeader>
           <CardTitle>Discover Tipsters</CardTitle>
           <CardDescription>
@@ -1330,7 +1451,7 @@ export function ClientDashboardClient() {
         </CardContent>
       </Card>
 
-      <Card id="marketplace" className="scroll-mt-24">
+      <Card id="marketplace" className={activeView === "marketplace" ? "scroll-mt-24" : "hidden"}>
         <CardHeader className="flex-row items-start justify-between gap-4">
           <div>
             <CardTitle>Meeting Card Marketplace</CardTitle>
@@ -1441,7 +1562,7 @@ export function ClientDashboardClient() {
         </CardContent>
       </Card>
 
-      <Card id="purchases" className="scroll-mt-24">
+      <Card id="purchases" className={activeView === "purchases" ? "scroll-mt-24" : "hidden"}>
         <CardHeader>
           <CardTitle>Purchases and refund requests</CardTitle>
           <CardDescription>
@@ -1511,6 +1632,86 @@ export function ClientDashboardClient() {
           </Table>
         </CardContent>
       </Card>
+
+      {activeView === "write-for-mrc" ? <TipsterBlogClient /> : null}
+
+      {activeView === "profile" ? (
+        <div className="space-y-6">
+          <ProfileSettingsClient
+            onSaved={(profile) => {
+              setProfileDisplayName(profile.displayName);
+              setPhone(profile.phone);
+            }}
+          />
+
+          <MfaSettingsClient />
+
+          <div className="grid gap-4 lg:grid-cols-2">
+            <Card>
+              <CardHeader>
+                <CardTitle className="flex items-center gap-2">
+                  <Bell className="size-5 text-primary" />
+                  Meeting-card SMS alerts
+                </CardTitle>
+                <CardDescription>
+                  Receive transactional alerts when an entitled meeting card is published or corrected.
+                </CardDescription>
+              </CardHeader>
+              <CardContent className="space-y-4">
+                <div className="rounded-lg border bg-background/40 p-4 text-sm">
+                  <p className="text-muted-foreground">Cell number</p>
+                  <p className="mt-1 font-medium">{phone || "No cell number saved"}</p>
+                </div>
+                <Button
+                  type="button"
+                  variant={smsNotificationsEnabled ? "outline" : "default"}
+                  disabled={processingId === "sms-preferences" || (!smsNotificationsEnabled && !phone.trim())}
+                  onClick={() => void toggleSmsNotifications()}
+                >
+                  {processingId === "sms-preferences" ? <Loader2 className="size-4 animate-spin" /> : <Bell className="size-4" />}
+                  {smsNotificationsEnabled ? "Disable SMS alerts" : "Enable SMS alerts"}
+                </Button>
+                <p className="text-xs text-muted-foreground">
+                  This consent covers service notifications only. Marketing SMS requires separate consent.
+                </p>
+              </CardContent>
+            </Card>
+
+            <Card id="email-announcements">
+              <CardHeader>
+                <CardTitle className="flex items-center gap-2">
+                  <Mail className="size-5 text-primary" />
+                  New-content and marketing emails
+                </CardTitle>
+                <CardDescription>
+                  Choose whether MRC may email you when a new blog article or meeting card is published.
+                </CardDescription>
+              </CardHeader>
+              <CardContent className="space-y-4">
+                <Button
+                  type="button"
+                  variant={emailMarketingEnabled ? "outline" : "default"}
+                  disabled={processingId === "email-marketing-preferences"}
+                  onClick={() => void toggleEmailMarketing()}
+                >
+                  {processingId === "email-marketing-preferences" ? (
+                    <Loader2 className="size-4 animate-spin" />
+                  ) : (
+                    <Mail className="size-4" />
+                  )}
+                  {emailMarketingEnabled ? "Disable email announcements" : "Enable email announcements"}
+                </Button>
+                <p className="text-xs text-muted-foreground">
+                  This optional marketing consent is separate from purchase receipts, security messages,
+                  account notices, and card updates you are already entitled to receive.
+                </p>
+              </CardContent>
+            </Card>
+          </div>
+        </div>
+      ) : null}
+
+      {activeView === "become-tipster" ? <TipsterApplicationClient /> : null}
 
       <PurchaseConfirmationDialog
         request={pendingPurchase}

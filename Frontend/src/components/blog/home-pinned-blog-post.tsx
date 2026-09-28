@@ -40,7 +40,7 @@ export function HomePinnedBlogPost() {
   const cover = publicStorageUrl("blog-media", post.coverImagePath);
 
   return (
-    <section className="mx-auto w-full max-w-7xl px-4 pb-10 sm:px-6 lg:px-8">
+    <section className="site-container pb-10">
       <article className="grid overflow-hidden rounded-xl border border-brand-cyan/35 bg-[linear-gradient(120deg,rgba(0,212,231,0.12),rgba(54,24,89,0.96)_42%,rgba(30,12,56,0.98))] shadow-[0_20px_60px_rgba(0,0,0,0.2)] md:grid-cols-[minmax(22rem,0.48fr)_minmax(0,1fr)]">
         {cover ? (
           <div className="relative aspect-[2/3] border-b border-brand-cyan/25 bg-brand-purple-deep/65 md:border-r md:border-b-0">

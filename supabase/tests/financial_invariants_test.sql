@@ -94,10 +94,10 @@ select is(
   (
     select count(*)::bigint
     from public.content_purchases
-    where purchased_coins::numeric <> platform_fee_coins + tipster_net_coins
+    where purchased_coins::numeric <> platform_fee_coins + horse_care_coins + tipster_net_coins
   ),
   0::bigint,
-  'Only purchased Credits split into platform fee and tipster earnings'
+  'Only purchased Credits split into Horse Care, platform, and tipster earnings'
 );
 
 select is(
@@ -134,10 +134,10 @@ select is(
   (
     select count(*)::bigint
     from public.tipster_earnings
-    where gross_coins <> platform_fee_coins + net_coins
+    where gross_coins <> platform_fee_coins + horse_care_coins + net_coins
   ),
   0::bigint,
-  'Every tipster earning or reversal balances gross, fee, and net Credits'
+  'Every tipster earning or reversal balances gross, Horse Care, platform, and net Credits'
 );
 
 select is(

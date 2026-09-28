@@ -1,5 +1,6 @@
 "use client";
 
+import Link from "next/link";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import {
   BadgePercent,
@@ -21,6 +22,7 @@ import { createClient } from "@/lib/supabase/client";
 type RevenuePolicy = {
   trigger: "content_spend";
   allocationVersion: string;
+  effectiveAt: string;
   horseCareRate: number;
   platformRate: number;
   tipsterRate: number;
@@ -32,6 +34,7 @@ type RevenueSummary = {
   purchaseCount: number;
   disputedCount: number;
   refundedPurchaseCount: number;
+  historicalPurchaseCount: number;
   contentCreditsUsed: number;
   purchasedCreditsUsed: number;
   rewardCreditsExcluded: number;
@@ -40,6 +43,20 @@ type RevenueSummary = {
   tipsterCredits: number;
   allocatedCredits: number;
   reconciliationDifference: number;
+};
+
+type OpeningSettlement = {
+  settledThrough: string;
+  reason: string;
+  horseCareCredits: number;
+  platformCredits: number;
+  tipsterCredits: number;
+  totalCredits: number;
+  tipsters: {
+    tipsterId: string;
+    tipsterName: string;
+    settledCredits: number;
+  }[];
 };
 
 type TipsterRevenue = {
@@ -73,6 +90,7 @@ type RecentRevenue = {
 type RevenueReport = {
   policy: RevenuePolicy;
   summary: RevenueSummary;
+  openingSettlement: OpeningSettlement;
   byTipster: TipsterRevenue[];
   recent: RecentRevenue[];
   generatedAt: string;
@@ -181,15 +199,44 @@ export function AdminRevenueSplitClient() {
 
       <Alert>
         <CircleDollarSign className="size-4" />
-        <AlertTitle>Allocation starts when Credits are used</AlertTitle>
+        <AlertTitle>Forward-only 10/20/70 period active</AlertTitle>
         <AlertDescription>
-          No allocation is recorded when a client buys Credits. The 10/20/70 split is recorded only when the cash-backed Credit portion is used on a meeting card or subscription. Reward Credits are excluded.
+          Started {formatRaceDateTime(report.policy.effectiveAt)}. No allocation is recorded when a client buys Credits; the split is recorded only when cash-backed Credits are used on a meeting card or subscription. Reward Credits are excluded.
         </AlertDescription>
       </Alert>
 
+      <Card>
+        <CardHeader>
+          <CardTitle>Opening Settlement Recorded</CardTitle>
+          <CardDescription>{report.openingSettlement.reason}</CardDescription>
+        </CardHeader>
+        <CardContent className="space-y-4">
+          <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
+            {[
+              ["Horse Care Settled", report.openingSettlement.horseCareCredits],
+              ["MRC Platform Settled", report.openingSettlement.platformCredits],
+              ["Tipsters Settled", report.openingSettlement.tipsterCredits],
+              ["Total Settled History", report.openingSettlement.totalCredits],
+            ].map(([label, value]) => (
+              <div key={String(label)} className="rounded-lg border bg-background/45 p-4">
+                <p className="text-sm text-muted-foreground">{label}</p>
+                <p className="mt-1 font-mono text-xl">{credits(Number(value))}</p>
+              </div>
+            ))}
+          </div>
+          <div className="flex flex-wrap items-center justify-between gap-3 text-xs text-muted-foreground">
+            <span>Settled through {formatRaceDateTime(report.openingSettlement.settledThrough)}. Client Purchased Credits and Reward Credits were not changed.</span>
+            <Button asChild size="sm" variant="outline">
+              <Link href="/admin/#internal-ledger">View Historical Ledger</Link>
+            </Button>
+          </div>
+        </CardContent>
+      </Card>
+
       <div className="flex flex-wrap items-center justify-between gap-3">
         <div className="flex flex-wrap gap-2">
-          <Badge variant="outline">{report.summary.purchaseCount} current purchases</Badge>
+          <Badge variant="outline">{report.summary.purchaseCount} new-period purchases</Badge>
+          <Badge variant="outline">{report.summary.historicalPurchaseCount} historical purchases retained</Badge>
           <Badge variant="outline">{report.summary.disputedCount} disputed</Badge>
           <Badge variant="outline">{report.summary.refundedPurchaseCount} refunded</Badge>
         </div>
@@ -223,7 +270,7 @@ export function AdminRevenueSplitClient() {
 
       <Card>
         <CardHeader>
-          <CardTitle>Credit-use reconciliation</CardTitle>
+          <CardTitle>Current Period Reconciliation</CardTitle>
           <CardDescription>
             Only the cash-backed portion consumed by paid content is allocated. Promotional Reward Credits remain access-only.
           </CardDescription>
@@ -255,8 +302,8 @@ export function AdminRevenueSplitClient() {
 
       <Card>
         <CardHeader>
-          <CardTitle>Current allocation by tipster</CardTitle>
-          <CardDescription>Active and disputed content purchases are included; refunded purchases are excluded from these balances.</CardDescription>
+          <CardTitle>Current Tipster Balances</CardTitle>
+          <CardDescription>Only entries after the new period started are included. Settled history remains available in the full ledger.</CardDescription>
         </CardHeader>
         <CardContent>
           <Table>
@@ -286,7 +333,7 @@ export function AdminRevenueSplitClient() {
               {!report.byTipster.length ? (
                 <TableRow>
                   <TableCell colSpan={7} className="h-24 text-center text-muted-foreground">
-                    No eligible Credit-use allocations have been recorded.
+                    No new-period Credit-use allocations have been recorded.
                   </TableCell>
                 </TableRow>
               ) : null}
@@ -297,8 +344,8 @@ export function AdminRevenueSplitClient() {
 
       <Card>
         <CardHeader>
-          <CardTitle>Recent content Credit usage</CardTitle>
-          <CardDescription>Each row records the split at the time a meeting card or subscription consumed Credits.</CardDescription>
+          <CardTitle>Recent New-Period Credit Usage</CardTitle>
+          <CardDescription>Each row records the 10/20/70 split at the time a meeting card or subscription consumes Purchased Credits.</CardDescription>
         </CardHeader>
         <CardContent>
           <Table>

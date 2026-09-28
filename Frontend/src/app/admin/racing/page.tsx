@@ -9,7 +9,7 @@ export default function AdminRacingPage() {
       allowedRoles={["administrator"]}
       accessDescription="the administrator race-feed monitor"
       accessTitle="Administrator access required"
-      title="Race-feed monitor"
+      title="Race Feed Monitor"
       description="Review grounded race proposals, monitor staged extraction, manage source trust, and control approval safeguards."
       nav={adminNav}
     >

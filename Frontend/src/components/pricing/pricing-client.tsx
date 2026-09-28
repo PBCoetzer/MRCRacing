@@ -275,7 +275,7 @@ export function PricingClient() {
   return (
     <main>
       <section className="border-b border-brand-gold/20 bg-brand-purple-deep text-white">
-        <div className="mx-auto grid w-full max-w-7xl gap-8 px-4 py-14 sm:px-6 lg:grid-cols-[1fr_0.7fr] lg:px-8">
+        <div className="site-container grid gap-8 py-14 lg:grid-cols-[1fr_0.7fr]">
           <div>
             <Badge className="bg-brand-gold text-brand-purple-deep">
               R1 = 1 Credit
@@ -311,7 +311,7 @@ export function PricingClient() {
         </div>
       </section>
 
-      <section className="mx-auto w-full max-w-7xl px-4 py-12 sm:px-6 lg:px-8">
+      <section className="site-container py-12">
         {!paymentsEnabled ? (
           <Alert className="mb-8 border-brand-gold/45 bg-brand-gold/8">
             <AlertTriangle className="size-4" />

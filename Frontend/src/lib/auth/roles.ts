@@ -18,20 +18,21 @@ export function dashboardForRoles(roles: readonly string[]) {
 }
 
 export function dashboardLinksForRoles(roles: readonly string[]): DashboardLink[] {
-  const links: DashboardLink[] = [];
   const isAdministrator = roles.includes("administrator");
 
-  if (roles.includes("client") || isAdministrator) {
-    links.push({ label: "Client", href: "/client" });
-  }
-
-  if (roles.includes("tipster") || isAdministrator) {
-    links.push({ label: "Tipster", href: "/tipster" });
-  }
-
   if (isAdministrator) {
-    links.push({ label: "Admin", href: "/admin" });
+    return [
+      { label: "Client", href: "/client" },
+      { label: "Tipster", href: "/tipster" },
+      { label: "Admin", href: "/admin" },
+    ];
   }
 
-  return links;
+  if (roles.includes("tipster")) {
+    return [{ label: "Tipster", href: "/tipster" }];
+  }
+
+  return roles.includes("client")
+    ? [{ label: "Client", href: "/client" }]
+    : [];
 }

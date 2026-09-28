@@ -5,7 +5,7 @@ import Image from "next/image";
 import { useRouter } from "next/navigation";
 import { useEffect, useState } from "react";
 import type { AuthChangeEvent, Session } from "@supabase/supabase-js";
-import { LogOut, Menu, ShieldCheck } from "lucide-react";
+import { LogOut, Menu, ShieldCheck, UserRound } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import {
   Sheet,
@@ -39,6 +39,11 @@ export function SiteHeader() {
   const dashboardLinks = dashboardLinksForRoles(roles);
   const navItems = [...publicNavItems, ...dashboardLinks];
   const dashboardHref = authState === "signed-in" ? dashboardForRoles(roles) : null;
+  const profileHref = roles.includes("tipster") && !roles.includes("administrator")
+    ? "/tipster/#profile"
+    : roles.includes("client") && !roles.includes("administrator")
+      ? "/client/#profile"
+      : "/account/profile/";
 
   useEffect(() => {
     const supabase = createClient();
@@ -49,19 +54,38 @@ export function SiteHeader() {
 
     let isMounted = true;
 
-    async function loadNavigation(userId?: string) {
+    async function loadNavigation(providedSession?: Session | null) {
       try {
-        let resolvedUserId = userId;
+        let activeSession = providedSession;
 
-        if (!resolvedUserId) {
+        if (typeof activeSession === "undefined") {
           const {
-            data: { user },
-          } = await supabase.auth.getUser();
+            data: { session },
+            error: sessionError,
+          } = await supabase.auth.getSession();
 
-          resolvedUserId = user?.id;
+          if (sessionError) {
+            throw sessionError;
+          }
+
+          activeSession = session;
         }
 
-        if (!resolvedUserId) {
+        if (!activeSession) {
+          if (isMounted) {
+            setRoles([]);
+            setAuthState("signed-out");
+          }
+          return;
+        }
+
+        const {
+          data: { user },
+          error: userError,
+        } = await supabase.auth.getUser(activeSession.access_token);
+
+        if (userError || !user) {
+          await supabase.auth.signOut({ scope: "local" });
           if (isMounted) {
             setRoles([]);
             setAuthState("signed-out");
@@ -72,7 +96,7 @@ export function SiteHeader() {
         const { data: roleData, error: roleError } = await supabase
           .from("user_roles")
           .select("role")
-          .eq("user_id", resolvedUserId);
+          .eq("user_id", user.id);
 
         if (roleError) {
           throw roleError;
@@ -103,7 +127,7 @@ export function SiteHeader() {
       }
 
       window.setTimeout(() => {
-        loadNavigation(session.user.id);
+        loadNavigation(session);
       }, 0);
     });
 
@@ -126,9 +150,18 @@ export function SiteHeader() {
     router.refresh();
   }
 
+  function handleWorkspaceLink(href: string) {
+    const [, view] = href.split("#");
+    if (view) {
+      window.dispatchEvent(new CustomEvent("mrc-dashboard-view-change", {
+        detail: view,
+      }));
+    }
+  }
+
   return (
     <header className="sticky top-0 z-50 border-b border-brand-gold/30 bg-brand-purple-deep/90 text-foreground shadow-[0_12px_40px_rgba(0,0,0,0.22)] backdrop-blur">
-      <div className="mx-auto flex h-16 w-full max-w-7xl items-center justify-between px-4 sm:px-6 lg:px-8">
+      <div className="site-container flex h-16 items-center justify-between">
         <Link href="/" className="flex items-center gap-3">
           <span className="relative flex h-11 w-14 overflow-hidden rounded-md border border-brand-gold/70 bg-brand-purple shadow-[0_0_0_2px_rgba(255,176,0,0.12)]">
             <Image
@@ -149,16 +182,22 @@ export function SiteHeader() {
             </span>
           </span>
         </Link>
-        <nav className="hidden items-center gap-1 md:flex">
+        <nav className="hidden items-center gap-1 xl:flex">
           {navItems.map((item) => (
             <Button key={item.href} asChild variant="ghost" size="sm">
               <Link href={item.href}>{item.label}</Link>
             </Button>
           ))}
         </nav>
-        <div className="hidden items-center gap-2 md:flex">
+        <div className="hidden items-center gap-2 xl:flex">
           {authState === "signed-in" ? (
             <>
+              <Button asChild variant="outline" size="sm">
+                <Link href={profileHref} onClick={() => handleWorkspaceLink(profileHref)}>
+                  <UserRound className="size-4" />
+                  Profile
+                </Link>
+              </Button>
               <Button asChild variant="outline" size="sm">
                 <Link href="/account/security/">
                   <ShieldCheck className="size-4" />
@@ -188,7 +227,7 @@ export function SiteHeader() {
         </div>
         <Sheet>
           <SheetTrigger asChild>
-            <Button variant="outline" size="icon" className="md:hidden" aria-label="Open navigation">
+            <Button variant="outline" size="icon" className="xl:hidden" aria-label="Open navigation">
               <Menu className="size-4" />
             </Button>
           </SheetTrigger>
@@ -205,6 +244,12 @@ export function SiteHeader() {
               {authState === "signed-in" ? (
                 <>
                   <Button asChild variant="outline" className="mt-4 justify-start">
+                    <Link href={profileHref} onClick={() => handleWorkspaceLink(profileHref)}>
+                      <UserRound className="size-4" />
+                      My profile
+                    </Link>
+                  </Button>
+                  <Button asChild variant="outline" className="justify-start">
                     <Link href="/account/security/">
                       <ShieldCheck className="size-4" />
                       Profile security &amp; 2FA

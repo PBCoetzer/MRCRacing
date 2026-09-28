@@ -43,7 +43,13 @@ type AccountControl = {
 };
 
 function isMissingAuthSession(error: unknown) {
-  return error instanceof Error && error.message.toLowerCase().includes("auth session missing");
+  if (!(error instanceof Error)) {
+    return false;
+  }
+
+  const message = error.message.toLowerCase();
+  return message.includes("auth session missing") ||
+    (message.includes("invalid claim") && message.includes("missing sub"));
 }
 
 export function RoleGate({
@@ -74,12 +80,28 @@ export function RoleGate({
 
       try {
         const {
+          data: { session },
+          error: sessionError,
+        } = await supabase.auth.getSession();
+
+        if (sessionError) {
+          throw sessionError;
+        }
+
+        if (!session) {
+          setGateState("signed-out");
+          setMessage("Please log in before opening this private workspace.");
+          return;
+        }
+
+        const {
           data: { user },
           error: userError,
-        } = await supabase.auth.getUser();
+        } = await supabase.auth.getUser(session.access_token);
 
         if (userError) {
           if (isMissingAuthSession(userError)) {
+            await supabase.auth.signOut({ scope: "local" });
             setGateState("signed-out");
             setMessage("Please log in before opening this private workspace.");
             return;

@@ -15,8 +15,8 @@ import {
   RefreshCw,
   ShieldCheck,
 } from "lucide-react";
+import { ProfileSettingsClient } from "@/components/account/profile-settings-client";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
-import { MfaProfileCard } from "@/components/auth/mfa-profile-card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
@@ -81,6 +81,48 @@ const packageDurations = [1, 3, 6, 12] as const;
 const emptyPackageDraft: PackageDraft = { 1: "", 3: "", 6: "", 12: "" };
 const liveRefreshMs = 60_000;
 
+type TipsterWorkspaceView =
+  | "overview"
+  | "meeting-cards"
+  | "packages"
+  | "earnings"
+  | "client-theme"
+  | "profile";
+
+const tipsterWorkspaceViews = new Set<TipsterWorkspaceView>([
+  "overview",
+  "meeting-cards",
+  "packages",
+  "earnings",
+  "client-theme",
+  "profile",
+]);
+
+function tipsterWorkspaceViewFromLocation(): TipsterWorkspaceView {
+  if (typeof window === "undefined") {
+    return "overview";
+  }
+
+  if (new URLSearchParams(window.location.search).has("card")) {
+    return "meeting-cards";
+  }
+
+  const hash = window.location.hash.replace(/^#/, "");
+  return tipsterWorkspaceViews.has(hash as TipsterWorkspaceView)
+    ? hash as TipsterWorkspaceView
+    : "overview";
+}
+
+function tipsterWorkspaceViewFromEvent(event: Event): TipsterWorkspaceView | null {
+  if (!(event instanceof CustomEvent) || typeof event.detail !== "string") {
+    return null;
+  }
+
+  return tipsterWorkspaceViews.has(event.detail as TipsterWorkspaceView)
+    ? event.detail as TipsterWorkspaceView
+    : null;
+}
+
 function meetingLabel(meeting: RaceMeeting | undefined) {
   if (!meeting) {
     return "Meeting unavailable";
@@ -137,8 +179,28 @@ export function TipsterDashboardClient() {
   const [packageDraft, setPackageDraft] = useState<PackageDraft>(emptyPackageDraft);
   const [themeDraft, setThemeDraft] = useState<TipsterTheme>(defaultTipsterTheme);
   const [meetingPageIndex, setMeetingPageIndex] = useState(0);
+  const [activeView, setActiveView] = useState<TipsterWorkspaceView>("overview");
   const loadInFlight = useRef(false);
   const themeDraftTouched = useRef(false);
+
+  useEffect(() => {
+    const syncView = () => setActiveView(tipsterWorkspaceViewFromLocation());
+    const syncDashboardView = (event: Event) => {
+      const requestedView = tipsterWorkspaceViewFromEvent(event);
+      if (requestedView) {
+        setActiveView(requestedView);
+      }
+    };
+
+    syncView();
+    window.addEventListener("hashchange", syncView);
+    window.addEventListener("mrc-dashboard-view-change", syncDashboardView);
+
+    return () => {
+      window.removeEventListener("hashchange", syncView);
+      window.removeEventListener("mrc-dashboard-view-change", syncDashboardView);
+    };
+  }, []);
 
   const loadDashboard = useCallback(async (silent = false) => {
     const supabase = createClient();
@@ -334,6 +396,9 @@ export function TipsterDashboardClient() {
     ["draft", "coming_soon"].includes(card.status)
   );
   const activePackageCount = packages.filter((item) => item.is_active).length;
+  const overallSelectionRecord = cardSelectionWinRecord(cardOutcomes);
+  const nextAvailableMeeting = availableMeetings[0];
+  const latestCard = cards[0];
 
   async function savePackages() {
     const supabase = createClient();
@@ -470,7 +535,8 @@ export function TipsterDashboardClient() {
         <span className="text-xs text-muted-foreground">Automatically refreshes every minute</span>
       </div>
 
-      <div className="grid gap-4 md:grid-cols-4">
+      <div className={activeView === "overview" ? "space-y-6" : "hidden"}>
+        <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
         {[
           {
             label: "Upcoming meetings",
@@ -491,9 +557,9 @@ export function TipsterDashboardClient() {
             icon: PackageCheck,
           },
           {
-            label: "Recorded earnings",
+            label: "Current Period Balance",
             value: formatCredits(recordedEarnings),
-            detail: "All sales and refund reversals",
+            detail: "New 70% allocations after the settled opening balance",
             icon: Coins,
           },
         ].map((stat) => (
@@ -508,16 +574,14 @@ export function TipsterDashboardClient() {
             </CardHeader>
           </Card>
         ))}
-      </div>
-
-      <MfaProfileCard />
+        </div>
 
       {preparationCards.length ? (
         <Card className="border-brand-cyan/45 bg-brand-cyan/5">
           <CardHeader>
             <CardTitle className="flex items-center gap-2">
               <FilePenLine className="size-5 text-brand-cyan" />
-              Continue preparing meeting cards
+              Continue Preparing Meeting Cards
             </CardTitle>
             <CardDescription>
               Private drafts are visible only to you and administrators. Saving a private draft does not
@@ -559,14 +623,94 @@ export function TipsterDashboardClient() {
         </Card>
       ) : null}
 
-      <Card>
+        <div className="grid gap-4 lg:grid-cols-2">
+        <Card>
+          <CardHeader>
+            <CardTitle>Publishing Priorities</CardTitle>
+            <CardDescription>Your next useful actions based on the live race and card data.</CardDescription>
+          </CardHeader>
+          <CardContent className="space-y-3">
+            {nextAvailableMeeting ? (
+              <div className="flex flex-wrap items-center justify-between gap-3 rounded-lg border bg-background/40 p-4">
+                <div>
+                  <p className="font-semibold text-white">Create {nextAvailableMeeting.venue} meeting card</p>
+                  <p className="text-sm text-muted-foreground">
+                    First race {formatRaceDateTime(nextAvailableMeeting.first_race_at)}
+                  </p>
+                </div>
+                <Button asChild size="sm">
+                  <Link href={`/tipster/manage-tips/?meeting=${encodeURIComponent(nextAvailableMeeting.id)}`}>
+                    Create Card
+                  </Link>
+                </Button>
+              </div>
+            ) : (
+              <p className="rounded-lg border bg-background/40 p-4 text-sm text-muted-foreground">
+                Every visible upcoming meeting already has a card.
+              </p>
+            )}
+            {latestCard ? (
+              <div className="flex flex-wrap items-center justify-between gap-3 rounded-lg border bg-background/40 p-4">
+                <div>
+                  <p className="font-semibold text-white">Latest card: {latestCard.title}</p>
+                  <p className="text-sm text-muted-foreground">
+                    {latestCard.status.replace("_", " ")} · Revision {latestCard.confirmed_revision_count}
+                  </p>
+                </div>
+                <Button asChild size="sm" variant="outline">
+                  <Link href={`/tipster/manage-tips/?card=${encodeURIComponent(latestCard.id)}`}>
+                    Review Card
+                  </Link>
+                </Button>
+              </div>
+            ) : null}
+          </CardContent>
+        </Card>
+
+        <Card>
+          <CardHeader>
+            <CardTitle>Performance &amp; Business</CardTitle>
+            <CardDescription>A concise view of published performance and current earnings.</CardDescription>
+          </CardHeader>
+          <CardContent className="space-y-4">
+            <div className="grid gap-3 sm:grid-cols-2">
+              <div className="rounded-lg border bg-background/40 p-4">
+                <p className="text-sm text-muted-foreground">Selections won</p>
+                <p className="mt-1 font-mono text-2xl text-white">
+                  {overallSelectionRecord.wins}/{overallSelectionRecord.graded}
+                </p>
+                <p className="mt-1 text-xs text-muted-foreground">Graded selections in recorded results</p>
+              </div>
+              <div className="rounded-lg border bg-background/40 p-4">
+                <p className="text-sm text-muted-foreground">Current period balance</p>
+                <p className="mt-1 font-mono text-2xl text-white">{formatCredits(recordedEarnings)}</p>
+                <p className="mt-1 text-xs text-muted-foreground">Your 70% share from qualifying Credit use</p>
+              </div>
+            </div>
+            <div className="flex flex-wrap gap-2">
+              <Button asChild variant="outline">
+                <Link href="/tipster/#meeting-cards">Manage Meeting Cards</Link>
+              </Button>
+              <Button asChild variant="outline">
+                <Link href="/tipster/#earnings">View Earnings Ledger</Link>
+              </Button>
+              <Button asChild variant="outline">
+                <Link href={`/tipsters/${tipster?.slug ?? ""}/`}>View Public Profile</Link>
+              </Button>
+            </div>
+          </CardContent>
+        </Card>
+        </div>
+      </div>
+
+      <Card id="client-theme" className={activeView === "client-theme" ? "scroll-mt-24" : "hidden"}>
         <CardHeader>
           <CardTitle className="flex items-center gap-2">
             <Palette className="size-5 text-primary" />
-            Client-facing theme
+            Client Theme Settings
           </CardTitle>
           <CardDescription>
-            Choose the colors clients see on your public profile and your meeting cards. Changes do not affect another tipster.
+            Choose the colors clients see on your public profile and meeting cards. These settings affect only your Tipster account.
           </CardDescription>
         </CardHeader>
         <CardContent className="grid gap-5 lg:grid-cols-[minmax(0,0.8fr)_minmax(0,1.2fr)]">
@@ -616,10 +760,12 @@ export function TipsterDashboardClient() {
         </CardContent>
       </Card>
 
-      <Card>
+      {activeView === "profile" ? <ProfileSettingsClient /> : null}
+
+      <Card id="meeting-cards" className={activeView === "meeting-cards" ? "scroll-mt-24" : "hidden"}>
         <CardHeader className="flex-row items-start justify-between gap-4">
           <div>
-            <CardTitle>Upcoming horse-racing meetings</CardTitle>
+            <CardTitle>Upcoming Horse-Racing Meetings</CardTitle>
             <CardDescription>
               Create your own independent Tipster version for each venue/date. Race facts are shared,
               but your selections, comments, price, revisions, and clients remain attached only to your card.
@@ -671,9 +817,9 @@ export function TipsterDashboardClient() {
         </CardContent>
       </Card>
 
-      <Card>
+      <Card className={activeView === "meeting-cards" ? "" : "hidden"}>
         <CardHeader>
-          <CardTitle>Your meeting cards</CardTitle>
+          <CardTitle>Your Meeting Cards</CardTitle>
           <CardDescription>
             Only cards owned by your Tipster account appear here. Another Tipster can create a separate
             version for the same factual race meeting.
@@ -834,9 +980,9 @@ export function TipsterDashboardClient() {
         </CardContent>
       </Card>
 
-      <Card>
+      <Card id="packages" className={activeView === "packages" ? "scroll-mt-24" : "hidden"}>
         <CardHeader>
-          <CardTitle>Subscription packages</CardTitle>
+          <CardTitle>Subscription Packages</CardTitle>
           <CardDescription>
             Access starts immediately, uses calendar months, and never auto-renews.
           </CardDescription>
@@ -870,11 +1016,11 @@ export function TipsterDashboardClient() {
         </CardContent>
       </Card>
 
-      <Card>
+      <Card id="earnings" className={activeView === "earnings" ? "scroll-mt-24" : "hidden"}>
         <CardHeader>
-          <CardTitle>Recent earnings ledger</CardTitle>
+          <CardTitle>Recent Earnings Ledger</CardTitle>
           <CardDescription>
-            Meeting-card and subscription sales are identified separately. Meeting settlement never reverses a subscription sale.
+            Full history remains visible here. The balance above includes only entries recorded after the new 10/20/70 period started.
           </CardDescription>
         </CardHeader>
         <CardContent>

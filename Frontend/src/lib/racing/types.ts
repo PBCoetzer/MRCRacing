@@ -3,6 +3,7 @@ export type TipCardStatus = "draft" | "coming_soon" | "published" | "settled" | 
 export type RaceMeeting = {
   id: string;
   venue: string;
+  venue_slug?: string;
   country_code: string;
   meeting_date: string;
   first_race_at: string;

@@ -141,6 +141,11 @@
 }
 
 @layer utilities {
+  .site-container {
+    width: calc(100% - 2rem);
+    margin-inline: auto;
+  }
+
   .font-heading {
     font-family: var(--font-bungee), var(--font-nunito-sans), ui-sans-serif, system-ui, sans-serif;
   }
@@ -151,6 +156,18 @@
 
   .font-mono {
     font-family: var(--font-jetbrains-mono), ui-monospace, monospace;
+  }
+}
+
+@media (min-width: 640px) {
+  .site-container {
+    width: 90%;
+  }
+}
+
+@media (min-width: 1280px) {
+  .site-container {
+    width: 80%;
   }
 }
 

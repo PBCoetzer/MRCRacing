@@ -2,6 +2,7 @@ import { MfaSettingsClient } from "@/components/auth/mfa-settings-client";
 import { DashboardShell } from "@/components/dashboard-shell";
 
 const securityNav = [
+  { label: "My profile", href: "/account/profile/" },
   { label: "Profile security & 2FA", href: "/account/security/" },
   { label: "Public blog", href: "/blog/" },
 ];

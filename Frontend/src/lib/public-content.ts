@@ -6,6 +6,8 @@ import { professionalSourceName, publicSourceUrl } from "@/lib/racing/source-bra
 // manifest from being reused by a later automated deployment.
 const publicContentBuildId =
   process.env.MRC_CONTENT_BUILD_ID?.trim() || new Date().toISOString();
+const publicContentSupabaseUrl =
+  process.env.MRC_BUILD_SUPABASE_URL?.trim() || supabaseUrl;
 
 export type PublicManifest = {
   generatedAt: string;
@@ -109,10 +111,10 @@ export function publicStorageUrl(bucket: string, path: string | null) {
 }
 
 export async function publicRpc<T>(name: string, body: Record<string, unknown> = {}) {
-  if (!supabaseUrl || !supabasePublishableKey) {
+  if (!publicContentSupabaseUrl || !supabasePublishableKey) {
     throw new Error("Public Supabase build credentials are not configured.");
   }
-  const response = await fetch(`${supabaseUrl}/rest/v1/rpc/${name}`, {
+  const response = await fetch(`${publicContentSupabaseUrl}/rest/v1/rpc/${name}`, {
     method: "POST",
     headers: {
       apikey: supabasePublishableKey,

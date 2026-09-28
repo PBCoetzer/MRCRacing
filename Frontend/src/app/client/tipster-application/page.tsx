@@ -4,9 +4,10 @@ import { TipsterApplicationClient } from "@/components/tipster/tipster-applicati
 const clientNav = [
   { label: "Client dashboard", href: "/client/" },
   { label: "Subscriptions", href: "/client/#subscriptions" },
-  { label: "Meeting Cards", href: "/client/#unlocked-tips" },
+  { label: "Meeting Cards", href: "/client/#meeting-cards" },
   { label: "Discover Tipsters", href: "/client/#discover-tipsters" },
-  { label: "Become a Tipster", href: "/client/tipster-application/" },
+  { label: "My profile", href: "/client/#profile" },
+  { label: "Become a Tipster", href: "/client/#become-tipster" },
 ];
 
 export default function TipsterApplicationPage() {

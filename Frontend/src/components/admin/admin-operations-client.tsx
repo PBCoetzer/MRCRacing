@@ -5,20 +5,15 @@ import { useCallback, useEffect, useState } from "react";
 import {
   Activity,
   AlertCircle,
-  Banknote,
   BellRing,
   CalendarClock,
   CheckCircle2,
-  CreditCard,
-  Gift,
   Loader2,
   MailPlus,
   PackagePlus,
-  ReceiptText,
   RefreshCw,
   Search,
   Settings,
-  UserPlus,
   Users,
 } from "lucide-react";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
@@ -29,7 +24,7 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/com
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
-import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import { Tabs, TabsContent } from "@/components/ui/tabs";
 import { Textarea } from "@/components/ui/textarea";
 import { formatRaceDateTime } from "@/lib/racing/format";
 import { professionalSourceName } from "@/lib/racing/source-brand";
@@ -39,6 +34,7 @@ type PlatformSettings = {
   commission_rate: number;
   horse_care_rate: number;
   tipster_rate: number;
+  revenue_split_effective_at: string;
   updated_at: string;
 };
 
@@ -227,6 +223,37 @@ type AccessTraceResult = {
   termsVersion: string;
 };
 
+const adminOperationViews = new Set([
+  "overview",
+  "meetings",
+  "registrations",
+  "payments",
+  "internal-ledger",
+  "tipster-packages",
+  "disputes",
+  "notifications",
+  "packages",
+  "system",
+]);
+
+function operationView(value: string) {
+  return adminOperationViews.has(value) ? value : "overview";
+}
+
+function isCurrentRevenuePolicy(entry: InternalLedgerEntry) {
+  return entry.commissionRate === 20
+    && entry.horseCareRate === 10
+    && entry.tipsterRate === 70;
+}
+
+function revenuePolicyLabel(entry: InternalLedgerEntry) {
+  if (isCurrentRevenuePolicy(entry)) {
+    return "Current · Horse 10 / MRC 20 / Tipster 70";
+  }
+
+  return `Settled history · Horse ${entry.horseCareRate} / MRC ${entry.commissionRate} / Tipster ${entry.tipsterRate}`;
+}
+
 function errorMessage(error: unknown, fallback: string) {
   if (error instanceof Error) {
     return error.message;
@@ -291,6 +318,7 @@ function providerDeliveryVariant(status: AuthEmailProviderStatus) {
 }
 
 export function AdminOperationsClient() {
+  const [activeView, setActiveView] = useState("overview");
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
   const [message, setMessage] = useState("");
@@ -359,7 +387,7 @@ export function AdminOperationsClient() {
           .eq("is_verified", true),
         supabase
           .from("platform_settings")
-          .select("commission_rate,horse_care_rate,tipster_rate,updated_at")
+          .select("commission_rate,horse_care_rate,tipster_rate,revenue_split_effective_at,updated_at")
           .eq("singleton", true)
           .maybeSingle(),
         supabase
@@ -472,6 +500,24 @@ export function AdminOperationsClient() {
 
     return () => window.clearTimeout(timeoutId);
   }, [loadOperations]);
+
+  useEffect(() => {
+    const syncView = (event?: Event) => {
+      const requestedView = event instanceof CustomEvent && typeof event.detail === "string"
+        ? event.detail
+        : window.location.hash.slice(1);
+      setActiveView(operationView(requestedView));
+    };
+
+    syncView();
+    window.addEventListener("hashchange", syncView);
+    window.addEventListener("mrc-dashboard-view-change", syncView);
+
+    return () => {
+      window.removeEventListener("hashchange", syncView);
+      window.removeEventListener("mrc-dashboard-view-change", syncView);
+    };
+  }, []);
 
   async function processNotificationWorker() {
     const supabase = createClient();
@@ -678,6 +724,9 @@ export function AdminOperationsClient() {
   ).length;
   const paymentPageCount = Math.max(1, Math.ceil(paymentTotal / 25));
   const internalLedgerPageCount = Math.max(1, Math.ceil(internalLedgerTotal / 25));
+  const failedEmails = outbox.filter((item) => item.status === "failed").length;
+  const latestPayment = gatewayPayments[0];
+  const latestRegistration = registrationDiagnostics[0];
 
   return (
     <div className="space-y-6">
@@ -701,56 +750,106 @@ export function AdminOperationsClient() {
         </Button>
       </div>
 
-      <MfaProfileCard required />
+      <Tabs value={activeView} onValueChange={setActiveView}>
+        <TabsContent value="overview" className="space-y-6">
+          <MfaProfileCard required />
 
-      <div className="grid gap-4 md:grid-cols-4">
-        {[
-          ["Registered users", userCount, "Directory"],
-          ["Verified tipsters", verifiedTipsters, "Profiles"],
-          ["Open disputes", openDisputes, "Review"],
-          ["Queued emails", queuedEmails, "Worker"],
-        ].map(([label, value, action]) => (
-          <Card key={String(label)}>
-            <CardHeader className="space-y-0 pb-2">
-              <CardDescription>{label}</CardDescription>
-              <CardTitle className="font-mono text-2xl">{Number(value).toLocaleString()}</CardTitle>
-            </CardHeader>
-            <CardContent>
-              <Badge variant={action === "Review" ? "destructive" : "secondary"}>{action}</Badge>
-            </CardContent>
-          </Card>
-        ))}
-      </div>
-
-      <Card>
-        <CardHeader className="flex-row items-start justify-between gap-4">
-          <div>
-            <CardTitle>User administration</CardTitle>
-            <CardDescription>
-              Search names, email, phone, status, roles, verification, and test access.
-            </CardDescription>
+          <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
+            {[
+              ["Registered Users", userCount, "Directory"],
+              ["Verified Tipsters", verifiedTipsters, "Profiles"],
+              ["Open Refund Requests", openDisputes, "Review"],
+              ["Queued Notifications", queuedEmails, "Worker"],
+            ].map(([label, value, action]) => (
+              <Card key={String(label)}>
+                <CardHeader className="space-y-0 pb-2">
+                  <CardDescription>{label}</CardDescription>
+                  <CardTitle className="font-mono text-2xl">{Number(value).toLocaleString()}</CardTitle>
+                </CardHeader>
+                <CardContent>
+                  <Badge variant={action === "Review" ? "destructive" : "secondary"}>{action}</Badge>
+                </CardContent>
+              </Card>
+            ))}
           </div>
-          <Button asChild>
-            <Link href="/admin/users/">
-              <Users className="size-4" />
-              Open directory
-            </Link>
-          </Button>
-        </CardHeader>
-      </Card>
 
-      <Tabs defaultValue="meetings">
-        <TabsList className="flex h-auto flex-wrap">
-          <TabsTrigger value="meetings"><CalendarClock className="size-4" />Test meetings</TabsTrigger>
-          <TabsTrigger value="registrations"><UserPlus className="size-4" />Registrations</TabsTrigger>
-          <TabsTrigger value="payments"><CreditCard className="size-4" />Payments</TabsTrigger>
-          <TabsTrigger value="internal-ledger"><ReceiptText className="size-4" />In-house ledger</TabsTrigger>
-          <TabsTrigger value="tipster-packages"><PackagePlus className="size-4" />Tipster packages</TabsTrigger>
-          <TabsTrigger value="disputes"><Banknote className="size-4" />Refund requests</TabsTrigger>
-          <TabsTrigger value="notifications"><BellRing className="size-4" />Notifications</TabsTrigger>
-          <TabsTrigger value="packages"><Gift className="size-4" />Credit packages</TabsTrigger>
-          <TabsTrigger value="system"><Settings className="size-4" />System</TabsTrigger>
-        </TabsList>
+          <div className="grid gap-4 lg:grid-cols-2">
+            <Card>
+              <CardHeader>
+                <CardTitle>Operational Focus</CardTitle>
+                <CardDescription>Live items that may require administrator attention.</CardDescription>
+              </CardHeader>
+              <CardContent className="grid gap-3 sm:grid-cols-2">
+                <Link className="rounded-lg border bg-background/45 p-4 transition-colors hover:border-brand-cyan/50" href="/admin/#notifications">
+                  <p className="text-sm text-muted-foreground">Notification Queue</p>
+                  <p className="mt-1 font-mono text-2xl">{queuedEmails}</p>
+                  <p className="mt-1 text-xs text-muted-foreground">{failedEmails} failed delivery attempt(s)</p>
+                </Link>
+                <Link className="rounded-lg border bg-background/45 p-4 transition-colors hover:border-brand-cyan/50" href="/admin/#disputes">
+                  <p className="text-sm text-muted-foreground">Refund Review</p>
+                  <p className="mt-1 font-mono text-2xl">{openDisputes}</p>
+                  <p className="mt-1 text-xs text-muted-foreground">Open client request(s)</p>
+                </Link>
+                <Link className="rounded-lg border bg-background/45 p-4 transition-colors hover:border-brand-cyan/50" href="/admin/#registrations">
+                  <p className="text-sm text-muted-foreground">Registrations</p>
+                  <p className="mt-1 font-mono text-2xl">{registrationTotal}</p>
+                  <p className="mt-1 text-xs text-muted-foreground">
+                    Latest: {latestRegistration?.displayName || latestRegistration?.email || "No recent registration"}
+                  </p>
+                </Link>
+                <Link className="rounded-lg border bg-background/45 p-4 transition-colors hover:border-brand-cyan/50" href="/admin/#payments">
+                  <p className="text-sm text-muted-foreground">Gateway Payments</p>
+                  <p className="mt-1 font-mono text-2xl">{paymentTotal}</p>
+                  <p className="mt-1 text-xs text-muted-foreground">
+                    Latest status: {latestPayment?.status ?? "No payment recorded"}
+                  </p>
+                </Link>
+              </CardContent>
+            </Card>
+
+            <Card>
+              <CardHeader>
+                <CardTitle>Current Revenue Policy</CardTitle>
+                <CardDescription>Applied only when Purchased Credits are used on paid content.</CardDescription>
+              </CardHeader>
+              <CardContent className="space-y-4">
+                <div className="grid grid-cols-3 gap-3">
+                  {[
+                    ["Horse Care", settings?.horse_care_rate ?? 10],
+                    ["MRC Platform", settings?.commission_rate ?? 20],
+                    ["Tipster", settings?.tipster_rate ?? 70],
+                  ].map(([label, value]) => (
+                    <div key={String(label)} className="rounded-lg border bg-background/45 p-3 text-center">
+                      <p className="text-xs text-muted-foreground">{label}</p>
+                      <p className="mt-1 font-mono text-xl">{Number(value)}%</p>
+                    </div>
+                  ))}
+                </div>
+                <p className="text-xs text-muted-foreground">Reward Credits and Credit top-ups do not create allocations.</p>
+                <Button asChild variant="outline">
+                  <Link href="/admin/revenue/">Open Revenue Split</Link>
+                </Button>
+              </CardContent>
+            </Card>
+          </div>
+
+          <Card>
+            <CardHeader className="flex-row items-start justify-between gap-4">
+              <div>
+                <CardTitle>User Administration</CardTitle>
+                <CardDescription>
+                  Search names, email, phone, status, roles, verification, and test access.
+                </CardDescription>
+              </div>
+              <Button asChild>
+                <Link href="/admin/users/">
+                  <Users className="size-4" />
+                  Open Directory
+                </Link>
+              </Button>
+            </CardHeader>
+          </Card>
+        </TabsContent>
 
         <TabsContent value="meetings">
           <Card>
@@ -1042,12 +1141,19 @@ export function AdminOperationsClient() {
         <TabsContent id="internal-ledger" value="internal-ledger">
           <Card>
             <CardHeader>
-              <CardTitle>MRC in-house ledger</CardTitle>
+              <CardTitle>MRC In-House Ledger</CardTitle>
               <CardDescription>
-                Full client purchase prices, wallet funding splits, tipster earnings, and approved refund reversals.
+                Full client purchase prices, wallet funding splits, recorded allocation policies, tipster earnings, and approved refund reversals.
               </CardDescription>
             </CardHeader>
             <CardContent className="space-y-4">
+              <Alert>
+                <Activity className="size-4" />
+                <AlertTitle>Current Policy: 10% Horse Care / 20% MRC Platform / 70% Tipster</AlertTitle>
+                <AlertDescription>
+                  The new policy applies only to Purchased Credits used from {settings?.revenue_split_effective_at ? formatRaceDateTime(settings.revenue_split_effective_at) : "the policy activation date"}. Earlier rows remain at their original settled percentages so the financial audit history is not rewritten.
+                </AlertDescription>
+              </Alert>
               <Alert>
                 <CheckCircle2 className="size-4" />
                 <AlertTitle>Automatic refunds are disabled</AlertTitle>
@@ -1055,24 +1161,83 @@ export function AdminOperationsClient() {
                   New refunds require a client request and administrator approval. Historic automatic reversals remain visible because financial audit records are immutable.
                 </AlertDescription>
               </Alert>
-              <Table>
-                <TableHeader>
-                  <TableRow>
-                    <TableHead>Date &amp; time</TableHead>
-                    <TableHead>Client</TableHead>
-                    <TableHead>Tipster</TableHead>
-                    <TableHead>Purchase</TableHead>
-                    <TableHead>Entry</TableHead>
-                    <TableHead>Purchase total</TableHead>
-                    <TableHead>Funding</TableHead>
-                    <TableHead>MRC fee</TableHead>
-                    <TableHead>Horse Care</TableHead>
-                    <TableHead>Tipster net</TableHead>
-                  </TableRow>
-                </TableHeader>
-                <TableBody>
-                  {internalLedger.map((entry) => (
-                    <TableRow key={entry.id}>
+              <div className="grid gap-3 xl:grid-cols-2 min-[2200px]:hidden">
+                {internalLedger.map((entry) => (
+                  <article key={entry.id} className="space-y-4 rounded-lg border bg-background/35 p-4">
+                    <div className="flex flex-wrap items-start justify-between gap-3">
+                      <div>
+                        <p className="font-medium">{entry.sourceLabel}</p>
+                        <p className="mt-1 text-xs text-muted-foreground">{formatRaceDateTime(entry.createdAt)}</p>
+                        <p className="mt-1 font-mono text-xs text-muted-foreground">Ref {entry.purchaseId.slice(0, 8)} · {entry.purchaseStatus}</p>
+                      </div>
+                      <Badge variant={isCurrentRevenuePolicy(entry) ? "default" : "secondary"}>
+                        {revenuePolicyLabel(entry)}
+                      </Badge>
+                    </div>
+                    <div className="grid gap-3 sm:grid-cols-2">
+                      <div className="rounded-md border p-3">
+                        <p className="text-xs text-muted-foreground">Client</p>
+                        <p className="mt-1 font-medium">{entry.clientName || "Name unavailable"}</p>
+                        <p className="break-all text-xs text-muted-foreground">{entry.clientEmail ?? "Email unavailable"}</p>
+                      </div>
+                      <div className="rounded-md border p-3">
+                        <p className="text-xs text-muted-foreground">Tipster</p>
+                        <p className="mt-1 font-medium">{entry.tipsterName}</p>
+                        <p className="break-all text-xs text-muted-foreground">{entry.tipsterEmail ?? "Email unavailable"}</p>
+                      </div>
+                    </div>
+                    <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
+                      <div className="rounded-md border p-3">
+                        <p className="text-xs text-muted-foreground">Purchase Total</p>
+                        <p className="mt-1 font-mono font-semibold">{entry.grossCredits.toLocaleString("en-ZA")} Credits</p>
+                      </div>
+                      <div className="rounded-md border p-3">
+                        <p className="text-xs text-muted-foreground">MRC Platform · {entry.commissionRate}%</p>
+                        <p className="mt-1 font-mono font-semibold">{entry.platformFeeCredits.toLocaleString("en-ZA")} Credits</p>
+                      </div>
+                      <div className="rounded-md border p-3">
+                        <p className="text-xs text-muted-foreground">Horse Care · {entry.horseCareRate}%</p>
+                        <p className="mt-1 font-mono font-semibold">{entry.horseCareCredits.toLocaleString("en-ZA")} Credits</p>
+                      </div>
+                      <div className="rounded-md border p-3">
+                        <p className="text-xs text-muted-foreground">Tipster · {entry.tipsterRate}%</p>
+                        <p className="mt-1 font-mono font-semibold">{entry.tipsterNetCredits.toLocaleString("en-ZA")} Credits</p>
+                      </div>
+                    </div>
+                    <div className="flex flex-wrap items-center gap-2 text-xs text-muted-foreground">
+                      <Badge variant="outline">{entry.purchaseType} sale</Badge>
+                      <span>{entry.purchasedCredits.toLocaleString("en-ZA")} Purchased</span>
+                      <span>{entry.rewardCredits.toLocaleString("en-ZA")} Reward excluded</span>
+                    </div>
+                  </article>
+                ))}
+                {!internalLedger.length ? (
+                  <p className="rounded-lg border py-8 text-center text-sm text-muted-foreground">
+                    No client-to-tipster ledger entries have been recorded.
+                  </p>
+                ) : null}
+              </div>
+
+              <div className="hidden min-[2200px]:block">
+                <Table className="min-w-[1800px]">
+                  <TableHeader>
+                    <TableRow>
+                      <TableHead>Date &amp; Time</TableHead>
+                      <TableHead>Client</TableHead>
+                      <TableHead>Tipster</TableHead>
+                      <TableHead>Purchase</TableHead>
+                      <TableHead>Entry</TableHead>
+                      <TableHead>Policy</TableHead>
+                      <TableHead>Purchase Total</TableHead>
+                      <TableHead>Funding</TableHead>
+                      <TableHead>MRC Platform</TableHead>
+                      <TableHead>Horse Care</TableHead>
+                      <TableHead>Tipster</TableHead>
+                    </TableRow>
+                  </TableHeader>
+                  <TableBody>
+                    {internalLedger.map((entry) => (
+                      <TableRow key={entry.id}>
                       <TableCell>{formatRaceDateTime(entry.createdAt)}</TableCell>
                       <TableCell>
                         <div className="max-w-72">
@@ -1118,6 +1283,11 @@ export function AdminOperationsClient() {
                                 : "Legacy refund"}
                         </Badge>
                       </TableCell>
+                      <TableCell>
+                        <Badge variant={isCurrentRevenuePolicy(entry) ? "default" : "secondary"}>
+                          {revenuePolicyLabel(entry)}
+                        </Badge>
+                      </TableCell>
                       <TableCell className="font-mono font-semibold">
                         {entry.grossCredits.toLocaleString("en-ZA")} Credits
                       </TableCell>
@@ -1136,20 +1306,22 @@ export function AdminOperationsClient() {
                         <p className="font-mono">{entry.horseCareCredits.toLocaleString("en-ZA")} Credits</p>
                         <p className="text-xs text-muted-foreground">{entry.horseCareRate}% of cash-backed Credit use</p>
                       </TableCell>
-                      <TableCell className="font-mono font-semibold">
-                        {entry.tipsterNetCredits.toLocaleString("en-ZA")} Credits
+                      <TableCell>
+                        <p className="font-mono font-semibold">{entry.tipsterNetCredits.toLocaleString("en-ZA")} Credits</p>
+                        <p className="text-xs text-muted-foreground">{entry.tipsterRate}% of cash-backed Credit use</p>
                       </TableCell>
-                    </TableRow>
-                  ))}
-                  {!internalLedger.length ? (
-                    <TableRow>
-                      <TableCell colSpan={10} className="h-24 text-center text-muted-foreground">
-                        No client-to-tipster ledger entries have been recorded.
-                      </TableCell>
-                    </TableRow>
-                  ) : null}
-                </TableBody>
-              </Table>
+                      </TableRow>
+                    ))}
+                    {!internalLedger.length ? (
+                      <TableRow>
+                        <TableCell colSpan={11} className="h-24 text-center text-muted-foreground">
+                          No client-to-tipster ledger entries have been recorded.
+                        </TableCell>
+                      </TableRow>
+                    ) : null}
+                  </TableBody>
+                </Table>
+              </div>
 
               <div className="flex flex-col gap-3 border-t pt-4 sm:flex-row sm:items-center sm:justify-between">
                 <p className="text-sm text-muted-foreground">

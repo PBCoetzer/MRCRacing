@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import { useEffect, useState } from "react";
-import { KeyRound, Loader2, ShieldCheck, Smartphone } from "lucide-react";
+import { ClipboardCheck, KeyRound, Loader2, ShieldCheck, Smartphone } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
@@ -10,6 +10,8 @@ import { resolveMfaProfileStatus } from "@/lib/auth/mfa-status";
 import { createClient } from "@/lib/supabase/client";
 
 type MfaProfileCardProps = {
+  href?: string;
+  presentation?: "requirements" | "security";
   required?: boolean;
 };
 
@@ -25,7 +27,11 @@ type MfaFactorRow = {
   status: string;
 };
 
-export function MfaProfileCard({ required = false }: MfaProfileCardProps) {
+export function MfaProfileCard({
+  href = "/account/security/",
+  presentation = "security",
+  required = false,
+}: MfaProfileCardProps) {
   const [state, setState] = useState<SecurityState>({
     currentLevel: null,
     error: "",
@@ -93,6 +99,17 @@ export function MfaProfileCard({ required = false }: MfaProfileCardProps) {
     verifiedFactorCount: state.verifiedFactorCount,
     required,
   });
+  const requirementsPresentation = presentation === "requirements";
+  const statusBadge = state.loading
+    ? "Checking"
+    : state.error
+      ? "Unavailable"
+      : requirementsPresentation
+        ? status.protected ? "Up to date" : "1 action required"
+        : status.badge;
+  const actionLabel = requirementsPresentation
+    ? "Review profile requirements"
+    : state.loading ? "Open account security" : status.action;
 
   return (
     <Card className={status.protected ? "border-brand-cyan/45" : "border-brand-gold/35"}>
@@ -100,11 +117,17 @@ export function MfaProfileCard({ required = false }: MfaProfileCardProps) {
         <div className="flex flex-wrap items-start justify-between gap-3">
           <div>
             <CardTitle className="flex items-center gap-2">
-              <ShieldCheck className="size-5 text-brand-cyan" />
-              Profile security and 2FA
+              {requirementsPresentation ? (
+                <ClipboardCheck className="size-5 text-brand-cyan" />
+              ) : (
+                <ShieldCheck className="size-5 text-brand-cyan" />
+              )}
+              {requirementsPresentation ? "Profile requirements" : "Profile security and 2FA"}
             </CardTitle>
             <CardDescription className="mt-1">
-              Enable or manage an authenticator app for this account.
+              {requirementsPresentation
+                ? "Complete the account actions currently required by MRC. Future legal, privacy, or announcement acknowledgements can be added here."
+                : "Enable or manage an authenticator app for this account."}
             </CardDescription>
           </div>
           {state.loading ? (
@@ -112,7 +135,7 @@ export function MfaProfileCard({ required = false }: MfaProfileCardProps) {
           ) : state.error ? (
             <Badge variant="destructive">Unavailable</Badge>
           ) : (
-            <Badge variant={status.protected ? "default" : "outline"}>{status.badge}</Badge>
+            <Badge variant={status.protected ? "default" : "outline"}>{statusBadge}</Badge>
           )}
         </div>
       </CardHeader>
@@ -124,6 +147,9 @@ export function MfaProfileCard({ required = false }: MfaProfileCardProps) {
             <KeyRound className="mt-0.5 size-5 shrink-0 text-brand-gold" />
           )}
           <div className="space-y-1">
+            {requirementsPresentation ? (
+              <p className="text-sm font-semibold text-foreground">Two-factor authentication</p>
+            ) : null}
             <p className="text-sm text-foreground">{state.error || status.description}</p>
             <p className="text-xs leading-5 text-muted-foreground">
               A successful code verifies the current Supabase session, so 2FA is not requested on
@@ -132,10 +158,17 @@ export function MfaProfileCard({ required = false }: MfaProfileCardProps) {
           </div>
         </div>
         <Button asChild variant={status.protected ? "outline" : "default"}>
-          <Link href="/account/security/">
-            <ShieldCheck className="size-4" />
-            {state.loading ? "Open account security" : status.action}
-          </Link>
+          {href.startsWith("/client/#") ? (
+            <a href={href}>
+              <ShieldCheck className="size-4" />
+              {actionLabel}
+            </a>
+          ) : (
+            <Link href={href}>
+              <ShieldCheck className="size-4" />
+              {actionLabel}
+            </Link>
+          )}
         </Button>
       </CardContent>
     </Card>

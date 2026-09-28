@@ -8,7 +8,7 @@ export default function AdminPage() {
       allowedRoles={["administrator"]}
       accessDescription="the administrator dashboard"
       accessTitle="Administrator access required"
-      title="Admin dashboard"
+      title="Admin Dashboard"
       description="Operational control for users, tipsters, fixtures, credits, payments, announcements, API keys, roles, permissions, and audit logs."
       nav={adminNav}
     >

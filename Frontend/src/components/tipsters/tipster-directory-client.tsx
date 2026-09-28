@@ -250,7 +250,7 @@ export function TipsterDirectoryClient() {
   return (
     <main>
       <section className="border-b border-brand-gold/20 bg-brand-purple-deep text-white">
-        <div className="mx-auto w-full max-w-7xl px-4 py-14 sm:px-6 lg:px-8">
+        <div className="site-container py-14">
           <Badge className="bg-brand-gold text-brand-purple-deep">
             Verified profiles
           </Badge>
@@ -263,7 +263,7 @@ export function TipsterDirectoryClient() {
           </p>
         </div>
       </section>
-      <section className="mx-auto w-full max-w-7xl space-y-12 px-4 py-12 sm:px-6 lg:px-8">
+      <section className="site-container space-y-12 py-12">
         {error ? (
           <Alert variant="destructive">
             <AlertTriangle className="size-4" />
