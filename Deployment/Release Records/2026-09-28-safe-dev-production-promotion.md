@@ -113,3 +113,16 @@ The Xneelo helper verified 596 local files, uploaded 541 changed files, retained
 The first organic post-cutover content purchase must be checked against allocation version `content-spend-10-20-70-v2-forward-only`. Its Purchased Credit portion must reconcile exactly to 10/20/70 and its Reward Credit portion must contribute zero. Reconciliation is repeated at one hour and 24 hours without modifying financial history.
 
 If a later discrepancy appears, freeze financial operations immediately and apply a forward-only correction. Never restore an old database dump over new transactions or delete immutable ledger history.
+
+## One-hour monitoring checkpoint
+
+Completed read-only at `2026-09-28T03:29:15.002743Z`, after the required one-hour threshold.
+
+- Revenue period, effective timestamp, exclusions, and 10/20/70 rates: valid.
+- Opening paid settlement totals: valid.
+- Historical purchase, Tipster earnings, and Horse Care fingerprints: unchanged.
+- Wallets checked: 248; invalid or component-mismatched wallets: 0.
+- Duplicate purchase, Credit transaction, earnings, and Horse Care accrual keys: 0.
+- Current-period content purchases: 0; first organic purchase is still pending.
+- Current-period Horse Care, platform, and Tipster balances: 0 Credits.
+- The 24-hour reconciliation is not due yet.

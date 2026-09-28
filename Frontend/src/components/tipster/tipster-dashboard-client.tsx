@@ -4,11 +4,13 @@ import Link from "next/link";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   CalendarDays,
+  CheckCircle2,
   ChevronLeft,
   ChevronRight,
   Coins,
   Database,
   FilePenLine,
+  HandCoins,
   Loader2,
   PackageCheck,
   Palette,
@@ -42,17 +44,54 @@ import type {
   TipsterProfile,
 } from "@/lib/racing/types";
 
-type EarningRow = {
+type FinanceEntry = {
   id: string;
-  entry_type: "sale" | "refund" | "allocation_adjustment";
-  purchase_type: "meeting" | "subscription";
-  source_label: string;
-  purchaser_email: string | null;
-  gross_coins: number;
-  platform_fee_coins: number;
-  horse_care_coins: number;
-  net_coins: number;
-  created_at: string;
+  createdAt: string;
+  entryType: "sale" | "refund" | "allocation_adjustment";
+  purchaseType: "meeting" | "subscription";
+  purchaseStatus: string;
+  sourceLabel: string;
+  purchasedCredits: number;
+  rewardCreditsExcluded: number;
+  horseCareCredits: number;
+  platformCredits: number;
+  tipsterCredits: number;
+  payoutRequestId: string | null;
+  payoutStatus: "available" | "requested" | "paid" | "received" | "not_applicable";
+  allocationVersion: string;
+};
+
+type FinancePayoutRequest = {
+  requestId: string;
+  status: "requested" | "paid" | "received";
+  amountCredits: number;
+  requestedThrough: string;
+  requestedAt: string;
+  paidAt: string | null;
+  paymentReference: string | null;
+  adminNote: string | null;
+  receivedAt: string | null;
+};
+
+type TipsterFinanceDashboard = {
+  policy: {
+    allocationVersion: string;
+    effectiveAt: string;
+    horseCareRate: number;
+    platformRate: number;
+    tipsterRate: number;
+    rewardCreditsExcluded: boolean;
+  };
+  summary: {
+    totalEarnedCredits: number;
+    availableToRequestCredits: number;
+    requestedCredits: number;
+    paidAwaitingConfirmationCredits: number;
+    receivedCredits: number;
+  };
+  entries: FinanceEntry[];
+  requests: FinancePayoutRequest[];
+  generatedAt: string;
 };
 
 type PackageDraft = Record<1 | 3 | 6 | 12, string>;
@@ -166,16 +205,17 @@ export function TipsterDashboardClient() {
   const [checkedAt, setCheckedAt] = useState(() => Date.now());
   const [savingPackages, setSavingPackages] = useState(false);
   const [savingTheme, setSavingTheme] = useState(false);
+  const [requestingPayout, setRequestingPayout] = useState(false);
+  const [confirmingPayoutId, setConfirmingPayoutId] = useState<string | null>(null);
   const [message, setMessage] = useState("");
   const [error, setError] = useState("");
   const [tipster, setTipster] = useState<TipsterProfile | null>(null);
   const [meetings, setMeetings] = useState<RaceMeeting[]>([]);
   const [cards, setCards] = useState<TipCard[]>([]);
   const [packages, setPackages] = useState<TipsterPackage[]>([]);
-  const [earnings, setEarnings] = useState<EarningRow[]>([]);
+  const [finance, setFinance] = useState<TipsterFinanceDashboard | null>(null);
   const [cardFixtures, setCardFixtures] = useState<CardFixture[]>([]);
   const [cardOutcomes, setCardOutcomes] = useState<CardOutcome[]>([]);
-  const [recordedEarnings, setRecordedEarnings] = useState(0);
   const [packageDraft, setPackageDraft] = useState<PackageDraft>(emptyPackageDraft);
   const [themeDraft, setThemeDraft] = useState<TipsterTheme>(defaultTipsterTheme);
   const [meetingPageIndex, setMeetingPageIndex] = useState(0);
@@ -252,8 +292,7 @@ export function TipsterDashboardClient() {
         meetingResult,
         cardResult,
         packageResult,
-        earningResult,
-        earningTotalResult,
+        financeResult,
       ] = await Promise.all([
         supabase
           .from("race_meetings")
@@ -269,16 +308,14 @@ export function TipsterDashboardClient() {
           .select("id,tipster_id,name,duration_months,coin_price,is_active,created_at")
           .eq("tipster_id", verifiedTipster.id)
           .order("duration_months"),
-        supabase.rpc("get_my_tipster_earnings_ledger_v2", { p_limit: 20 }),
-        supabase.rpc("get_my_tipster_recorded_earnings"),
+        supabase.rpc("get_my_tipster_finance_dashboard", { p_limit: 100 }),
       ]);
 
       const firstError =
         meetingResult.error ??
         cardResult.error ??
         packageResult.error ??
-        earningResult.error ??
-        earningTotalResult.error;
+        financeResult.error;
 
       if (firstError) {
         throw firstError;
@@ -320,10 +357,9 @@ export function TipsterDashboardClient() {
       setMeetings((meetingResult.data ?? []) as RaceMeeting[]);
       setCards(loadedCards);
       setPackages(loadedPackages);
-      setEarnings((earningResult.data ?? []) as EarningRow[]);
+      setFinance(financeResult.data as TipsterFinanceDashboard);
       setCardFixtures(loadedCardFixtures);
       setCardOutcomes(loadedCardOutcomes);
-      setRecordedEarnings(Number(earningTotalResult.data ?? 0));
       setPackageDraft(nextDraft);
       if (!themeDraftTouched.current) {
         setThemeDraft(resolveTipsterTheme(verifiedTipster));
@@ -486,6 +522,63 @@ export function TipsterDashboardClient() {
     }
   }
 
+  async function requestPayout() {
+    const supabase = createClient();
+
+    if (!supabase) {
+      setError("Supabase is not configured.");
+      return;
+    }
+
+    setRequestingPayout(true);
+    setError("");
+    setMessage("");
+
+    try {
+      const { data, error: requestError } = await supabase.rpc("request_my_tipster_payout");
+      if (requestError) {
+        throw requestError;
+      }
+
+      const result = data as { amountCredits: number };
+      setMessage(`Payout requested for ${formatCredits(result.amountCredits)}. New earnings will accumulate in your available balance.`);
+      await loadDashboard(true);
+    } catch (requestError) {
+      setError(requestError instanceof Error ? requestError.message : "Could not request a payout.");
+    } finally {
+      setRequestingPayout(false);
+    }
+  }
+
+  async function confirmPayoutReceived(requestId: string) {
+    const supabase = createClient();
+
+    if (!supabase) {
+      setError("Supabase is not configured.");
+      return;
+    }
+
+    setConfirmingPayoutId(requestId);
+    setError("");
+    setMessage("");
+
+    try {
+      const { error: confirmError } = await supabase.rpc("confirm_my_tipster_payout_received", {
+        p_request_id: requestId,
+      });
+      if (confirmError) {
+        throw confirmError;
+      }
+
+      setMessage("Payment receipt confirmed. The payout remains in your permanent ledger history.");
+      await loadDashboard(true);
+    } catch (confirmError) {
+      setError(confirmError instanceof Error ? confirmError.message : "Could not confirm the payout receipt.");
+    } finally {
+      setConfirmingPayoutId(null);
+    }
+  }
+
   if (loading) {
     return (
       <Card>
@@ -505,6 +598,8 @@ export function TipsterDashboardClient() {
         theme_surface_color: themeDraft.surface,
       }
     : null;
+  const availableEarnings = Number(finance?.summary.availableToRequestCredits ?? 0);
+  const openPayoutRequest = finance?.requests.find((request) => request.status !== "received") ?? null;
 
   return (
     <div className="space-y-6">
@@ -558,8 +653,8 @@ export function TipsterDashboardClient() {
           },
           {
             label: "Current Period Balance",
-            value: formatCredits(recordedEarnings),
-            detail: "New 70% allocations after the settled opening balance",
+            value: formatCredits(availableEarnings),
+            detail: "Available new-period earnings not assigned to a payout",
             icon: Coins,
           },
         ].map((stat) => (
@@ -683,8 +778,8 @@ export function TipsterDashboardClient() {
               </div>
               <div className="rounded-lg border bg-background/40 p-4">
                 <p className="text-sm text-muted-foreground">Current period balance</p>
-                <p className="mt-1 font-mono text-2xl text-white">{formatCredits(recordedEarnings)}</p>
-                <p className="mt-1 text-xs text-muted-foreground">Your 70% share from qualifying Credit use</p>
+                <p className="mt-1 font-mono text-2xl text-white">{formatCredits(availableEarnings)}</p>
+                <p className="mt-1 text-xs text-muted-foreground">Available 70% earnings not assigned to a payout</p>
               </div>
             </div>
             <div className="flex flex-wrap gap-2">
@@ -1018,60 +1113,211 @@ export function TipsterDashboardClient() {
 
       <Card id="earnings" className={activeView === "earnings" ? "scroll-mt-24" : "hidden"}>
         <CardHeader>
-          <CardTitle>Recent Earnings Ledger</CardTitle>
+          <CardTitle className="flex items-center gap-2">
+            <HandCoins className="size-5 text-brand-cyan" />
+            Earnings &amp; Payout Ledger
+          </CardTitle>
           <CardDescription>
-            Full history remains visible here. The balance above includes only entries recorded after the new 10/20/70 period started.
+            This workspace includes only the forward 10/20/70 period. Settled legacy earnings are kept separately and cannot be requested again.
           </CardDescription>
         </CardHeader>
-        <CardContent>
-          <Table>
-            <TableHeader>
-              <TableRow>
-                <TableHead>Time</TableHead>
-                <TableHead>Source</TableHead>
-                <TableHead>Client email</TableHead>
-                <TableHead>Entry</TableHead>
-                <TableHead>Gross</TableHead>
-                <TableHead>MRC</TableHead>
-                <TableHead>Horse Care</TableHead>
-                <TableHead>Net</TableHead>
-              </TableRow>
-            </TableHeader>
-            <TableBody>
-              {earnings.map((entry) => (
-                <TableRow key={entry.id}>
-                  <TableCell>{formatRaceDateTime(entry.created_at)}</TableCell>
-                  <TableCell>
-                    <p className="font-medium">
-                      {entry.purchase_type === "meeting" ? "Meeting card" : "Subscription"}
-                    </p>
-                    <p className="max-w-72 text-xs text-muted-foreground">{entry.source_label}</p>
-                  </TableCell>
-                  <TableCell className="max-w-64 break-all text-sm">
-                    {entry.purchaser_email ?? "Email unavailable"}
-                  </TableCell>
-                  <TableCell>
-                    <Badge variant={entry.entry_type === "refund" ? "destructive" : "outline"}>
-                      {entry.entry_type === "allocation_adjustment"
-                        ? "10/20/70 adjustment"
-                        : `${entry.purchase_type} ${entry.entry_type}`}
-                    </Badge>
-                  </TableCell>
-                  <TableCell>{formatCredits(entry.gross_coins)}</TableCell>
-                  <TableCell>{formatCredits(entry.platform_fee_coins)}</TableCell>
-                  <TableCell>{formatCredits(entry.horse_care_coins)}</TableCell>
-                  <TableCell>{formatCredits(entry.net_coins)}</TableCell>
-                </TableRow>
+        <CardContent className="space-y-6">
+          <Alert>
+            <Coins className="size-4" />
+            <AlertTitle>Purchased Credits only</AlertTitle>
+            <AlertDescription>
+              Your earnings are 70% of Purchased Credits when clients use them on your content. Reward Credits are shown for transparency but create no payout allocation.
+            </AlertDescription>
+          </Alert>
+
+          <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-5">
+            {[
+              ["Total earned", finance?.summary.totalEarnedCredits ?? 0],
+              ["Available", finance?.summary.availableToRequestCredits ?? 0],
+              ["Requested", finance?.summary.requestedCredits ?? 0],
+              ["Paid, confirm receipt", finance?.summary.paidAwaitingConfirmationCredits ?? 0],
+              ["Received", finance?.summary.receivedCredits ?? 0],
+            ].map(([label, value]) => (
+              <div key={String(label)} className="rounded-lg border bg-background/40 p-4">
+                <p className="text-sm text-muted-foreground">{label}</p>
+                <p className="mt-1 font-mono text-xl text-white">{formatCredits(Number(value))}</p>
+              </div>
+            ))}
+          </div>
+
+          <div className="rounded-lg border bg-background/35 p-4">
+            <div className="flex flex-wrap items-center justify-between gap-4">
+              <div>
+                <h3 className="font-heading text-lg">Payout Request</h3>
+                {openPayoutRequest?.status === "requested" ? (
+                  <p className="text-sm text-muted-foreground">
+                    {formatCredits(openPayoutRequest.amountCredits)} is awaiting administrator payment.
+                  </p>
+                ) : openPayoutRequest?.status === "paid" ? (
+                  <p className="text-sm text-muted-foreground">
+                    Payment was recorded{openPayoutRequest.paymentReference ? ` as ${openPayoutRequest.paymentReference}` : ""}. Confirm only after the funds reach you.
+                  </p>
+                ) : (
+                  <p className="text-sm text-muted-foreground">
+                    Request your full available balance. The assigned amount moves out of Available while new earnings continue accumulating separately.
+                  </p>
+                )}
+              </div>
+              {openPayoutRequest?.status === "paid" ? (
+                <Button
+                  type="button"
+                  disabled={confirmingPayoutId === openPayoutRequest.requestId}
+                  onClick={() => void confirmPayoutReceived(openPayoutRequest.requestId)}
+                >
+                  {confirmingPayoutId === openPayoutRequest.requestId ? <Loader2 className="size-4 animate-spin" /> : <CheckCircle2 className="size-4" />}
+                  Confirm Payment Received
+                </Button>
+              ) : (
+                <Button
+                  type="button"
+                  disabled={requestingPayout || availableEarnings <= 0 || Boolean(openPayoutRequest)}
+                  onClick={() => void requestPayout()}
+                >
+                  {requestingPayout ? <Loader2 className="size-4 animate-spin" /> : <HandCoins className="size-4" />}
+                  Request {formatCredits(availableEarnings)}
+                </Button>
+              )}
+            </div>
+          </div>
+
+          <div className="space-y-3">
+            <h3 className="font-heading text-lg">Payout History</h3>
+            {finance?.requests.map((request) => (
+              <div key={request.requestId} className="grid gap-3 rounded-lg border bg-background/35 p-4 sm:grid-cols-[minmax(0,1fr)_auto] sm:items-start">
+                <div>
+                  <div className="flex flex-wrap items-center gap-2">
+                    <p className="font-mono text-lg text-white">{formatCredits(request.amountCredits)}</p>
+                    <Badge variant={request.status === "requested" ? "default" : "outline"}>{request.status}</Badge>
+                  </div>
+                  <p className="mt-1 text-xs text-muted-foreground">
+                    Requested {formatRaceDateTime(request.requestedAt)} · earnings through {formatRaceDateTime(request.requestedThrough)}
+                  </p>
+                  {request.paymentReference ? <p className="mt-2 text-sm">Payment reference: {request.paymentReference}</p> : null}
+                  {request.adminNote ? <p className="mt-1 text-sm text-muted-foreground">{request.adminNote}</p> : null}
+                  {request.receivedAt ? <p className="mt-1 text-sm text-emerald-400">Confirmed received {formatRaceDateTime(request.receivedAt)}</p> : null}
+                </div>
+                {request.status === "paid" ? (
+                  <Button
+                    type="button"
+                    size="sm"
+                    disabled={confirmingPayoutId === request.requestId}
+                    onClick={() => void confirmPayoutReceived(request.requestId)}
+                  >
+                    {confirmingPayoutId === request.requestId ? <Loader2 className="size-4 animate-spin" /> : <CheckCircle2 className="size-4" />}
+                    Confirm Received
+                  </Button>
+                ) : null}
+              </div>
+            ))}
+            {!finance?.requests.length ? (
+              <p className="rounded-lg border bg-background/35 p-4 text-sm text-muted-foreground">No payout requests have been submitted in the new period.</p>
+            ) : null}
+          </div>
+
+          <div className="space-y-3">
+            <div>
+              <h3 className="font-heading text-lg">10/20/70 Transaction Ledger</h3>
+              <p className="text-sm text-muted-foreground">Each row is tied to the stored allocation recorded when Purchased Credits were used.</p>
+            </div>
+            <div className="space-y-3 md:hidden">
+              {finance?.entries.map((entry) => (
+                <article key={entry.id} className="space-y-4 rounded-lg border bg-background/35 p-4">
+                  <div className="flex items-start justify-between gap-3">
+                    <div className="min-w-0">
+                      <p className="font-medium">{entry.purchaseType === "meeting" ? "Meeting card" : "Subscription"}</p>
+                      <p className="mt-1 text-xs text-muted-foreground">{entry.sourceLabel}</p>
+                      <p className="mt-2 text-xs text-muted-foreground">{formatRaceDateTime(entry.createdAt)}</p>
+                    </div>
+                    <Badge variant={entry.entryType === "refund" ? "destructive" : "outline"}>{entry.entryType}</Badge>
+                  </div>
+                  <dl className="grid grid-cols-2 gap-x-4 gap-y-3 text-sm">
+                    <div>
+                      <dt className="text-xs text-muted-foreground">Purchased</dt>
+                      <dd className="font-mono">{formatCredits(entry.purchasedCredits)}</dd>
+                    </div>
+                    <div>
+                      <dt className="text-xs text-muted-foreground">Reward excluded</dt>
+                      <dd className="font-mono text-brand-cyan">{formatCredits(entry.rewardCreditsExcluded)}</dd>
+                    </div>
+                    <div>
+                      <dt className="text-xs text-muted-foreground">Horse Care 10%</dt>
+                      <dd className="font-mono">{formatCredits(entry.horseCareCredits)}</dd>
+                    </div>
+                    <div>
+                      <dt className="text-xs text-muted-foreground">Platform 20%</dt>
+                      <dd className="font-mono">{formatCredits(entry.platformCredits)}</dd>
+                    </div>
+                    <div>
+                      <dt className="text-xs text-muted-foreground">Your 70%</dt>
+                      <dd className="font-mono font-semibold">{formatCredits(entry.tipsterCredits)}</dd>
+                    </div>
+                    <div>
+                      <dt className="text-xs text-muted-foreground">Payout</dt>
+                      <dd className="mt-1">
+                        <Badge variant="outline">
+                          {entry.payoutStatus === "not_applicable" ? "Reward excluded" : entry.payoutStatus}
+                        </Badge>
+                      </dd>
+                    </div>
+                  </dl>
+                </article>
               ))}
-              {!earnings.length ? (
-                <TableRow>
-                  <TableCell colSpan={8} className="text-center text-muted-foreground">
-                    No earnings entries yet.
-                  </TableCell>
-                </TableRow>
+              {!finance?.entries.length ? (
+                <p className="rounded-lg border bg-background/35 p-4 text-sm text-muted-foreground">No new-period earnings entries yet.</p>
               ) : null}
-            </TableBody>
-          </Table>
+            </div>
+            <div className="hidden overflow-x-auto rounded-lg border md:block">
+              <Table>
+                <TableHeader>
+                  <TableRow>
+                    <TableHead>Time</TableHead>
+                    <TableHead>Content</TableHead>
+                    <TableHead>Entry</TableHead>
+                    <TableHead>Purchased</TableHead>
+                    <TableHead>Reward excluded</TableHead>
+                    <TableHead>Horse Care 10%</TableHead>
+                    <TableHead>Platform 20%</TableHead>
+                    <TableHead>Your 70%</TableHead>
+                    <TableHead>Payout</TableHead>
+                  </TableRow>
+                </TableHeader>
+                <TableBody>
+                  {finance?.entries.map((entry) => (
+                    <TableRow key={entry.id}>
+                      <TableCell>{formatRaceDateTime(entry.createdAt)}</TableCell>
+                      <TableCell>
+                        <p className="font-medium">{entry.purchaseType === "meeting" ? "Meeting card" : "Subscription"}</p>
+                        <p className="max-w-72 text-xs text-muted-foreground">{entry.sourceLabel}</p>
+                      </TableCell>
+                      <TableCell>
+                        <Badge variant={entry.entryType === "refund" ? "destructive" : "outline"}>{entry.entryType}</Badge>
+                      </TableCell>
+                      <TableCell className="font-mono">{formatCredits(entry.purchasedCredits)}</TableCell>
+                      <TableCell className="font-mono text-brand-cyan">{formatCredits(entry.rewardCreditsExcluded)}</TableCell>
+                      <TableCell className="font-mono">{formatCredits(entry.horseCareCredits)}</TableCell>
+                      <TableCell className="font-mono">{formatCredits(entry.platformCredits)}</TableCell>
+                      <TableCell className="font-mono font-semibold">{formatCredits(entry.tipsterCredits)}</TableCell>
+                      <TableCell>
+                        <Badge variant="outline">
+                          {entry.payoutStatus === "not_applicable" ? "Reward excluded" : entry.payoutStatus}
+                        </Badge>
+                      </TableCell>
+                    </TableRow>
+                  ))}
+                  {!finance?.entries.length ? (
+                    <TableRow>
+                      <TableCell colSpan={9} className="h-24 text-center text-muted-foreground">No new-period earnings entries yet.</TableCell>
+                    </TableRow>
+                  ) : null}
+                </TableBody>
+              </Table>
+            </div>
+          </div>
         </CardContent>
       </Card>
     </div>

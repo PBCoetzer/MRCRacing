@@ -404,7 +404,7 @@ export function TipsterProfileClient({
 
   if (loading) {
     return (
-      <main className="site-container flex min-h-[60svh] items-center justify-center py-12">
+      <main className="marketing-container flex min-h-[60svh] items-center justify-center py-12">
         <Loader2 className="size-6 animate-spin text-primary" />
       </main>
     );
@@ -423,7 +423,7 @@ export function TipsterProfileClient({
   }
 
   return (
-    <main className="site-container space-y-8 py-12">
+    <main className="marketing-container space-y-8 py-12">
       {error ? (
         <Alert variant="destructive">
           <AlertTriangle className="size-4" />

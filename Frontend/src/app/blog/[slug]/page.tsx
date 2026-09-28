@@ -39,7 +39,7 @@ export default async function BlogArticlePage({ params }: PageProps) {
         { "@context": "https://schema.org", "@type": "BlogPosting", headline: post.title, description: post.excerpt, datePublished: post.publishedAt, dateModified: post.updatedAt, mainEntityOfPage: url, image: cover ?? `${canonicalSiteUrl}/images/mrc-racing-og.png`, author: { "@type": "Person", name: post.author, ...(post.authorSlug ? { url: `${canonicalSiteUrl}/tipsters/${post.authorSlug}/` } : {}) }, publisher: { "@type": "Organization", name: "MRC Racing Tips", url: canonicalSiteUrl } },
         { "@context": "https://schema.org", "@type": "BreadcrumbList", itemListElement: [{ "@type": "ListItem", position: 1, name: "Blog", item: `${canonicalSiteUrl}/blog/` }, { "@type": "ListItem", position: 2, name: post.title, item: url }] },
       ]} />
-      <main className="site-container py-10">
+      <main className="marketing-container py-10">
         <BlogPostClient initialPost={post} slug={slug} />
       </main>
       <SiteFooter />

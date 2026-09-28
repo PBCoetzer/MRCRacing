@@ -141,7 +141,8 @@
 }
 
 @layer utilities {
-  .site-container {
+  .site-container,
+  .marketing-container {
     width: calc(100% - 2rem);
     margin-inline: auto;
   }
@@ -160,14 +161,20 @@
 }
 
 @media (min-width: 640px) {
-  .site-container {
+  .site-container,
+  .marketing-container {
     width: 90%;
   }
 }
 
 @media (min-width: 1280px) {
-  .site-container {
+  .site-container,
+  .marketing-container {
     width: 80%;
+  }
+
+  .marketing-container {
+    max-width: 80rem;
   }
 }
 

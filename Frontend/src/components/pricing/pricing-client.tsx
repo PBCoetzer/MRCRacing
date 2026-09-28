@@ -275,7 +275,7 @@ export function PricingClient() {
   return (
     <main>
       <section className="border-b border-brand-gold/20 bg-brand-purple-deep text-white">
-        <div className="site-container grid gap-8 py-14 lg:grid-cols-[1fr_0.7fr]">
+        <div className="marketing-container grid gap-8 py-14 lg:grid-cols-[1fr_0.7fr]">
           <div>
             <Badge className="bg-brand-gold text-brand-purple-deep">
               R1 = 1 Credit
@@ -311,7 +311,7 @@ export function PricingClient() {
         </div>
       </section>
 
-      <section className="site-container py-12">
+      <section className="marketing-container py-12">
         {!paymentsEnabled ? (
           <Alert className="mb-8 border-brand-gold/45 bg-brand-gold/8">
             <AlertTriangle className="size-4" />

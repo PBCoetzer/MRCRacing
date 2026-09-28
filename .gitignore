@@ -10,6 +10,7 @@ frontend-app/.next/
 frontend-app/out/
 /output/
 /tmp/
+/.temp/
 
 # Local environment files
 .env

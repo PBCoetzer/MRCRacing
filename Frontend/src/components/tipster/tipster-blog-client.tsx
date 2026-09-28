@@ -64,7 +64,16 @@ async function edgeFunctionErrorMessage(error: unknown, fallback: string) {
       }
     }
   }
-  return error instanceof Error ? error.message : fallback;
+  return errorMessage(error, fallback);
+}
+
+function errorMessage(error: unknown, fallback: string) {
+  if (error instanceof Error) return error.message;
+  if (error && typeof error === "object" && "message" in error) {
+    const message = (error as { message?: unknown }).message;
+    if (typeof message === "string" && message.trim()) return message;
+  }
+  return fallback;
 }
 
 async function toWebp(file: File) {
@@ -98,6 +107,8 @@ export function TipsterBlogClient() {
   const [posts, setPosts] = useState<BlogPost[]>([]);
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [draft, setDraft] = useState(emptyDraft);
+  const [pendingCover, setPendingCover] = useState<File | null>(null);
+  const [pendingCoverPreview, setPendingCoverPreview] = useState("");
   const [loading, setLoading] = useState(true);
   const [busy, setBusy] = useState("");
   const [error, setError] = useState("");
@@ -144,13 +155,25 @@ export function TipsterBlogClient() {
     return () => window.clearTimeout(timeoutId);
   }, [load]);
 
+  useEffect(() => {
+    return () => {
+      if (pendingCoverPreview) URL.revokeObjectURL(pendingCoverPreview);
+    };
+  }, [pendingCoverPreview]);
+
+  function clearPendingCover() {
+    setPendingCover(null);
+    setPendingCoverPreview("");
+  }
+
   function selectPost(post: BlogPost) {
+    clearPendingCover();
     setSelectedId(post.id);
     setDraft({ title: post.title, excerpt: post.excerpt, body: post.body_markdown, coverPath: post.cover_image_path ?? "", videoUrl: post.video_url ?? "" });
     setMessage(""); setError("");
   }
 
-  function newPost() { setSelectedId(null); setDraft(emptyDraft); setMessage(""); setError(""); }
+  function newPost() { clearPendingCover(); setSelectedId(null); setDraft(emptyDraft); setMessage(""); setError(""); }
 
   async function requestAuthorAccess() {
     const supabase = createClient();
@@ -170,15 +193,15 @@ export function TipsterBlogClient() {
     setBusy("");
   }
 
-  async function saveDraft() {
+  async function saveDraft(postId: string | null = selectedId, coverPath = draft.coverPath) {
     const supabase = createClient();
     if (!supabase || !tipsterId) throw new Error("Blog workspace is unavailable.");
     const { data, error: saveError } = await supabase.rpc("save_blog_post", {
-      p_post_id: selectedId,
+      p_post_id: postId,
       p_title: draft.title,
       p_excerpt: draft.excerpt,
       p_body_markdown: draft.body,
-      p_cover_image_path: draft.coverPath || null,
+      p_cover_image_path: coverPath || null,
       p_video_url: draft.videoUrl || null,
     });
     if (saveError) throw saveError;
@@ -187,39 +210,44 @@ export function TipsterBlogClient() {
     return saved;
   }
 
+  async function uploadPreparedCover(postId: string, file: File) {
+    const supabase = createClient();
+    if (!supabase) throw new Error("Blog workspace is unavailable.");
+    const form = new FormData();
+    form.append("postId", postId);
+    form.append("file", file);
+    const { data, error: uploadError } = await supabase.functions.invoke("blog-media-upload", { body: form });
+    if (uploadError) throw new Error(await edgeFunctionErrorMessage(uploadError, "Cover upload failed."));
+    if (!data?.path) throw new Error(data?.error ?? "The cover upload returned no path.");
+    return String(data.path);
+  }
+
+  async function saveDraftWithPendingCover() {
+    let saved = await saveDraft();
+    if (!pendingCover) return saved;
+    const coverPath = await uploadPreparedCover(saved.id, pendingCover);
+    setDraft((current) => ({ ...current, coverPath }));
+    clearPendingCover();
+    saved = await saveDraft(saved.id, coverPath);
+    return saved;
+  }
+
   async function handleSave() {
     setBusy("save"); setError(""); setMessage("");
-    try { await saveDraft(); setMessage("Draft saved and audit logged."); await load(); }
-    catch (saveError) { setError(saveError instanceof Error ? saveError.message : "Draft could not be saved."); }
+    const hadPendingCover = Boolean(pendingCover);
+    try { await saveDraftWithPendingCover(); setMessage(hadPendingCover ? "Draft and cover saved." : "Draft saved and audit logged."); await load(); }
+    catch (saveError) { setError(errorMessage(saveError, "Draft could not be saved.")); }
     setBusy("");
   }
 
   async function uploadCover(file: File) {
-    const supabase = createClient();
-    if (!supabase) return;
     setBusy("cover"); setError(""); setMessage("");
     try {
-      const saved = selectedId ? { id: selectedId } : await saveDraft();
       const webp = await toWebp(file);
-      const form = new FormData();
-      form.append("postId", saved.id);
-      form.append("file", webp);
-      const { data, error: uploadError } = await supabase.functions.invoke("blog-media-upload", { body: form });
-      if (uploadError) throw new Error(await edgeFunctionErrorMessage(uploadError, "Cover upload failed."));
-      if (!data?.path) throw new Error(data?.error ?? "The cover upload returned no path.");
-      setDraft((current) => ({ ...current, coverPath: String(data.path) }));
-      const { error: attachError } = await supabase.rpc("save_blog_post", {
-        p_post_id: saved.id,
-        p_title: draft.title,
-        p_excerpt: draft.excerpt,
-        p_body_markdown: draft.body,
-        p_cover_image_path: data.path,
-        p_video_url: draft.videoUrl || null,
-      });
-      if (attachError) throw attachError;
-      setMessage("Cover image optimized, versioned, and attached.");
-      await load();
-    } catch (uploadError) { setError(uploadError instanceof Error ? uploadError.message : "Cover upload failed."); }
+      setPendingCover(webp);
+      setPendingCoverPreview(URL.createObjectURL(webp));
+      setMessage("Cover ready. Save the draft or publish the article to upload it.");
+    } catch (uploadError) { setError(errorMessage(uploadError, "Cover upload failed.")); }
     setBusy("");
   }
 
@@ -228,7 +256,7 @@ export function TipsterBlogClient() {
     if (!supabase) return;
     setBusy("publish"); setError(""); setMessage("");
     try {
-      const saved = await saveDraft();
+      const saved = await saveDraftWithPendingCover();
       const { data, error: publishError } = await supabase.rpc("publish_blog_post", { p_post_id: saved.id });
       if (publishError) throw publishError;
       const published = data as PublishedBlogPost;
@@ -236,7 +264,7 @@ export function TipsterBlogClient() {
         ? `Article published. ${published.notificationNewlyQueuedCount ?? 0} email announcement${published.notificationNewlyQueuedCount === 1 ? "" : "s"} queued for ${published.notificationAudienceCount ?? 0} eligible registered account${published.notificationAudienceCount === 1 ? "" : "s"}.`
         : "Article updated. No duplicate announcement email was sent.");
       await load();
-    } catch (publishError) { setError(publishError instanceof Error ? publishError.message : "Article could not be published."); }
+    } catch (publishError) { setError(errorMessage(publishError, "Article could not be published.")); }
     setBusy("");
   }
 
@@ -308,10 +336,11 @@ export function TipsterBlogClient() {
               </div>
               <p className="mt-2 text-xs text-muted-foreground">Only HTTPS YouTube, YouTube Shorts, and Vimeo links are accepted.</p>
             </div>
-            {draft.coverPath ? <div className="relative aspect-[16/9] overflow-hidden rounded-lg border"><Image src={`${supabaseUrl}/storage/v1/object/public/blog-media/${draft.coverPath}`} alt="Current article cover" fill sizes="800px" className="object-cover" /></div> : null}
+            {pendingCoverPreview ? <div className="relative aspect-[16/9] overflow-hidden rounded-lg border border-brand-cyan/60"><Image src={pendingCoverPreview} alt="Pending article cover" fill unoptimized sizes="800px" className="object-cover" /></div> : draft.coverPath ? <div className="relative aspect-[16/9] overflow-hidden rounded-lg border"><Image src={`${supabaseUrl}/storage/v1/object/public/blog-media/${draft.coverPath}`} alt="Current article cover" fill sizes="800px" className="object-cover" /></div> : null}
+            {pendingCover ? <p className="text-xs text-brand-cyan">This cover is ready and will upload when you save or publish.</p> : null}
             {draft.videoUrl ? <BlogVideo title={draft.title || "Article preview"} url={draft.videoUrl} /> : null}
             <div className="flex flex-wrap gap-3">
-              <Button variant="outline" disabled={!canPublish || busy === "cover"}>
+              <Button variant="outline" disabled={!canPublish || Boolean(busy)}>
                 <label className="flex cursor-pointer items-center gap-2">
                   <FileImage className="size-4" />
                   {busy === "cover" ? "Preparing…" : "Choose cover"}
@@ -319,6 +348,7 @@ export function TipsterBlogClient() {
                     type="file"
                     accept="image/*"
                     className="sr-only"
+                    disabled={!canPublish || Boolean(busy)}
                     onChange={(event) => {
                       const file = event.currentTarget.files?.[0];
                       event.currentTarget.value = "";

@@ -10,7 +10,7 @@ export default function BlogPostPage() {
   return (
     <div className="min-h-screen bg-background">
       <SiteHeader />
-      <main className="site-container py-10">
+      <main className="marketing-container py-10">
         <BlogPostClient />
       </main>
       <SiteFooter />

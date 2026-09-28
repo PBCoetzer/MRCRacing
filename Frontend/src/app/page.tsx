@@ -46,7 +46,7 @@ export default function Home() {
       <main>
         <section className="relative overflow-hidden border-b border-brand-gold/25 bg-[radial-gradient(circle_at_18%_20%,rgba(211,39,255,0.24),transparent_30rem),radial-gradient(circle_at_84%_22%,rgba(0,212,231,0.2),transparent_26rem),linear-gradient(135deg,#321652,#1e0c38_55%,#3c1665)] text-white">
           <div className="absolute inset-0 opacity-25 [background-image:linear-gradient(90deg,rgba(255,255,255,0.11)_1px,transparent_1px),linear-gradient(rgba(255,255,255,0.11)_1px,transparent_1px)] [background-size:70px_70px]" />
-          <div className="site-container relative py-12 lg:py-16">
+          <div className="marketing-container relative py-12 lg:py-16">
             <div className="grid overflow-hidden rounded-2xl border border-brand-gold/40 bg-brand-purple-deep/72 shadow-[0_28px_90px_rgba(0,0,0,0.42)] backdrop-blur lg:grid-cols-[0.9fr_1.1fr]">
               <div className="relative hidden min-h-72 overflow-hidden border-b border-brand-gold/25 lg:block lg:min-h-[34rem] lg:border-r lg:border-b-0">
                 <Image
@@ -136,7 +136,7 @@ export default function Home() {
           </div>
         </section>
 
-        <section className="site-container grid gap-4 py-10 md:grid-cols-4">
+        <section className="marketing-container grid gap-4 py-10 md:grid-cols-4">
           {[
             { label: "Racing coverage", value: "Horse only", icon: Trophy },
             { label: "Premium access", value: "Credits", icon: LockKeyhole },
@@ -155,7 +155,7 @@ export default function Home() {
           ))}
         </section>
 
-        <section className="site-container grid gap-6 pb-10 lg:grid-cols-2">
+        <section className="marketing-container grid gap-6 pb-10 lg:grid-cols-2">
           <Card>
             <CardHeader>
               <CardTitle className="flex items-center gap-2">
@@ -198,7 +198,7 @@ export default function Home() {
 
         <HomePinnedBlogPost />
 
-        <section className="site-container py-12">
+        <section className="marketing-container py-12">
           <div className="mb-6 max-w-3xl">
             <Badge variant="outline">Affiliate partners</Badge>
             <h2 className="mt-3 font-heading text-3xl text-white">
@@ -230,12 +230,12 @@ export default function Home() {
                       <ExternalLink className="size-4 text-brand-cyan" />
                     </span>
                   </div>
-                  <div className="relative aspect-[7426/1548] min-h-24 w-full overflow-hidden bg-[#001bea] sm:min-h-32">
+                  <div className="relative aspect-[7426/1548] min-h-24 w-full overflow-hidden bg-[#001bea] sm:min-h-32 xl:h-56 xl:min-h-0 xl:aspect-auto">
                     <Image
                       src={partner.image}
                       alt={`${partner.name} logo`}
                       fill
-                      sizes="(max-width: 1280px) 100vw, 1280px"
+                      sizes="(max-width: 640px) 100vw, (max-width: 1280px) 80vw, 1152px"
                       className="object-contain transition duration-300 group-hover:scale-[1.01]"
                     />
                   </div>
@@ -278,7 +278,7 @@ export default function Home() {
           </p>
         </section>
 
-        <section className="site-container py-12">
+        <section className="marketing-container py-12">
           <div className="mb-6 flex flex-wrap items-end justify-between gap-4">
             <div>
               <Badge variant="outline">Credits</Badge>
@@ -293,7 +293,7 @@ export default function Home() {
           <HomeCreditPackages />
         </section>
 
-        <section className="site-container pb-12">
+        <section className="marketing-container pb-12">
           <div className="grid gap-4 rounded-xl border border-brand-gold/30 bg-brand-purple-deep p-6 text-white shadow-[0_24px_70px_rgba(0,0,0,0.22)] md:grid-cols-[1fr_auto] md:items-center">
             <div>
               <p className="font-mono text-sm uppercase text-brand-cyan">

@@ -11,7 +11,7 @@ export default function BlogPage() {
   return (
     <div className="min-h-screen bg-background">
       <SiteHeader />
-      <main className="site-container py-12">
+      <main className="marketing-container py-12">
         <p className="font-mono text-xs uppercase tracking-[0.22em] text-brand-cyan">MRC Journal</p>
         <h1 className="mt-3 font-heading text-4xl text-white sm:text-5xl">Racing insight from approved authors</h1>
         <p className="mt-4 max-w-3xl text-lg leading-8 text-muted-foreground">Public race analysis, education, form notes, and stories from MRC authors who have separate administrator approval to publish.</p>
