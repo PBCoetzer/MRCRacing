@@ -28,6 +28,7 @@ import { MfaProfileCard } from "@/components/auth/mfa-profile-card";
 import { MfaSettingsClient } from "@/components/auth/mfa-settings-client";
 import { TipsterApplicationClient } from "@/components/tipster/tipster-application-client";
 import { TipsterBlogClient } from "@/components/tipster/tipster-blog-client";
+import { dashboardViewChangeEvent } from "@/lib/dashboard-navigation";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
@@ -274,11 +275,13 @@ export function ClientDashboardClient() {
 
     syncView();
     window.addEventListener("hashchange", syncView);
-    window.addEventListener("mrc-dashboard-view-change", syncDashboardView);
+    window.addEventListener("popstate", syncView);
+    window.addEventListener(dashboardViewChangeEvent, syncDashboardView);
 
     return () => {
       window.removeEventListener("hashchange", syncView);
-      window.removeEventListener("mrc-dashboard-view-change", syncDashboardView);
+      window.removeEventListener("popstate", syncView);
+      window.removeEventListener(dashboardViewChangeEvent, syncDashboardView);
     };
   }, []);
 

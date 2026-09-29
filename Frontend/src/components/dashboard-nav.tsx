@@ -4,6 +4,10 @@ import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { useEffect, useState } from "react";
 import { Button } from "@/components/ui/button";
+import {
+  dashboardViewChangeEvent,
+  handleDashboardViewLinkClick,
+} from "@/lib/dashboard-navigation";
 
 type DashboardNavProps = {
   nav: DashboardNavItem[];
@@ -32,8 +36,14 @@ export function DashboardNav({ nav }: DashboardNavProps) {
 
     syncLocation();
     window.addEventListener("hashchange", syncLocation);
+    window.addEventListener("popstate", syncLocation);
+    window.addEventListener(dashboardViewChangeEvent, syncLocation);
 
-    return () => window.removeEventListener("hashchange", syncLocation);
+    return () => {
+      window.removeEventListener("hashchange", syncLocation);
+      window.removeEventListener("popstate", syncLocation);
+      window.removeEventListener(dashboardViewChangeEvent, syncLocation);
+    };
   }, [pathname]);
 
   return (
@@ -65,14 +75,7 @@ export function DashboardNav({ nav }: DashboardNavProps) {
               <Link
                 className="block w-full"
                 href={item.href}
-                onClick={() => {
-                  if (itemHash && normalizedCurrentPath === normalizedPath) {
-                    setLocation(`${pathname}#${itemHash}`);
-                    window.dispatchEvent(new CustomEvent("mrc-dashboard-view-change", {
-                      detail: itemHash,
-                    }));
-                  }
-                }}
+                onClick={handleDashboardViewLinkClick}
               >
                 {item.label}
               </Link>
@@ -83,4 +86,3 @@ export function DashboardNav({ nav }: DashboardNavProps) {
     </nav>
   );
 }
-

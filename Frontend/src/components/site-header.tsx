@@ -15,6 +15,7 @@ import {
   SheetTrigger,
 } from "@/components/ui/sheet";
 import { dashboardForRoles, dashboardLinksForRoles } from "@/lib/auth/roles";
+import { handleDashboardViewLinkClick } from "@/lib/dashboard-navigation";
 import { createClient } from "@/lib/supabase/client";
 
 const publicNavItems = [
@@ -150,15 +151,6 @@ export function SiteHeader() {
     router.refresh();
   }
 
-  function handleWorkspaceLink(href: string) {
-    const [, view] = href.split("#");
-    if (view) {
-      window.dispatchEvent(new CustomEvent("mrc-dashboard-view-change", {
-        detail: view,
-      }));
-    }
-  }
-
   return (
     <header className="sticky top-0 z-50 border-b border-brand-gold/30 bg-brand-purple-deep/90 text-foreground shadow-[0_12px_40px_rgba(0,0,0,0.22)] backdrop-blur">
       <div className="site-container flex h-16 items-center justify-between">
@@ -193,7 +185,7 @@ export function SiteHeader() {
           {authState === "signed-in" ? (
             <>
               <Button asChild variant="outline" size="sm">
-                <Link href={profileHref} onClick={() => handleWorkspaceLink(profileHref)}>
+                <Link href={profileHref} onClick={handleDashboardViewLinkClick}>
                   <UserRound className="size-4" />
                   Profile
                 </Link>
@@ -244,7 +236,7 @@ export function SiteHeader() {
               {authState === "signed-in" ? (
                 <>
                   <Button asChild variant="outline" className="mt-4 justify-start">
-                    <Link href={profileHref} onClick={() => handleWorkspaceLink(profileHref)}>
+                    <Link href={profileHref} onClick={handleDashboardViewLinkClick}>
                       <UserRound className="size-4" />
                       My profile
                     </Link>

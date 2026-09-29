@@ -8,7 +8,7 @@
     "audit:terminology": "node scripts/audit-public-terminology.mjs",
     "build:static": "npm run audit:terminology && next build && node scripts/prepare-static-export.mjs",
     "typecheck": "tsc --noEmit",
-    "test:auth": "node --disable-warning=MODULE_TYPELESS_PACKAGE_JSON --test src/lib/auth/*.test.mts src/lib/blog/*.test.mts src/lib/email-marketing-consent.test.mts",
+    "test:auth": "node --disable-warning=MODULE_TYPELESS_PACKAGE_JSON --test src/lib/auth/*.test.mts src/lib/blog/*.test.mts src/lib/dashboard-navigation.test.mts src/lib/email-marketing-consent.test.mts",
     "test:edge": "deno test --config ../supabase/functions/deno.json --allow-env ../supabase/functions",
     "verify:static": "node scripts/verify-static-export.mjs",
     "verify:local": "npm run lint && npm run typecheck && npm run test:auth && npm run test:edge && npm run build:static && npm run verify:static",

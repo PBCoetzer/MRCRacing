@@ -25,6 +25,10 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/com
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
+import {
+  dashboardViewChangeEvent,
+  handleDashboardViewLinkClick,
+} from "@/lib/dashboard-navigation";
 import { createClient } from "@/lib/supabase/client";
 import { formatCredits, formatMeetingCardPrice, formatRaceDateTime } from "@/lib/racing/format";
 import { meetingCardSalesOpen } from "@/lib/racing/availability";
@@ -100,6 +104,7 @@ type CardFixture = {
   id: string;
   meeting_id: string;
   starts_at: string;
+  selection_lock_at: string;
   status: string;
   result_summary: string | null;
 };
@@ -234,11 +239,13 @@ export function TipsterDashboardClient() {
 
     syncView();
     window.addEventListener("hashchange", syncView);
-    window.addEventListener("mrc-dashboard-view-change", syncDashboardView);
+    window.addEventListener("popstate", syncView);
+    window.addEventListener(dashboardViewChangeEvent, syncDashboardView);
 
     return () => {
       window.removeEventListener("hashchange", syncView);
-      window.removeEventListener("mrc-dashboard-view-change", syncDashboardView);
+      window.removeEventListener("popstate", syncView);
+      window.removeEventListener(dashboardViewChangeEvent, syncDashboardView);
     };
   }, []);
 
@@ -330,7 +337,7 @@ export function TipsterDashboardClient() {
       if (loadedCards.length) {
         const fixtureResult = await supabase
           .from("fixtures")
-          .select("id,meeting_id,starts_at,status,result_summary")
+          .select("id,meeting_id,starts_at,selection_lock_at,status,result_summary")
           .in("meeting_id", [...new Set(loadedCards.map((card) => card.meeting_id))])
           .order("starts_at");
 
@@ -784,10 +791,14 @@ export function TipsterDashboardClient() {
             </div>
             <div className="flex flex-wrap gap-2">
               <Button asChild variant="outline">
-                <Link href="/tipster/#meeting-cards">Manage Meeting Cards</Link>
+                <Link href="/tipster/#meeting-cards" onClick={handleDashboardViewLinkClick}>
+                  Manage Meeting Cards
+                </Link>
               </Button>
               <Button asChild variant="outline">
-                <Link href="/tipster/#earnings">View Earnings Ledger</Link>
+                <Link href="/tipster/#earnings" onClick={handleDashboardViewLinkClick}>
+                  View Earnings Ledger
+                </Link>
               </Button>
               <Button asChild variant="outline">
                 <Link href={`/tipsters/${tipster?.slug ?? ""}/`}>View Public Profile</Link>
@@ -1014,7 +1025,7 @@ export function TipsterDashboardClient() {
                   (fixture) => fixture.result_summary || fixture.status === "resulted",
                 ).length;
                 const openCount = fixtures.filter(
-                  (fixture) => new Date(fixture.starts_at).getTime() > checkedAt,
+                  (fixture) => new Date(fixture.selection_lock_at).getTime() > checkedAt,
                 ).length;
                 const outcomes = cardOutcomes.filter((outcome) => outcome.tip_card_id === card.id);
                 const selectionWinRecord = cardSelectionWinRecord(outcomes);
@@ -1022,8 +1033,8 @@ export function TipsterDashboardClient() {
                   openCount === 0 || (fixtures.length > 0 && resultCount === fixtures.length)
                     ? "View results"
                     : card.status === "published"
-                      ? "Review / correct"
-                      : "Edit tips";
+                      ? `Edit open tips (${openCount})`
+                      : "Continue editing";
 
                 return (
                   <TableRow key={card.id}>

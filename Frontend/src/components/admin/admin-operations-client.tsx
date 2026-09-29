@@ -26,6 +26,7 @@ import { Label } from "@/components/ui/label";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Tabs, TabsContent } from "@/components/ui/tabs";
 import { Textarea } from "@/components/ui/textarea";
+import { dashboardViewChangeEvent } from "@/lib/dashboard-navigation";
 import { formatRaceDateTime } from "@/lib/racing/format";
 import { professionalSourceName } from "@/lib/racing/source-brand";
 import { createClient } from "@/lib/supabase/client";
@@ -511,11 +512,13 @@ export function AdminOperationsClient() {
 
     syncView();
     window.addEventListener("hashchange", syncView);
-    window.addEventListener("mrc-dashboard-view-change", syncView);
+    window.addEventListener("popstate", syncView);
+    window.addEventListener(dashboardViewChangeEvent, syncView);
 
     return () => {
       window.removeEventListener("hashchange", syncView);
-      window.removeEventListener("mrc-dashboard-view-change", syncView);
+      window.removeEventListener("popstate", syncView);
+      window.removeEventListener(dashboardViewChangeEvent, syncView);
     };
   }, []);
 
