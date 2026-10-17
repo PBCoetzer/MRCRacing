@@ -2,7 +2,7 @@
 
 Date: 17 October 2026
 Target: `https://www.mrcracing.co.za` and Supabase project `cjgfvqgiqrphmakruqnk`
-Status: **Approved; production database migration applied; static release in progress**
+Status: **Completed and verified on production**
 
 ## Safety boundary
 
@@ -110,6 +110,21 @@ The production Supabase advisor baseline contains existing notices. This release
 10. Run post-deploy smoke tests for the homepage, horse-racing index, newest dated meeting pages, client workspace, tipster workspace, Admin Racing, sitemap, and robots.
 11. Verify the affected client card through the normal client UI and verify the test account retains only its genuinely current subscription access.
 12. Re-enable `mrc-build.timer`, confirm both live timers are active, and observe the watcher/build/Hermes logs for at least 15 minutes.
+
+## Completed production verification
+
+- Focused release commit `df24c8da1dbbb05230c7b72f92ebee72cf265270` is on `origin/main`.
+- The production static site contains both approved client markers: `Selection temporarily unavailable` and `Ends in`.
+- Production smoke tests passed for the homepage, horse-racing index, client workspace, tipster workspace, Admin Racing, sitemap, robots, and the newest dated Turffontein, Durbanville, and Fairview meeting pages.
+- `mrc-build.timer`, `hermes-mrc-worker.timer`, and `mrc-site-watchdog.timer` are active.
+- The watchdog completed successfully at `2026-10-17 20:25 SAST`; all ten checked routes returned HTTP 200 and the service result was `success` with exit status 0.
+- The watchdog runs every two minutes and retains `hermes-failure-notify@.service` as its failure handler for the established Telegram incident path.
+- The installed build verifier and watchdog SHA-256 values match the approved staged files.
+- The subscription lifecycle job remains active on `17 * * * *`; its first three scheduled production runs at 18:17, 19:17, and 20:17 SAST succeeded.
+- Ended subscriptions still marked active: 0.
+- Test account `jcoetzer238@gmail.com`: three ended segments are expired and the valid segment ending `2026-10-20T12:40:03.863462Z` remains active.
+- Pre-deployment static backup retained at `C:\Users\coetz\OneDrive\Documents\MRC Website Live Releases\20261017-df24c8d\Deployment\Xneelo Backups\public_html-before-20261017-180351.zip`; archive integrity passed before deployment.
+- No development-site, Peach payment, communication-preference, revenue-panel, or MFA-bypass change was included.
 
 ## Failure handling
 
