@@ -16,9 +16,14 @@ CHECKS = (
     ("client", "https://www.mrcracing.co.za/client/", ("mrc racing",)),
     ("tipster", "https://www.mrcracing.co.za/tipster/", ("mrc racing",)),
     ("admin-racing", "https://www.mrcracing.co.za/admin/racing/", ("mrc racing",)),
+    ("login", "https://www.mrcracing.co.za/login/", ("login",)),
     ("sitemap", "https://www.mrcracing.co.za/sitemap.xml", ("mrcracing.co.za",)),
     ("robots", "https://www.mrcracing.co.za/robots.txt", ("sitemap",)),
 )
+
+FORBIDDEN_FRAGMENTS = {
+    "login": ("human verification must be configured",),
+}
 
 MEETING_URL_PATTERN = re.compile(
     r"https://www\.mrcracing\.co\.za/horse-racing/[^/<]+/(\d{4}-\d{2}-\d{2})/"
@@ -51,6 +56,16 @@ def check(
     if missing:
         raise RuntimeError(
             f"{name} returned unexpected content; missing {', '.join(missing)}: {url}"
+        )
+
+    forbidden = [
+        fragment
+        for fragment in FORBIDDEN_FRAGMENTS.get(name, ())
+        if fragment.casefold() in normalized_body
+    ]
+    if forbidden:
+        raise RuntimeError(
+            f"{name} returned an unavailable state; found {', '.join(forbidden)}: {url}"
         )
 
     return (

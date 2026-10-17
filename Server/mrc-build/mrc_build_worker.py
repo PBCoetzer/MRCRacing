@@ -106,6 +106,7 @@ def build_and_maybe_deploy() -> tuple[str, str, dict[str, object]]:
     run(["npm", "ci", "--no-audit", "--no-fund"], cwd=frontend)
     run(["npm", "run", "lint", "--", "--max-warnings=0"], cwd=frontend)
     run(["npm", "run", "build:static"], cwd=frontend)
+    run(["npm", "run", "verify:static"], cwd=frontend)
     output_hash = directory_hash(frontend / "out")
     deployment: dict[str, object] = {"mode": BUILD_MODE, "commit": commit, "outputSha256": output_hash}
 

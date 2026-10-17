@@ -3,6 +3,7 @@ import path from "node:path";
 import { fileURLToPath } from "node:url";
 
 const scriptsDirectory = path.dirname(fileURLToPath(import.meta.url));
+const frontendDirectory = path.resolve(scriptsDirectory, "..");
 const outputDirectory = path.resolve(scriptsDirectory, "..", "out");
 const expectedFiles = ["index.html", "404.html", "robots.txt", "sitemap.xml"];
 const textExtensions = new Set([".css", ".html", ".js", ".json", ".txt", ".xml"]);
@@ -12,6 +13,31 @@ const secretPatterns = [
   { label: "Stripe live secret", pattern: /\bsk_live_[A-Za-z0-9]{20,}\b/ },
   { label: "Resend API key", pattern: /\bre_[A-Za-z0-9_-]{24,}\b/ },
 ];
+
+async function readEnvironmentValue(name) {
+  const processValue = process.env[name]?.trim();
+  if (processValue) return processValue;
+
+  const environmentFiles = [
+    `.env.${process.env.NODE_ENV ?? "production"}.local`,
+    ".env.local",
+    `.env.${process.env.NODE_ENV ?? "production"}`,
+    ".env",
+  ];
+
+  for (const environmentFile of environmentFiles) {
+    try {
+      const value = await readFile(path.join(frontendDirectory, environmentFile), "utf8");
+      const match = value.match(new RegExp(`^${name}=(.*)$`, "m"));
+      const configuredValue = match?.[1]?.trim().replace(/^['"]|['"]$/g, "");
+      if (configuredValue) return configuredValue;
+    } catch (error) {
+      if (error?.code !== "ENOENT") throw error;
+    }
+  }
+
+  return "";
+}
 
 async function findFiles(directory) {
   const entries = await readdir(directory, { withFileTypes: true });
@@ -62,9 +88,20 @@ if (htmlFiles.length < 60) {
   throw new Error(`Static export contains only ${htmlFiles.length} HTML files; expected at least 60.`);
 }
 
+const turnstileSiteKey = await readEnvironmentValue("NEXT_PUBLIC_TURNSTILE_SITE_KEY");
+if (!turnstileSiteKey) {
+  throw new Error("NEXT_PUBLIC_TURNSTILE_SITE_KEY is required for an authentication-capable build.");
+}
+
+let turnstileSiteKeyFound = false;
+
 for (const file of files) {
   if (!textExtensions.has(path.extname(file))) continue;
   const value = await readFile(file, "utf8");
+
+  if (value.includes(turnstileSiteKey)) {
+    turnstileSiteKeyFound = true;
+  }
 
   for (const secret of secretPatterns) {
     if (secret.pattern.test(value)) {
@@ -77,6 +114,10 @@ for (const file of files) {
       throw new Error(`Supabase service-role JWT found in ${path.relative(outputDirectory, file)}.`);
     }
   }
+}
+
+if (!turnstileSiteKeyFound) {
+  throw new Error("Static export does not contain the configured Turnstile site key.");
 }
 
 const sitemap = await readFile(path.join(outputDirectory, "sitemap.xml"), "utf8");
