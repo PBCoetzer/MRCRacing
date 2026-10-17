@@ -88,15 +88,11 @@ def directory_hash(directory: Path) -> str:
 
 
 def verify_live_site() -> None:
-    for url in (
-        "https://www.mrcracing.co.za/",
-        "https://www.mrcracing.co.za/robots.txt",
-        "https://www.mrcracing.co.za/sitemap.xml",
-    ):
-        call = urllib.request.Request(url, headers={"user-agent": "MRC build verifier/1.0"})
-        with urllib.request.urlopen(call, timeout=30) as response:
-            if response.status != 200:
-                raise RuntimeError(f"Live verification failed for {url}: HTTP {response.status}")
+    watchdog = REPOSITORY / "Server" / "mrc-site-watchdog" / "mrc_site_watchdog.py"
+    if not watchdog.is_file():
+        raise RuntimeError("Live verification failed: the site watchdog is missing.")
+
+    run([sys.executable, str(watchdog)], timeout=180)
 
 
 def build_and_maybe_deploy() -> tuple[str, str, dict[str, object]]:

@@ -97,6 +97,20 @@ export type RaceTipSelection = {
   fixture_id: string;
   winner_entry_id: string | null;
   place_entry_id: string | null;
+  winner_selection_snapshot: {
+    entryId?: unknown;
+    saddleNumber?: unknown;
+    horseName?: unknown;
+    jockeyName?: unknown;
+    capturedAt?: unknown;
+  } | null;
+  place_selection_snapshot: {
+    entryId?: unknown;
+    saddleNumber?: unknown;
+    horseName?: unknown;
+    jockeyName?: unknown;
+    capturedAt?: unknown;
+  } | null;
   comments: string | null;
   selection_status: "tipped" | "skipped";
 };

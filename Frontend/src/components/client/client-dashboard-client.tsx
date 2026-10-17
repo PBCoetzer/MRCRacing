@@ -49,6 +49,11 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@
 import { createClient } from "@/lib/supabase/client";
 import { formatCredits, formatMeetingCardPrice, formatRaceDateTime } from "@/lib/racing/format";
 import { meetingCardSalesOpen } from "@/lib/racing/availability";
+import { raceSelectionLabel } from "@/lib/racing/selection-display";
+import {
+  entitlementIsActive,
+  subscriptionDaysRemaining,
+} from "@/lib/racing/subscription-access";
 import {
   tipsterThemeAccentStyle,
   tipsterThemeButtonStyle,
@@ -97,6 +102,7 @@ type EntitlementRow = {
   id: string;
   tip_card_id: string;
   source_type: "meeting" | "subscription";
+  source_subscription_id: string | null;
   revoked_at: string | null;
 };
 
@@ -224,7 +230,7 @@ function raceMeetingHref(meeting: RaceMeeting) {
 }
 
 export function ClientDashboardClient() {
-  const [loadedAt] = useState(() => Date.now());
+  const [loadedAt, setLoadedAt] = useState(() => Date.now());
   const [loading, setLoading] = useState(true);
   const [processingId, setProcessingId] = useState("");
   const [error, setError] = useState("");
@@ -363,7 +369,7 @@ export function ClientDashboardClient() {
           .order("created_at", { ascending: false }),
         supabase
           .from("tip_card_entitlements")
-          .select("id,tip_card_id,source_type,revoked_at")
+          .select("id,tip_card_id,source_type,source_subscription_id,revoked_at")
           .eq("user_id", user.id)
           .is("revoked_at", null),
         supabase
@@ -404,7 +410,15 @@ export function ClientDashboardClient() {
 
       const loadedCards = (cardResult.data ?? []) as TipCard[];
       const loadedMeetings = (meetingResult.data ?? []) as RaceMeeting[];
-      const loadedEntitlements = (entitlementResult.data ?? []) as EntitlementRow[];
+      const dashboardLoadedAt = Date.now();
+      const loadedSubscriptions = (subscriptionResult.data ?? []) as SubscriptionRow[];
+      const subscriptionsById = new Map(
+        loadedSubscriptions.map((subscription) => [subscription.id, subscription]),
+      );
+      const loadedEntitlements = ((entitlementResult.data ?? []) as EntitlementRow[])
+        .filter((entitlement) =>
+          entitlementIsActive(entitlement, subscriptionsById, dashboardLoadedAt)
+        );
       const accessibleCardIds = new Set([
         ...loadedEntitlements.map((item) => item.tip_card_id),
         ...loadedCards
@@ -443,7 +457,7 @@ export function ClientDashboardClient() {
         const [raceResult, multipleResult, optionResult, outcomeResult] = await Promise.all([
           supabase
             .from("race_tip_selections")
-            .select("id,tip_card_id,fixture_id,winner_entry_id,place_entry_id,comments,selection_status")
+            .select("id,tip_card_id,fixture_id,winner_entry_id,place_entry_id,winner_selection_snapshot,place_selection_snapshot,comments,selection_status")
             .in("tip_card_id", cardIds),
           supabase
             .from("tip_card_multiples")
@@ -519,7 +533,7 @@ export function ClientDashboardClient() {
       setTipsters((tipsterResult.data ?? []) as TipsterProfile[]);
       setPackages((packageResult.data ?? []) as TipsterPackage[]);
       setPurchases((purchaseResult.data ?? []) as PurchaseRow[]);
-      setSubscriptions((subscriptionResult.data ?? []) as SubscriptionRow[]);
+      setSubscriptions(loadedSubscriptions);
       setEntitlements(loadedEntitlements);
       setDisputes((disputeResult.data ?? []) as DisputeRow[]);
       setFixtures(loadedFixtures);
@@ -532,6 +546,7 @@ export function ClientDashboardClient() {
       setFavourites((favouriteResult.data ?? []) as ClientTipsterFavourite[]);
       setCardOutcomes(loadedOutcomes);
       setUserId(user.id);
+      setLoadedAt(dashboardLoadedAt);
     } catch (loadError) {
       setError(messageFrom(loadError, "Could not load the client marketplace."));
     } finally {
@@ -545,6 +560,22 @@ export function ClientDashboardClient() {
     }, 0);
 
     return () => window.clearTimeout(timeoutId);
+  }, [loadDashboard]);
+
+  useEffect(() => {
+    const refreshVisibleDashboard = () => {
+      if (document.visibilityState === "visible") {
+        void loadDashboard();
+      }
+    };
+
+    window.addEventListener("focus", refreshVisibleDashboard);
+    document.addEventListener("visibilitychange", refreshVisibleDashboard);
+
+    return () => {
+      window.removeEventListener("focus", refreshVisibleDashboard);
+      document.removeEventListener("visibilitychange", refreshVisibleDashboard);
+    };
   }, [loadDashboard]);
 
   const meetingById = useMemo(
@@ -1098,6 +1129,7 @@ export function ClientDashboardClient() {
           {activeSubscriptionSummaries.map((subscription) => {
               const tipster = tipsterById.get(subscription.tipster_id);
               const tipsterPackage = packageById.get(subscription.package_id);
+              const daysRemaining = subscriptionDaysRemaining(subscription.ends_at, loadedAt);
 
               return (
                 <div key={subscription.id} className="rounded-lg border bg-background/40 p-4">
@@ -1107,6 +1139,11 @@ export function ClientDashboardClient() {
                         <Badge>Active</Badge>
                         {subscription.segment_count > 1 ? (
                           <Badge variant="outline">Extended</Badge>
+                        ) : null}
+                        {daysRemaining <= 7 ? (
+                          <Badge variant="destructive">
+                            Ends in {daysRemaining} {daysRemaining === 1 ? "day" : "days"}
+                          </Badge>
                         ) : null}
                       </div>
                       <h3 className="mt-3 font-heading text-xl text-white">
@@ -1240,8 +1277,16 @@ export function ClientDashboardClient() {
                 <div className="grid gap-3 lg:grid-cols-2">
                   {visibleCardFixtures.map((fixture) => {
                     const selection = cardRaceSelections.find((item) => item.fixture_id === fixture.id);
-                    const winner = selection?.winner_entry_id ? entryById.get(selection.winner_entry_id) : null;
-                    const place = selection?.place_entry_id ? entryById.get(selection.place_entry_id) : null;
+                    const winnerLabel = raceSelectionLabel(
+                      selection?.winner_entry_id ?? null,
+                      entryById,
+                      selection?.winner_selection_snapshot ?? null,
+                    );
+                    const placeLabel = raceSelectionLabel(
+                      selection?.place_entry_id ?? null,
+                      entryById,
+                      selection?.place_selection_snapshot ?? null,
+                    );
                     const outcome = cardOutcomes.find((item) => item.tip_card_id === tipCard.id && item.fixture_id === fixture.id);
 
                     return (
@@ -1257,8 +1302,8 @@ export function ClientDashboardClient() {
                           </div>
                         </div>
                         <dl className="mt-3 grid gap-2 text-sm">
-                          <div><dt className="text-muted-foreground">Winner</dt><dd>{winner ? `${winner.saddle_number}. ${winner.horse_name}` : "No selection"}</dd></div>
-                          <div><dt className="text-muted-foreground">Place Selection</dt><dd>{place ? `${place.saddle_number}. ${place.horse_name}` : "No selection"}</dd></div>
+                          <div><dt className="text-muted-foreground">Winner</dt><dd>{winnerLabel}</dd></div>
+                          <div><dt className="text-muted-foreground">Place Selection</dt><dd>{placeLabel}</dd></div>
                           <div><dt className="text-muted-foreground">Comments</dt><dd>{selection?.comments || "No comments"}</dd></div>
                           {outcome ? <><div><dt className="text-muted-foreground">Winner outcome</dt><dd>{outcome.selected_winner_position == null ? "No winner selection graded" : outcome.winner_hit ? `Correct — finished 1st` : `Missed — finished ${outcome.selected_winner_position}`}</dd></div><div><dt className="text-muted-foreground">Place Selection finish</dt><dd>{outcome.selected_place_position ?? "No official finishing position"}</dd></div><div><dt className="text-muted-foreground">Official result</dt><dd>{outcome.result_summary ?? fixture.result_summary ?? "Recorded"}</dd></div></> : null}
                         </dl>

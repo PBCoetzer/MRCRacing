@@ -1,0 +1,19 @@
+[Unit]
+Description=Check live MRC website availability
+After=network-online.target
+Wants=network-online.target
+OnFailure=hermes-failure-notify@%n.service
+
+[Service]
+Type=oneshot
+User=hermes
+Group=hermes
+ExecStart=/usr/local/lib/mrc-site-watchdog/mrc_site_watchdog.py
+UMask=0077
+PrivateTmp=true
+PrivateDevices=true
+ProtectSystem=strict
+ProtectHome=true
+NoNewPrivileges=true
+ProtectProc=invisible
+RestrictAddressFamilies=AF_UNIX AF_INET AF_INET6
